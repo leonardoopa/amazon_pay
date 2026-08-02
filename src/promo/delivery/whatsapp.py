@@ -12,7 +12,6 @@ o que reabre a janela.
 """
 
 from __future__ import annotations
-
 import httpx
 
 GRAPH_VERSION = "v21.0"

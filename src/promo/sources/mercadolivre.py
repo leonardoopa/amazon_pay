@@ -16,7 +16,7 @@ from datetime import timedelta
 
 import httpx
 
-from ..config import MercadoLivreConfig
+from ..config import MercadoLivreConfig, oauth_bind_host
 from ..db import connect, load_token, now, save_token
 from ..models import Offer
 
@@ -90,7 +90,7 @@ class MercadoLivre:
 
         if row is None:
             raise RuntimeError(
-                "Mercado Livre nao autorizado ainda. Rode: python -m promo ml-auth"
+                "Mercado Livre nao autorizado ainda. Rode o comando `ml-auth`."
             )
 
         if datetime.fromisoformat(row["expires_at"]) > now():
@@ -169,12 +169,17 @@ def run_auth_flow(config: MercadoLivreConfig) -> None:
         def log_message(self, *args: object) -> None:
             pass  # silencia o log do servidor de uso unico
 
-    server = http.server.HTTPServer((parsed.hostname or "localhost", parsed.port or 80), Handler)
+    bind_host = oauth_bind_host(parsed.hostname or "localhost")
+    server = http.server.HTTPServer((bind_host, parsed.port or 80), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
     url = client.authorize_url(state)
-    print(f"Abrindo o navegador para autorizar o app...\nSe nao abrir, acesse:\n{url}\n")
-    webbrowser.open(url)
+    print(f"Autorize o app acessando:\n\n{url}\n")
+    try:
+        # Dentro do container nao ha navegador; ai o link acima e o caminho.
+        webbrowser.open(url)
+    except Exception:  # noqa: BLE001
+        pass
 
     if not done.wait(timeout=300):
         server.shutdown()

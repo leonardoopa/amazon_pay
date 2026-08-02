@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import argparse
 import logging
+import signal
 import sys
+import threading
 
-from .config import MercadoLivreConfig, MissingConfig, WhatsAppConfig
+from .config import (
+    MercadoLivreConfig,
+    MissingConfig,
+    WhatsAppConfig,
+    run_interval_seconds,
+)
 from .db import connect, init_db
 from .pipeline import build_sources, collect, flush_pending, load_watchlist, run
 from .sources.mercadolivre import run_auth_flow
@@ -49,6 +56,41 @@ def cmd_run(args: argparse.Namespace) -> int:
     init_db()
     picked = run(dry_run=args.dry_run)
     print(f"\n{len(picked)} ofertas selecionadas.")
+    return 0
+
+
+def cmd_daemon(args: argparse.Namespace) -> int:
+    """Loop infinito para o container: roda, dorme, repete.
+
+    Prefiro isso a cron dentro da imagem -- um processo so, logs no stdout e
+    SIGTERM do `docker stop` encerra na hora em vez de esperar o sleep.
+    """
+    init_db()
+    interval = args.interval or run_interval_seconds()
+    stop = threading.Event()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, lambda *_: stop.set())
+
+    log = logging.getLogger("promo")
+    log.info("Daemon iniciado (intervalo de %ds). Modo: %s", interval,
+             "coleta apenas" if args.collect_only else "pipeline completo")
+
+    while not stop.is_set():
+        try:
+            if args.collect_only:
+                cmd_collect(args)
+            else:
+                run()
+        except MissingConfig as exc:
+            log.error("Configuracao faltando: %s", exc)
+            return 2
+        except Exception as exc:  # noqa: BLE001 - o daemon nao pode morrer por 1 erro
+            log.exception("Rodada falhou: %s", exc)
+
+        stop.wait(interval)
+
+    log.info("Daemon encerrado.")
     return 0
 
 
@@ -107,6 +149,7 @@ COMMANDS = {
     "ml-auth": (cmd_ml_auth, "Autoriza o app no Mercado Livre (abre o navegador)"),
     "collect": (cmd_collect, "So coleta precos, sem postar (use nos primeiros dias)"),
     "run": (cmd_run, "Coleta, filtra, escreve e envia no WhatsApp"),
+    "daemon": (cmd_daemon, "Roda em loop (usado pelo container)"),
     "flush": (cmd_flush, "Reenvia os posts que ficaram na fila"),
     "test-whatsapp": (cmd_test_whatsapp, "Manda uma mensagem de teste pra voce"),
     "stats": (cmd_stats, "Mostra o estado do banco"),
@@ -125,6 +168,18 @@ def main(argv: list[str] | None = None) -> int:
                 "--dry-run",
                 action="store_true",
                 help="Imprime os textos no terminal em vez de enviar",
+            )
+        if name == "daemon":
+            sub.add_argument(
+                "--interval",
+                type=int,
+                default=None,
+                help="Segundos entre rodadas (padrao: RUN_INTERVAL_SECONDS)",
+            )
+            sub.add_argument(
+                "--collect-only",
+                action="store_true",
+                help="So coleta preco, nao posta -- use nos primeiros 7-10 dias",
             )
 
     args = parser.parse_args(argv)

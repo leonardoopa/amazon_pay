@@ -1,14 +1,15 @@
-"""Gera o texto do post com o Claude.
+"""Gera o texto do post com a Gemini API.
 
 Regras que importam: nada de preco inventado, nada de urgencia falsa, e a
-divulgacao de afiliado e obrigatoria pelos dois programas.
+divulgacao de afiliado e obrigatoria pelos dois programas de afiliados.
 """
 
 from __future__ import annotations
 
-from anthropic import Anthropic
+from google import genai
+from google.genai import types
 
-from .config import copy_model
+from .config import copy_model, gemini_api_key
 from .models import ScoredOffer
 
 SYSTEM = """Voce escreve posts curtos de oferta para um grupo de WhatsApp brasileiro.
@@ -35,41 +36,49 @@ Responda apenas com o texto do post, nada mais."""
 
 
 class Copywriter:
-    def __init__(self, client: Anthropic | None = None) -> None:
-        self._client = client or Anthropic()
+    def __init__(self, client: genai.Client | None = None) -> None:
+        self._client = client or genai.Client(api_key=gemini_api_key())
         self._model = copy_model()
 
     def write(self, scored: ScoredOffer, link: str) -> str:
-        offer = scored.offer
-        facts = [
-            f"Produto: {offer.title}",
-            f"Preco agora: R$ {offer.price:.2f}",
-            f"Media historica ({scored.observations} dias): R$ {scored.baseline:.2f}",
-            f"Desconto contra a media: {scored.discount_pct:.0f}%",
-            f"Loja: {'Mercado Livre' if offer.source == 'mercadolivre' else 'Amazon'}",
-            f"Link: {link}",
-        ]
-        if scored.lowest_ever:
-            facts.append("Este e o menor preco desde que comecamos a monitorar.")
-        if offer.free_shipping:
-            facts.append("Frete gratis.")
-
-        response = self._client.messages.create(
+        response = self._client.models.generate_content(
             model=self._model,
-            max_tokens=400,
-            system=SYSTEM,
-            messages=[{"role": "user", "content": "\n".join(facts)}],
+            contents=_facts(scored, link),
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM,
+                max_output_tokens=400,
+                temperature=0.8,
+            ),
         )
-        return "".join(
-            block.text for block in response.content if block.type == "text"
-        ).strip()
+        text = (response.text or "").strip()
+        if not text:
+            # Acontece quando o filtro de seguranca corta a resposta inteira.
+            raise RuntimeError("Gemini devolveu resposta vazia")
+        return text
+
+
+def _facts(scored: ScoredOffer, link: str) -> str:
+    offer = scored.offer
+    facts = [
+        f"Produto: {offer.title}",
+        f"Preco agora: R$ {offer.price:.2f}",
+        f"Media historica ({scored.observations} dias): R$ {scored.baseline:.2f}",
+        f"Desconto contra a media: {scored.discount_pct:.0f}%",
+        f"Loja: {'Mercado Livre' if offer.source == 'mercadolivre' else 'Amazon'}",
+        f"Link: {link}",
+    ]
+    if scored.lowest_ever:
+        facts.append("Este e o menor preco desde que comecamos a monitorar.")
+    if offer.free_shipping:
+        facts.append("Frete gratis.")
+    return "\n".join(facts)
 
 
 def fallback_copy(scored: ScoredOffer, link: str) -> str:
-    """Texto sem IA, usado se a chamada ao Claude falhar."""
+    """Texto sem IA, usado se a chamada ao Gemini falhar."""
     offer = scored.offer
     lines = [
-        "Achei um bom preco 👇",
+        "Achei um bom preco",
         offer.title,
         f"*R$ {offer.price:.2f}* — {scored.discount_pct:.0f}% abaixo da media de R$ {scored.baseline:.2f}",
     ]

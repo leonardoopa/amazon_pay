@@ -119,4 +119,22 @@ def db_path() -> Path:
 
 
 def copy_model() -> str:
-    return _optional("COPY_MODEL", "claude-sonnet-5")
+    return _optional("GEMINI_MODEL", "gemini-3.5-flash-lite")
+
+
+def gemini_api_key() -> str:
+    return _get("GEMINI_API_KEY")
+
+
+def oauth_bind_host(default: str) -> str:
+    """Host onde o servidor de callback do OAuth escuta.
+
+    Fora do Docker, "localhost" basta. Dentro do container o servidor precisa
+    escutar em 0.0.0.0 para o navegador do host alcancar a porta publicada.
+    """
+    return _optional("OAUTH_BIND_HOST", default)
+
+
+def run_interval_seconds() -> int:
+    """Intervalo do modo daemon (usado pelo container)."""
+    return _int("RUN_INTERVAL_SECONDS", 7200)
