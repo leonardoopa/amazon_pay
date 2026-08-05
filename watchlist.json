@@ -1,0 +1,11 @@
+{
+  "_comment": "Termos monitorados. max_price em BRL corta lixo caro do resultado; use null pra ignorar.",
+  "keywords": [
+    { "term": "fone bluetooth", "max_price": 500 },
+    { "term": "smartwatch", "max_price": 800 },
+    { "term": "monitor 27 polegadas", "max_price": 2000 },
+    { "term": "cadeira gamer", "max_price": 1500 },
+    { "term": "ssd nvme 1tb", "max_price": 700 },
+    { "term": "air fryer", "max_price": 600 }
+  ]
+}
