@@ -18,6 +18,8 @@ mas nao ha motivo pra entregar o code a terceiros.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import secrets
 import urllib.parse
 import webbrowser
@@ -33,6 +35,24 @@ AUTH_HOST = "https://auth.mercadolivre.com.br"
 API_HOST = "https://api.mercadolibre.com"
 PROVIDER = "mercadolivre"
 
+# `offline_access` e o que faz o ML devolver refresh_token; sem ele o acesso
+# morre com o access_token e o daemon para sozinho ate alguem reautorizar.
+# `read` basta: o bot so consulta catalogo publico, nunca escreve na conta.
+SCOPES = "offline_access read"
+
+
+def new_pkce_pair() -> tuple[str, str]:
+    """Gera (code_verifier, code_challenge) no metodo S256 do RFC 7636.
+
+    Importa aqui porque o redirect registrado e um dominio de terceiro: o
+    `code` aparece na URL que o navegador visita. Com PKCE ele e inutil sem o
+    verifier, que so existe nesta execucao e nunca sai da maquina.
+    """
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    return verifier, challenge
+
 
 class MercadoLivre:
     name = PROVIDER
@@ -43,25 +63,39 @@ class MercadoLivre:
 
     # ---------- OAuth ----------
 
-    def authorize_url(self, state: str) -> str:
+    def authorize_url(self, state: str, code_challenge: str | None = None) -> str:
         params = {
             "response_type": "code",
             "client_id": self.config.client_id,
             "redirect_uri": self.config.redirect_uri,
             "state": state,
+            "scope": SCOPES,
         }
+        if code_challenge:
+            params["code_challenge"] = code_challenge
+            params["code_challenge_method"] = "S256"
         return f"{AUTH_HOST}/authorization?{urllib.parse.urlencode(params)}"
 
-    def exchange_code(self, code: str) -> None:
-        self._token_request(
-            {
-                "grant_type": "authorization_code",
-                "client_id": self.config.client_id,
-                "client_secret": self.config.client_secret,
-                "code": code,
-                "redirect_uri": self.config.redirect_uri,
-            }
-        )
+    def exchange_code(self, code: str, code_verifier: str | None = None) -> None:
+        payload = {
+            "grant_type": "authorization_code",
+            "client_id": self.config.client_id,
+            "client_secret": self.config.client_secret,
+            "code": code,
+            "redirect_uri": self.config.redirect_uri,
+        }
+        if code_verifier:
+            payload["code_verifier"] = code_verifier
+        data = self._token_request(payload)
+        if not data.get("refresh_token"):
+            # Falhar aqui em vez de daqui a algumas horas, quando o access_token
+            # expirar e o daemon parar sem ninguem entender por que.
+            raise RuntimeError(
+                "O Mercado Livre nao devolveu refresh_token. O app foi criado sem "
+                "a permissao offline_access -- sem ela o acesso expira em poucas "
+                "horas e o daemon para. Ajuste as permissoes no DevCenter e rode "
+                f"ml-auth de novo. (scopes concedidos: {data.get('scope', 'nenhum')})"
+            )
 
     def _refresh(self, refresh_token: str) -> None:
         self._token_request(
@@ -73,13 +107,18 @@ class MercadoLivre:
             }
         )
 
-    def _token_request(self, payload: dict[str, str]) -> None:
+    def _token_request(self, payload: dict[str, str]) -> dict:
         response = self._client.post(
             f"{API_HOST}/oauth/token",
             data=payload,
             headers={"Accept": "application/json"},
         )
-        response.raise_for_status()
+        if response.status_code >= 400:
+            # A mensagem do ML diz o que houve (redirect_uri divergente, code
+            # expirado, secret errado); o raise_for_status sozinho esconderia.
+            raise RuntimeError(
+                f"Mercado Livre recusou o token ({response.status_code}): {response.text[:300]}"
+            )
         data = response.json()
         expires_at = now() + timedelta(seconds=int(data.get("expires_in", 21600)) - 60)
         with connect() as conn:
@@ -90,6 +129,7 @@ class MercadoLivre:
                 data.get("refresh_token"),
                 expires_at,
             )
+        return data
 
     def access_token(self) -> str:
         from datetime import datetime
@@ -188,7 +228,8 @@ def run_auth_flow(config: MercadoLivreConfig) -> None:
     """Autoriza o app: abre a URL, recebe de volta a URL de callback colada."""
     client = MercadoLivre(config)
     state = secrets.token_urlsafe(16)
-    url = client.authorize_url(state)
+    verifier, challenge = new_pkce_pair()
+    url = client.authorize_url(state, code_challenge=challenge)
 
     print("\n1) Abra esta URL e autorize o app:\n")
     print(f"   {url}\n")
@@ -203,5 +244,5 @@ def run_auth_flow(config: MercadoLivreConfig) -> None:
         pass
 
     pasted = input("URL de callback: ")
-    client.exchange_code(parse_callback(pasted, state))
+    client.exchange_code(parse_callback(pasted, state), code_verifier=verifier)
     print("\nToken do Mercado Livre salvo. Ja pode rodar `collect`.")
