@@ -126,15 +126,6 @@ def gemini_api_key() -> str:
     return _get("GEMINI_API_KEY")
 
 
-def oauth_bind_host(default: str) -> str:
-    """Host onde o servidor de callback do OAuth escuta.
-
-    Fora do Docker, "localhost" basta. Dentro do container o servidor precisa
-    escutar em 0.0.0.0 para o navegador do host alcancar a porta publicada.
-    """
-    return _optional("OAUTH_BIND_HOST", default)
-
-
 def run_interval_seconds() -> int:
     """Intervalo do modo daemon (usado pelo container)."""
     return _int("RUN_INTERVAL_SECONDS", 7200)

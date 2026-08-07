@@ -59,6 +59,61 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_seed(args: argparse.Namespace) -> int:
+    """Popula o banco com historico sintetico, sem depender da API do ML."""
+    from . import fixtures
+
+    init_db()
+    with connect() as conn:
+        if args.clear:
+            removed = fixtures.clear(conn)
+            print(f"{removed} produtos de demo removidos.")
+            return 0
+        created = fixtures.seed(conn, days=args.days)
+    print(f"{created} produtos com {args.days} dias de historico. Rode `demo` pra ver os textos.")
+    return 0
+
+
+def cmd_demo(args: argparse.Namespace) -> int:
+    """Gera os posts a partir dos dados de demo, sem coletar e sem enviar.
+
+    Existe pra calibrar o tom do texto enquanto a conta do Mercado Livre nao
+    e liberada -- exercita scoring + Gemini de ponta a ponta.
+    """
+    from . import fixtures
+    from .config import Rules
+    from .copywriter import Copywriter, fallback_copy
+    from .scoring import score
+
+    init_db()
+    rules = Rules.load()
+
+    with connect() as conn:
+        scored = [s for s in (score(conn, o, rules) for o in fixtures.current_offers()) if s]
+
+    if not scored:
+        print("Nada pontuou. Rode `seed` primeiro.")
+        return 1
+
+    copywriter = None if args.no_ai else Copywriter()
+    for item in scored:
+        link = item.offer.url
+        if copywriter is None:
+            text = fallback_copy(item, link)
+        else:
+            try:
+                text = copywriter.write(item, link)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[Gemini falhou: {exc}]")
+                text = fallback_copy(item, link)
+        print("\n" + "-" * 48)
+        print(f"[{item.discount_pct:.0f}% abaixo da media de R$ {item.baseline:.2f}]")
+        print(text)
+
+    print(f"\n{len(scored)} posts gerados.")
+    return 0
+
+
 def cmd_daemon(args: argparse.Namespace) -> int:
     """Loop infinito para o container: roda, dorme, repete.
 
@@ -149,6 +204,8 @@ COMMANDS = {
     "ml-auth": (cmd_ml_auth, "Autoriza o app no Mercado Livre (abre o navegador)"),
     "collect": (cmd_collect, "So coleta precos, sem postar (use nos primeiros dias)"),
     "run": (cmd_run, "Coleta, filtra, escreve e envia no WhatsApp"),
+    "seed": (cmd_seed, "Cria historico sintetico pra testar sem a API do ML"),
+    "demo": (cmd_demo, "Gera os posts a partir do historico sintetico"),
     "daemon": (cmd_daemon, "Roda em loop (usado pelo container)"),
     "flush": (cmd_flush, "Reenvia os posts que ficaram na fila"),
     "test-whatsapp": (cmd_test_whatsapp, "Manda uma mensagem de teste pra voce"),
@@ -168,6 +225,17 @@ def main(argv: list[str] | None = None) -> int:
                 "--dry-run",
                 action="store_true",
                 help="Imprime os textos no terminal em vez de enviar",
+            )
+        if name == "seed":
+            sub.add_argument("--days", type=int, default=60, help="Dias de historico")
+            sub.add_argument(
+                "--clear", action="store_true", help="Remove os dados de demo"
+            )
+        if name == "demo":
+            sub.add_argument(
+                "--no-ai",
+                action="store_true",
+                help="Usa o texto padrao em vez de chamar o Gemini",
             )
         if name == "daemon":
             sub.add_argument(

@@ -16,9 +16,15 @@ from promo.models import Offer, ScoredOffer  # noqa: E402
 LINK = "https://produto.mercadolivre.com.br/MLB-123?matt_tool=1"
 
 
+AMAZON_DISCLOSURE = (
+    "Como participante do Programa de Associados da Amazon, "
+    "sou remunerado pelas compras qualificadas efetuadas"
+)
+
+
 def make_scored(**kwargs) -> ScoredOffer:
     offer = Offer(
-        source="mercadolivre",
+        source=kwargs.pop("source", "mercadolivre"),
         external_id="MLB123",
         title="Fone Bluetooth XYZ",
         price=150.0,
@@ -32,11 +38,15 @@ def make_scored(**kwargs) -> ScoredOffer:
 class FakeModels:
     def __init__(self, text: str) -> None:
         self.text = text
+        self.finish_reason = "STOP"
         self.calls: list[dict] = []
 
     def generate_content(self, **kwargs):
         self.calls.append(kwargs)
-        return SimpleNamespace(text=self.text)
+        return SimpleNamespace(
+            text=self.text,
+            candidates=[SimpleNamespace(finish_reason=self.finish_reason)],
+        )
 
 
 class FakeClient:
@@ -72,10 +82,19 @@ def test_write_envia_system_instruction_e_devolve_texto():
     client = FakeClient("  Achei um bom preco\nFone XYZ  ")
     copy = Copywriter(client=client).write(make_scored(), LINK)
 
-    assert copy == "Achei um bom preco\nFone XYZ"
+    assert copy.startswith("Achei um bom preco\nFone XYZ")
     call = client.models.calls[0]
     assert call["config"].system_instruction == SYSTEM
     assert LINK in call["contents"]
+
+
+def test_write_recusa_resposta_truncada():
+    """Modelo com thinking estoura o orcamento e devolve post sem preco/link."""
+    client = FakeClient("Que achado esse fone! 🎧\nJBL Tune 52")
+    client.models.finish_reason = "MAX_TOKENS"
+
+    with pytest.raises(RuntimeError, match="truncou"):
+        Copywriter(client=client).write(make_scored(), LINK)
 
 
 def test_write_recusa_resposta_vazia():
@@ -93,3 +112,35 @@ def test_fallback_tem_disclosure_e_numeros():
     assert "25%" in text
     assert LINK in text
     assert text.endswith("Link de afiliado - o preco pra voce nao muda.")
+
+
+# --- Divulgacao obrigatoria (Clausula 5 do Contrato de Associados) ---
+#
+# A frase da Amazon e literal por contrato, e violar a Clausula 5 conta como
+# descumprimento material. Por isso ela e testada caractere por caractere.
+
+
+def test_amazon_usa_a_frase_exata_do_contrato():
+    text = fallback_copy(make_scored(source="amazon"), LINK)
+
+    assert text.endswith(AMAZON_DISCLOSURE)
+
+
+def test_facts_mandam_a_divulgacao_da_loja_certa():
+    assert AMAZON_DISCLOSURE in _facts(make_scored(source="amazon"), LINK)
+    assert AMAZON_DISCLOSURE not in _facts(make_scored(), LINK)
+
+
+def test_disclosure_e_reposta_se_o_modelo_parafrasear():
+    """LLM nao e confiavel para reproduzir texto legal -- o codigo garante."""
+    client = FakeClient("Achei um bom preco\nRelogio Seiko\nsou remunerado pelas compras")
+    copy = Copywriter(client=client).write(make_scored(source="amazon"), LINK)
+
+    assert copy.endswith(AMAZON_DISCLOSURE)
+
+
+def test_disclosure_nao_e_duplicada_quando_o_modelo_acerta():
+    client = FakeClient(f"Achei um bom preco\nRelogio Seiko\n{LINK}\n{AMAZON_DISCLOSURE}")
+    copy = Copywriter(client=client).write(make_scored(source="amazon"), LINK)
+
+    assert copy.count(AMAZON_DISCLOSURE) == 1
