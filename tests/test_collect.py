@@ -164,9 +164,20 @@ def test_prefere_a_imagem_grande_do_multiget():
     assert _best_image(item) == "https://http2.mlstatic.com/D_NQ_NP_1-O.jpg"
 
 
-def test_cai_no_thumbnail_quando_nao_ha_pictures():
+def test_promove_o_thumbnail_da_busca_para_resolucao_cheia():
+    """Sem `pictures` (caso da busca), a CDN serve a versao grande em -O."""
     item = {"thumbnail": "https://http2.mlstatic.com/D_NQ_NP_1-I.jpg"}
-    assert _best_image(item) == "https://http2.mlstatic.com/D_NQ_NP_1-I.jpg"
+    assert _best_image(item) == "https://http2.mlstatic.com/D_NQ_NP_1-O.jpg"
+
+
+def test_thumbnail_fora_do_padrao_passa_intacto():
+    """Nao inventa sufixo em URL que nao segue a convencao -I."""
+    item = {"thumbnail": "https://exemplo.com/foto.png"}
+    assert _best_image(item) == "https://exemplo.com/foto.png"
+
+
+def test_sem_imagem_nenhuma():
+    assert _best_image({}) is None
 
 
 def test_multiget_respeita_o_limite_do_ml():

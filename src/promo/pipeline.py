@@ -161,21 +161,39 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
 
     copywriter = Copywriter()
     drafts: list[tuple[ScoredOffer, str]] = []
+    sem_link: list[ScoredOffer] = []
+
     for scored in picked:
         link = by_name[scored.offer.source].affiliate_url(scored.offer)
+        if not link:
+            # Sem link de afiliado o post nao rende nada, e nao da pra montar
+            # um: o ML so emite pelo Link Builder. Segura a oferta em vez de
+            # queimar ela num post sem comissao.
+            sem_link.append(scored)
+            continue
         try:
             text = copywriter.write(scored, link)
         except Exception as exc:  # noqa: BLE001 - sem IA ainda da pra postar
-            log.warning("Claude falhou, usando texto padrao: %s", exc)
+            log.warning("Gemini falhou, usando texto padrao: %s", exc)
             text = fallback_copy(scored, link)
         drafts.append((scored, text))
+
+    if sem_link:
+        log.warning(
+            "%d oferta(s) seguraram por falta de link de afiliado. "
+            "Gere no Link Builder e rode `promo link`:",
+            len(sem_link),
+        )
+        for scored in sem_link:
+            log.warning("  %s  %s", scored.offer.external_id, scored.offer.url)
 
     if dry_run:
         for _, text in drafts:
             print("\n" + "-" * 40 + "\n" + text)
         return picked
 
-    deliver(drafts)
+    if drafts:
+        deliver(drafts)
     return picked
 
 
@@ -190,6 +208,7 @@ def deliver(drafts: list[tuple[ScoredOffer, str]]) -> None:
                 scored.baseline,
                 scored.discount_pct,
                 text,
+                scored.offer.image_url,
             )
     flush_pending()
 
@@ -198,15 +217,15 @@ def flush_pending() -> None:
     whatsapp = WhatsApp(WhatsAppConfig.load())
 
     with connect() as conn:
-        queue = [(row["id"], row["copy"]) for row in pending_posts(conn)]
+        queue = [(row["id"], row["copy"], row["image_url"]) for row in pending_posts(conn)]
 
     if not queue:
         log.info("Nada pendente na fila.")
         return
 
-    for index, (post_id, text) in enumerate(queue):
+    for index, (post_id, text, image_url) in enumerate(queue):
         try:
-            whatsapp.send_text(text)
+            whatsapp.send_post(text, image_url)
         except WindowClosed:
             # Fora da janela de 24h so passa template. Pinga voce pedindo uma
             # resposta qualquer -- isso reabre a janela e a proxima rodada

@@ -17,6 +17,8 @@ import httpx
 GRAPH_VERSION = "v21.0"
 # Erros da Meta que significam "janela de 24h fechada".
 WINDOW_CLOSED_CODES = {131047, 131051}
+# Teto da legenda de imagem na Cloud API.
+CAPTION_LIMIT = 1024
 
 
 class WindowClosed(RuntimeError):
@@ -52,10 +54,44 @@ class WhatsApp:
                 "messaging_product": "whatsapp",
                 "to": self.config.to,
                 "type": "text",
-                # preview_url=False evita o card grande do link roubando a tela
+                # preview_url=True deixa o WhatsApp montar o card do produto
                 "text": {"body": text, "preview_url": True},
             }
         )
+
+    def send_image(self, image_url: str, caption: str) -> dict:
+        """Imagem + texto numa mensagem so.
+
+        Uma mensagem em vez de duas importa aqui: o post e pra ser
+        encaminhado pro grupo, e encaminhar duas mensagens separadas quebra
+        a associacao entre a foto e o preco.
+
+        A Meta baixa a imagem da URL pelo lado dela, entao o endereco precisa
+        ser publico -- o da CDN do ML e. Legenda tem teto de 1024 caracteres.
+        """
+        return self._post(
+            {
+                "messaging_product": "whatsapp",
+                "to": self.config.to,
+                "type": "image",
+                "image": {"link": image_url, "caption": caption[:CAPTION_LIMIT]},
+            }
+        )
+
+    def send_post(self, text: str, image_url: str | None = None) -> dict:
+        """Manda como imagem quando da, e cai pra texto quando nao da.
+
+        Motivos pra cair: sem imagem no anuncio, legenda longa demais, ou a
+        Meta recusando a URL. Nenhum deles justifica perder a oferta.
+        """
+        if image_url and len(text) <= CAPTION_LIMIT:
+            try:
+                return self.send_image(image_url, text)
+            except WindowClosed:
+                raise  # a janela fechada nao e problema da imagem
+            except Exception:  # noqa: BLE001 - qualquer recusa da imagem vira texto
+                pass
+        return self.send_text(text)
 
     def send_ping_template(self, pending: int) -> dict:
         """Template utility pra reabrir a janela quando ela fechou.

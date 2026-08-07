@@ -28,7 +28,7 @@ from datetime import timedelta
 import httpx
 
 from ..config import MercadoLivreConfig
-from ..db import connect, load_token, now, save_token
+from ..db import affiliate_link, connect, load_token, now, save_token
 from ..models import Offer
 
 AUTH_HOST = "https://auth.mercadolivre.com.br"
@@ -50,12 +50,20 @@ def _best_image(item: dict) -> str | None:
     O `thumbnail` da busca tem ~100px -- serve pra listagem, fica horrivel
     como imagem de post. O multiget traz `pictures` com a resolucao cheia,
     entao preferimos ela sempre que vier.
+
+    Na busca nao ha `pictures`, mas a CDN do ML serve a versao grande da
+    mesma imagem trocando o sufixo `-I` por `-O`. Isso da imagem decente ja
+    na descoberta, sem esperar a rodada seguinte de multiget.
     """
     for picture in item.get("pictures") or []:
         url = picture.get("secure_url") or picture.get("url")
         if url:
             return url
-    return item.get("thumbnail")
+
+    thumbnail = item.get("thumbnail")
+    if thumbnail and "-I." in thumbnail:
+        return thumbnail.replace("-I.", "-O.")
+    return thumbnail
 
 
 def new_pkce_pair() -> tuple[str, str]:
@@ -230,16 +238,18 @@ class MercadoLivre:
 
     # ---------- Afiliado ----------
 
-    def affiliate_url(self, offer: Offer) -> str:
-        """Anexa os params do seu programa de afiliado ML.
+    def affiliate_url(self, offer: Offer) -> str | None:
+        """Link gerado no Link Builder do ML, ou None se ainda nao existe.
 
-        O ML entrega esses params no painel de Afiliados (ex.: matt_tool /
-        matt_word). Deixe ML_AFFILIATE_PARAMS vazio pra postar link limpo.
+        Nao da pra montar esse link. Um link real do programa aponta pra
+        `mercadolivre.com.br/social/<nickname>?...&ref=<blob>`, onde o blob
+        tem ~150 bytes assinados pelo servidor e o ID do produto nem aparece
+        na URL. Concatenar matt_word/matt_tool na URL do produto -- que e o
+        que varios projetos por ai fazem -- produz um endereco diferente do
+        que o programa emite. Ver `promo link` e `promo pending-links`.
         """
-        if not self.config.affiliate_params:
-            return offer.url
-        separator = "&" if "?" in offer.url else "?"
-        return f"{offer.url}{separator}{self.config.affiliate_params}"
+        with connect() as conn:
+            return affiliate_link(conn, offer.product_id)
 
 
 def parse_callback(pasted: str, expected_state: str) -> str:

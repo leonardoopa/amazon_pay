@@ -178,6 +178,42 @@ O teto por rodada é `ML_TRACK_LIMIT` (padrão 400 = 20 chamadas). Quando bate n
 teto a coleta avisa no log em vez de truncar em silêncio. Produto que some do ML
 para de receber observação e sai da lista sozinho quando envelhece.
 
+## Link de afiliado — o passo manual
+
+**Não dá para montar link de afiliado do ML.** Um link real do programa é assim:
+
+```
+mercadolivre.com.br/social/<seu-nickname>?matt_word=...&matt_tool=...&ref=<blob>
+```
+
+O `ref` tem ~150 bytes assinados pelo servidor do ML, e **o ID do produto não
+aparece em lugar nenhum da URL** — ele está dentro do blob. Concatenar
+`matt_word`/`matt_tool` na URL do produto, que é o que vários projetos por aí
+fazem, produz um endereço diferente do que o programa emite. Também não existe
+API oficial para gerar esses links.
+
+Então o fluxo tem um passo humano:
+
+```bash
+promo pending-links
+```
+
+Lista os produtos rastreados sem link, com mais histórico primeiro — os que
+estão mais perto de virar post. Gere cada um em
+[mercadolivre.com.br/afiliados/linkbuilder](https://www.mercadolivre.com.br/afiliados/linkbuilder)
+(só funciona no desktop) e salve:
+
+```bash
+promo link MLB3953571145 https://meli.la/xxxxxxx
+```
+
+O link curto `meli.la` é o encurtador do próprio ML — pode usar. Encurtador de
+terceiros é proibido pelos termos do programa.
+
+Oferta que passa no filtro **sem** link não vira post: o `run` segura ela e
+imprime o ID e a URL no log, para você gerar o link e rodar `promo flush`.
+Postar sem link seria queimar a oferta por comissão zero.
+
 ## Como o filtro decide
 
 `src/promo/scoring.py` é o coração do projeto:
@@ -224,11 +260,11 @@ mensagens por dia) fica em centavos.
 | Arquivo | O que faz |
 |---|---|
 | `src/promo/scoring.py` | decide o que é promoção real |
-| `src/promo/db.py` | schema + histórico de preços |
-| `src/promo/sources/mercadolivre.py` | OAuth + busca ML |
+| `src/promo/db.py` | schema, histórico de preços e links de afiliado |
+| `src/promo/sources/mercadolivre.py` | OAuth, busca, multiget e link de afiliado |
 | `src/promo/sources/amazon.py` | Creators API |
 | `src/promo/copywriter.py` | prompt e chamada ao Gemini |
-| `src/promo/delivery/whatsapp.py` | Cloud API + janela de 24h |
+| `src/promo/delivery/whatsapp.py` | Cloud API, imagem + legenda, janela de 24h |
 | `src/promo/pipeline.py` | orquestra tudo |
 | `src/promo/cli.py` | comandos, incluindo o `daemon` |
 | `watchlist.json` | termos monitorados (montado no container, editável sem rebuild) |

@@ -70,7 +70,9 @@ def cmd_seed(args: argparse.Namespace) -> int:
             print(f"{removed} produtos de demo removidos.")
             return 0
         created = fixtures.seed(conn, days=args.days)
-    print(f"{created} produtos com {args.days} dias de historico. Rode `demo` pra ver os textos.")
+    print(f"{created} produtos SINTETICOS com {args.days} dias de historico.")
+    print("Os anuncios nao existem no ML e os links nao abrem -- servem so pra")
+    print("exercitar scoring, texto e entrega. Rode `demo` pra ver os textos.")
     return 0
 
 
@@ -91,13 +93,26 @@ def cmd_demo(args: argparse.Namespace) -> int:
     with connect() as conn:
         scored = [s for s in (score(conn, o, rules) for o in fixtures.current_offers()) if s]
 
+    print("=" * 48)
+    print("DADOS SINTETICOS -- os produtos nao existem e os links nao abrem.")
+    print("Avalie o tom do texto e o calculo do desconto, nao os links.")
+    print("=" * 48)
+
     if not scored:
         print("Nada pontuou. Rode `seed` primeiro.")
         return 1
 
+    from .db import affiliate_link
+
     copywriter = None if args.no_ai else Copywriter()
+    drafts: list[tuple] = []
     for item in scored:
-        link = item.offer.url
+        # Mostra o link real quando ja existe: um preview com a URL crua
+        # esconde exatamente o passo que falta pra oferta render comissao.
+        with connect() as conn:
+            link = affiliate_link(conn, item.offer.product_id)
+        sem_link = link is None
+        link = link or item.offer.url
         if copywriter is None:
             text = fallback_copy(item, link)
         else:
@@ -107,10 +122,35 @@ def cmd_demo(args: argparse.Namespace) -> int:
                 print(f"[Gemini falhou: {exc}]")
                 text = fallback_copy(item, link)
         print("\n" + "-" * 48)
-        print(f"[{item.discount_pct:.0f}% abaixo da media de R$ {item.baseline:.2f}]")
+        aviso = "  SEM LINK DE AFILIADO -- nao renderia comissao" if sem_link else ""
+        print(f"[{item.discount_pct:.0f}% abaixo da media de R$ {item.baseline:.2f}]{aviso}")
         print(text)
+        drafts.append((item, text))
 
     print(f"\n{len(scored)} posts gerados.")
+
+    if not args.send:
+        return 0
+
+    # O caminho de entrega e o unico que os testes nao cobrem de verdade:
+    # depende da Meta aceitar o token, o numero e a URL da imagem. Mandar 1
+    # post real valida isso hoje, sem esperar a baseline amadurecer.
+    from .delivery import WhatsApp, WindowClosed
+
+    item, text = drafts[0]
+    config = WhatsAppConfig.load()
+    whatsapp = WhatsApp(config)
+    print(f"\nEnviando 1 post de demo para {config.to}...")
+    try:
+        whatsapp.send_post(text, item.offer.image_url)
+    except WindowClosed:
+        print(
+            "Janela de 24h fechada. Mande qualquer mensagem para o numero do bot "
+            "no WhatsApp e rode de novo.",
+            file=sys.stderr,
+        )
+        return 1
+    print("Enviado. Confira se a imagem veio junto do texto, numa mensagem so.")
     return 0
 
 
@@ -199,6 +239,71 @@ def cmd_stats(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_link(args: argparse.Namespace) -> int:
+    """Guarda um link de afiliado gerado a mao no Link Builder do ML."""
+    from .db import save_affiliate_link
+
+    init_db()
+    if not args.url.startswith("https://"):
+        print("O link precisa comecar com https://", file=sys.stderr)
+        return 2
+
+    with connect() as conn:
+        # Aceita tanto o ID do anuncio ("MLB123") quanto o interno
+        # ("mercadolivre:MLB123"), porque e o primeiro que voce copia do
+        # `pending-links` e da URL do produto.
+        if ":" in args.product_id:
+            rows = conn.execute(
+                "SELECT id FROM products WHERE id = ?", (args.product_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id FROM products WHERE external_id = ?", (args.product_id,)
+            ).fetchall()
+
+        if not rows:
+            print(
+                f"Anuncio {args.product_id} nao esta no banco. Rode `collect` primeiro.",
+                file=sys.stderr,
+            )
+            return 2
+        if len(rows) > 1:
+            nomes = ", ".join(row["id"] for row in rows)
+            print(f"ID ambiguo entre fontes ({nomes}). Passe o ID completo.", file=sys.stderr)
+            return 2
+
+        product_id = rows[0]["id"]
+        save_affiliate_link(conn, product_id, args.url)
+
+    print(f"Link salvo para {product_id}.")
+    return 0
+
+
+def cmd_pending_links(args: argparse.Namespace) -> int:
+    """Lista produtos rastreados que ainda nao tem link de afiliado.
+
+    O ML so emite link pelo Link Builder (desktop), entao esse e o passo
+    manual do fluxo: gere os links dos que estao mais perto de virar post.
+    """
+    from .db import products_missing_link
+
+    init_db()
+    with connect() as conn:
+        rows = products_missing_link(conn, args.limit)
+
+    if not rows:
+        print("Todo produto rastreado ja tem link.")
+        return 0
+
+    print(f"{len(rows)} produto(s) sem link de afiliado (mais historico primeiro):\n")
+    for row in rows:
+        print(f"{row['dias']:>3} dias  {row['external_id']}  {row['title'][:50]}")
+        print(f"           {row['url']}\n")
+    print("Gere em mercadolivre.com.br/afiliados/linkbuilder e salve com:")
+    print("  promo link <ID> <link>")
+    return 0
+
+
 COMMANDS = {
     "init": (cmd_init, "Cria o banco SQLite"),
     "ml-auth": (cmd_ml_auth, "Autoriza o app no Mercado Livre (abre o navegador)"),
@@ -208,6 +313,8 @@ COMMANDS = {
     "demo": (cmd_demo, "Gera os posts a partir do historico sintetico"),
     "daemon": (cmd_daemon, "Roda em loop (usado pelo container)"),
     "flush": (cmd_flush, "Reenvia os posts que ficaram na fila"),
+    "link": (cmd_link, "Salva o link de afiliado de um produto"),
+    "pending-links": (cmd_pending_links, "Lista produtos sem link de afiliado"),
     "test-whatsapp": (cmd_test_whatsapp, "Manda uma mensagem de teste pra voce"),
     "stats": (cmd_stats, "Mostra o estado do banco"),
 }
@@ -236,6 +343,18 @@ def main(argv: list[str] | None = None) -> int:
                 "--no-ai",
                 action="store_true",
                 help="Usa o texto padrao em vez de chamar o Gemini",
+            )
+            sub.add_argument(
+                "--send",
+                action="store_true",
+                help="Envia 1 post de demo no WhatsApp pra validar a entrega",
+            )
+        if name == "link":
+            sub.add_argument("product_id", help="ID do anuncio, ex.: MLB3953571145")
+            sub.add_argument("url", help="Link gerado no Link Builder do ML")
+        if name == "pending-links":
+            sub.add_argument(
+                "--limit", type=int, default=20, help="Quantos produtos listar"
             )
         if name == "daemon":
             sub.add_argument(

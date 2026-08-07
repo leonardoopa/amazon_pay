@@ -39,7 +39,6 @@ class MercadoLivreConfig:
     client_secret: str
     redirect_uri: str
     site_id: str
-    affiliate_params: str
 
     @classmethod
     def load(cls) -> "MercadoLivreConfig":
@@ -48,7 +47,6 @@ class MercadoLivreConfig:
             client_secret=_get("ML_CLIENT_SECRET"),
             redirect_uri=_optional("ML_REDIRECT_URI", "http://localhost:8123/callback"),
             site_id=_optional("ML_SITE_ID", "MLB"),
-            affiliate_params=_optional("ML_AFFILIATE_PARAMS"),
         )
 
 
