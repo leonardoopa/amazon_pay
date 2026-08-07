@@ -3,20 +3,29 @@
 O ML so aceita grant_type=authorization_code e refresh_token -- nao existe
 client_credentials. Entao voce autoriza uma vez no navegador (`promo ml-auth`)
 e a partir dai o refresh_token guardado no SQLite mantem o acesso vivo.
+
+O DevCenter exige HTTPS no redirect URI e recusa localhost, entao nao da pra
+subir um servidor de callback local. O fluxo e manual: o navegador redireciona
+para o endereco registrado, a pagina nao serve pra nada, e voce cola a URL da
+barra de enderecos aqui -- o `code` esta nela.
+
+Sobre o endereco de redirect: prefira um dominio seu, ou um inerte como
+example.com (reservado pela IANA). Evite os servicos "cole seu code aqui" --
+eles existem pra ler exatamente esse valor. O risco e limitado porque trocar
+o code por token tambem exige o client_secret, que nunca sai da sua maquina,
+mas nao ha motivo pra entregar o code a terceiros.
 """
 
 from __future__ import annotations
 
-import http.server
 import secrets
-import threading
 import urllib.parse
 import webbrowser
 from datetime import timedelta
 
 import httpx
 
-from ..config import MercadoLivreConfig, oauth_bind_host
+from ..config import MercadoLivreConfig
 from ..db import connect, load_token, now, save_token
 from ..models import Offer
 
@@ -146,50 +155,53 @@ class MercadoLivre:
         return f"{offer.url}{separator}{self.config.affiliate_params}"
 
 
+def parse_callback(pasted: str, expected_state: str) -> str:
+    """Extrai o `code` da URL de callback colada, validando o state.
+
+    Aceita tanto a URL inteira quanto so a query string, porque e comum a
+    pessoa colar so um pedaco.
+    """
+    pasted = pasted.strip()
+    if not pasted:
+        raise RuntimeError("Nada colado.")
+
+    query = urllib.parse.urlparse(pasted).query or pasted.lstrip("?")
+    params = urllib.parse.parse_qs(query)
+
+    if "error" in params:
+        detail = params.get("error_description", params["error"])[0]
+        raise RuntimeError(f"Mercado Livre recusou a autorizacao: {detail}")
+
+    state = (params.get("state") or [None])[0]
+    if state != expected_state:
+        raise RuntimeError(
+            "State divergente -- a URL nao veio desta execucao. Rode ml-auth de novo."
+        )
+
+    code = (params.get("code") or [None])[0]
+    if not code:
+        raise RuntimeError(f"Nao achei o parametro `code` na URL colada: {pasted[:120]}")
+    return code
+
+
 def run_auth_flow(config: MercadoLivreConfig) -> None:
-    """Sobe um servidor local, abre o navegador e captura o ?code= do redirect."""
+    """Autoriza o app: abre a URL, recebe de volta a URL de callback colada."""
     client = MercadoLivre(config)
     state = secrets.token_urlsafe(16)
-    parsed = urllib.parse.urlparse(config.redirect_uri)
-    captured: dict[str, str] = {}
-    done = threading.Event()
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 - assinatura da stdlib
-            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            captured.update({k: v[0] for k, v in query.items()})
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            ok = "code" in captured and captured.get("state") == state
-            message = "Autorizado. Pode fechar esta aba." if ok else "Falhou. Veja o terminal."
-            self.wfile.write(f"<h2>{message}</h2>".encode())
-            done.set()
-
-        def log_message(self, *args: object) -> None:
-            pass  # silencia o log do servidor de uso unico
-
-    bind_host = oauth_bind_host(parsed.hostname or "localhost")
-    server = http.server.HTTPServer((bind_host, parsed.port or 80), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-
     url = client.authorize_url(state)
-    print(f"Autorize o app acessando:\n\n{url}\n")
+
+    print("\n1) Abra esta URL e autorize o app:\n")
+    print(f"   {url}\n")
+    print("2) O navegador vai redirecionar para", config.redirect_uri)
+    print("   A pagina VAI FALHAR ao carregar. Isso e esperado -- nao ha servidor ali.")
+    print("   O que importa esta na barra de enderecos.\n")
+    print("3) Copie a URL inteira da barra de enderecos e cole aqui.\n")
+
     try:
-        # Dentro do container nao ha navegador; ai o link acima e o caminho.
         webbrowser.open(url)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - sem navegador (container), a URL acima basta
         pass
 
-    if not done.wait(timeout=300):
-        server.shutdown()
-        raise TimeoutError("Timeout esperando a autorizacao do Mercado Livre.")
-    server.shutdown()
-
-    if captured.get("state") != state:
-        raise RuntimeError("State divergente no callback -- possivel CSRF. Tente de novo.")
-    if "code" not in captured:
-        raise RuntimeError(f"Callback sem code: {captured}")
-
-    client.exchange_code(captured["code"])
-    print("Token do Mercado Livre salvo.")
+    pasted = input("URL de callback: ")
+    client.exchange_code(parse_callback(pasted, state))
+    print("\nToken do Mercado Livre salvo. Ja pode rodar `collect`.")

@@ -33,8 +33,23 @@ O `GEMINI_MODEL` padrão é `gemini-3.5-flash-lite`; `gemini-3.6-flash` é mais 
 `gemini-3.5-flash-lite` é o mais barato. No volume de um grupo (poucos posts por
 dia) a diferença de custo é irrelevante — escolha por qualidade de texto.
 
-**Mercado Livre** — crie o app em [developers.mercadolivre.com.br/devcenter](https://developers.mercadolivre.com.br/devcenter).
-O `redirect_uri` do app tem que bater exatamente com `ML_REDIRECT_URI`.
+**Mercado Livre** — crie o app em [developers.mercadolivre.com.br/devcenter](https://developers.mercadolivre.com.br/devcenter)
+→ *Criar nova aplicação*. Preencha nome, nome curto e descrição, marque o scope
+**read**, aceite os termos e crie. Depois clique em *Editar*: o **App ID** é o
+`ML_CLIENT_ID` e a **Secret Key** é o `ML_CLIENT_SECRET`. Não há aprovação.
+
+No campo **URIs de redirect** há duas restrições que o formulário não explica:
+precisa ser **HTTPS** e **`localhost` é recusado** ("O endereço deve ser válido").
+Como o `ml-auth` é por colagem manual, nada precisa rodar nesse endereço — ele
+só precisa ser aceito pelo formulário. O padrão é `https://example.com/callback`
+(domínio reservado pela IANA, inerte). Se você tiver um domínio próprio, use o seu.
+
+Evite os serviços "cole seu code aqui" que aparecem em tutoriais: eles existem
+para ler exatamente esse valor. O risco é limitado — trocar o `code` por token
+também exige o `client_secret`, que nunca sai da sua máquina — mas não há motivo
+para entregar o código a terceiros.
+
+O valor no `.env` tem que bater **caractere por caractere** com o registrado.
 
 **Amazon** — opcional na fase 1. A PA-API 5.0 foi aposentada em 15/05/2026;
 hoje é a Creators API (OAuth 2.0, `client_credentials`). O acesso exige conta
@@ -51,16 +66,17 @@ número pessoal como destinatário de teste.
 docker compose build
 ```
 
-O ML só aceita `authorization_code`, então autorize uma vez. A porta precisa
-estar publicada porque o callback volta pro seu navegador:
+O ML só aceita `authorization_code`, então autorize uma vez:
 
 ```bash
-docker compose run --rm --service-ports amazon_pay ml-auth
+docker compose run --rm amazon_pay ml-auth
 ```
 
-O container imprime a URL (não há navegador dentro dele) — abra, autorize, e o
-token fica salvo em `./data/promos.db`. Não precisa repetir: o `refresh_token`
-mantém o acesso vivo.
+O comando imprime uma URL. Abra, autorize, e o navegador vai redirecionar para
+o endereço registrado — **a página não vai carregar nada útil, e tudo bem**. O
+que importa está na barra de endereços: copie a URL inteira e cole no terminal.
+O token fica salvo em `./data/promos.db` e o `refresh_token` mantém o acesso
+vivo, então isso é uma vez só.
 
 ```bash
 docker compose run --rm amazon_pay test-whatsapp
