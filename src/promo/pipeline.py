@@ -14,6 +14,7 @@ from .config import (
     ROOT,
     Rules,
     WhatsAppConfig,
+    track_limit,
 )
 from .copywriter import Copywriter, fallback_copy
 from .db import (
@@ -23,6 +24,7 @@ from .db import (
     mark_post_sent,
     pending_posts,
     record_offer,
+    tracked_external_ids,
 )
 from .delivery import WhatsApp, WindowClosed
 from .models import Offer, ScoredOffer
@@ -66,7 +68,11 @@ def build_sources() -> list:
     return sources
 
 
-def collect(sources: list, watchlist: list[Watch]) -> list[Offer]:
+def collect(
+    sources: list, watchlist: list[Watch], rules: Rules | None = None
+) -> list[Offer]:
+    """Descobre produtos novos pela busca e reconsulta os que ja conhecemos."""
+    rules = rules or Rules.load()
     offers: list[Offer] = []
     for source in sources:
         for watch in watchlist:
@@ -79,7 +85,47 @@ def collect(sources: list, watchlist: list[Watch]) -> list[Offer]:
                 found = [o for o in found if o.price <= watch.max_price]
             offers.extend(found)
             log.info("%s: %d ofertas para '%s'", source.name, len(found), watch.term)
+
+        offers.extend(refetch_tracked(source, rules))
     return offers
+
+
+def refetch_tracked(source, rules: Rules) -> list[Offer]:
+    """Reconsulta por ID os produtos ja no banco.
+
+    Sem isso o historico so avanca enquanto o produto continuar no top 50 da
+    busca, e quase nenhum chega aos MIN_OBSERVATIONS dias exigidos pelo filtro.
+
+    Sem max_price aqui de proposito: o produto ja passou pelo teto quando foi
+    descoberto, e se o preco subiu acima dele isso e justamente a informacao
+    que faz a baseline valer.
+    """
+    fetch = getattr(source, "fetch_by_ids", None)
+    if fetch is None:
+        return []  # fonte sem multiget (Amazon)
+
+    limit = track_limit()
+    with connect() as conn:
+        ids = tracked_external_ids(conn, source.name, rules.baseline_window_days, limit)
+
+    if not ids:
+        return []
+    if len(ids) == limit:
+        log.warning(
+            "%s: teto de %d produtos reconsultados atingido; o resto fica sem "
+            "observacao nesta rodada (suba ML_TRACK_LIMIT)",
+            source.name,
+            limit,
+        )
+
+    try:
+        found = fetch(ids)
+    except Exception as exc:  # noqa: BLE001 - idem: nao derruba a rodada
+        log.warning("%s falhou ao reconsultar %d produtos: %s", source.name, len(ids), exc)
+        return []
+
+    log.info("%s: %d de %d produtos reconsultados", source.name, len(found), len(ids))
+    return found
 
 
 def run(dry_run: bool = False) -> list[ScoredOffer]:
@@ -87,7 +133,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     sources = build_sources()
     by_name = {source.name: source for source in sources}
 
-    offers = collect(sources, load_watchlist())
+    offers = collect(sources, load_watchlist(), rules)
 
     picked: list[ScoredOffer] = []
     with connect() as conn:

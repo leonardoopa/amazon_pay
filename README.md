@@ -159,6 +159,25 @@ Aqui dá pra usar cron em vez do daemon:
 
 Outros comandos: `stats` (estado do banco), `flush` (reenvia a fila).
 
+## Como a coleta acompanha os preços
+
+Cada rodada faz duas coisas por fonte:
+
+1. **Descoberta** — busca cada termo do `watchlist.json` e pega o top 50 do
+   ranking. É como um produto entra no radar.
+2. **Acompanhamento** — reconsulta por ID (`/items?ids=`, 20 por chamada) todos
+   os produtos que já estão no banco e foram vistos dentro da janela da
+   baseline.
+
+O passo 2 é o que faz o histórico existir. O ranking de busca muda todo dia, e
+justamente os produtos que entram em promoção são os que oscilam — sem
+reconsultar por ID eles sumiriam do radar antes de acumular os
+`MIN_OBSERVATIONS` dias que o filtro exige, e quase nada seria postado.
+
+O teto por rodada é `ML_TRACK_LIMIT` (padrão 400 = 20 chamadas). Quando bate no
+teto a coleta avisa no log em vez de truncar em silêncio. Produto que some do ML
+para de receber observação e sai da lista sozinho quando envelhece.
+
 ## Como o filtro decide
 
 `src/promo/scoring.py` é o coração do projeto:

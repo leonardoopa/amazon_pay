@@ -129,3 +129,13 @@ def gemini_api_key() -> str:
 def run_interval_seconds() -> int:
     """Intervalo do modo daemon (usado pelo container)."""
     return _int("RUN_INTERVAL_SECONDS", 7200)
+
+
+def track_limit() -> int:
+    """Teto de produtos reconsultados por rodada, por fonte.
+
+    Cada 20 IDs viram 1 chamada, entao o padrao custa 20 requisicoes -- pouco
+    perto do limite do ML e suficiente pra uma watchlist de algumas dezenas de
+    termos. Suba se a coleta comecar a avisar que truncou.
+    """
+    return _int("ML_TRACK_LIMIT", 400)

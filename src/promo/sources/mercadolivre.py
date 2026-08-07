@@ -40,6 +40,23 @@ PROVIDER = "mercadolivre"
 # `read` basta: o bot so consulta catalogo publico, nunca escreve na conta.
 SCOPES = "offline_access read"
 
+# Teto do /items?ids= do ML numa chamada so.
+MULTIGET_CHUNK = 20
+
+
+def _best_image(item: dict) -> str | None:
+    """Maior imagem disponivel do anuncio.
+
+    O `thumbnail` da busca tem ~100px -- serve pra listagem, fica horrivel
+    como imagem de post. O multiget traz `pictures` com a resolucao cheia,
+    entao preferimos ela sempre que vier.
+    """
+    for picture in item.get("pictures") or []:
+        url = picture.get("secure_url") or picture.get("url")
+        if url:
+            return url
+    return item.get("thumbnail")
+
 
 def new_pkce_pair() -> tuple[str, str]:
     """Gera (code_verifier, code_challenge) no metodo S256 do RFC 7636.
@@ -155,6 +172,7 @@ class MercadoLivre:
     # ---------- Busca ----------
 
     def search(self, keyword: str, limit: int = 50) -> list[Offer]:
+        """Descobre produtos novos: top N do ranking de busca do termo."""
         response = self._client.get(
             f"{API_HOST}/sites/{self.config.site_id}/search",
             params={"q": keyword, "limit": min(limit, 50)},
@@ -163,8 +181,37 @@ class MercadoLivre:
         response.raise_for_status()
         return [self._to_offer(item) for item in response.json().get("results", [])]
 
+    def fetch_by_ids(self, external_ids: list[str]) -> list[Offer]:
+        """Reconsulta produtos que ja estao no banco, por ID.
+
+        A busca so devolve o top 50 do ranking do momento, e o ranking muda
+        todo dia -- um produto so acumularia os MIN_OBSERVATIONS dias se
+        ficasse no topo o tempo todo. Justamente os que entram em promocao
+        oscilam e sumiriam do radar antes da baseline amadurecer. Aqui o
+        historico continua independente de onde ele esteja na busca.
+        """
+        offers: list[Offer] = []
+        token = self.access_token()  # uma vez so: o loop abaixo nao renova
+
+        for start in range(0, len(external_ids), MULTIGET_CHUNK):
+            chunk = external_ids[start : start + MULTIGET_CHUNK]
+            response = self._client.get(
+                f"{API_HOST}/items",
+                params={"ids": ",".join(chunk)},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            response.raise_for_status()
+            for entry in response.json():
+                # Anuncio removido volta com code != 200. Ignorar basta: sem
+                # observacao nova o last_seen_at envelhece e ele sai da lista.
+                if entry.get("code") == 200:
+                    offers.append(self._to_offer(entry["body"]))
+        return offers
+
     def _to_offer(self, item: dict) -> Offer:
         shipping = item.get("shipping") or {}
+        # `status` so vem no multiget; na busca o default mantem o comportamento.
+        active = item.get("status", "active") == "active"
         return Offer(
             source=PROVIDER,
             external_id=item["id"],
@@ -175,9 +222,9 @@ class MercadoLivre:
             ),
             url=item.get("permalink", ""),
             currency=item.get("currency_id", "BRL"),
-            image_url=item.get("thumbnail"),
+            image_url=_best_image(item),
             category=item.get("category_id"),
-            available=item.get("available_quantity", 0) > 0,
+            available=active and item.get("available_quantity", 0) > 0,
             free_shipping=bool(shipping.get("free_shipping")),
         )
 

@@ -149,6 +149,32 @@ def price_history(
     return [row["price"] for row in rows]
 
 
+def tracked_external_ids(
+    conn: sqlite3.Connection, source: str, window_days: int, limit: int
+) -> list[str]:
+    """IDs ja conhecidos que valem reconsultar nesta rodada.
+
+    Descarta quem sumiu ha mais de `window_days`: historico mais velho que a
+    janela da baseline nao serve pra nada, e sem o corte a lista cresceria
+    indefinidamente a cada termo novo na watchlist.
+
+    Comparo por substr em vez de date() porque last_seen_at e um ISO completo
+    com offset de fuso, e o date() do SQLite tropeca nisso.
+    """
+    today = now().date().isoformat()
+    rows = conn.execute(
+        """
+        SELECT external_id FROM products
+        WHERE source = ?
+          AND substr(last_seen_at, 1, 10) >= date(?, ?)
+        ORDER BY last_seen_at DESC
+        LIMIT ?
+        """,
+        (source, today, f"-{window_days} days", limit),
+    ).fetchall()
+    return [row["external_id"] for row in rows]
+
+
 def last_post(conn: sqlite3.Connection, product_id: str) -> sqlite3.Row | None:
     return conn.execute(
         """
