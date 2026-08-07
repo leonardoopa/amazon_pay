@@ -66,6 +66,27 @@ mantém o acesso vivo.
 docker compose run --rm amazon_pay test-whatsapp
 ```
 
+### Enquanto a conta do ML não é liberada
+
+A busca do ML responde **403 sem token** — não há como coletar antes da
+aprovação. Mas dá pra validar tudo que vem depois do coletor com dados
+sintéticos:
+
+```bash
+docker compose run --rm amazon_pay seed --days 60
+```
+
+```bash
+docker compose run --rm amazon_pay demo
+```
+
+O `demo` roda scoring + Gemini de ponta a ponta e imprime os posts, sem enviar
+nada. É o comando pra calibrar o tom do texto antes de ter dados reais. Use
+`--no-ai` pra ver o texto de fallback, e `seed --clear` pra apagar os dados
+sintéticos — eles ficam com source `demo` e nunca se misturam ao histórico real.
+
+### Depois de liberada
+
 Nos primeiros 7-10 dias, rode só coletando. O filtro precisa de histórico: sem
 pelo menos 7 dias de preço por produto (`MIN_OBSERVATIONS`) ele não tem como
 saber o que é preço normal, e não posta nada.
