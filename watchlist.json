@@ -8,6 +8,8 @@
     { "term": "ssd nvme 1tb", "max_price": 700 },
     { "term": "air fryer", "max_price": 600 }
   ],
+  "_comment_coupon": "Cupom de campanha do ML (vale no site todo, por alguns dias). A API nao expoe cupom, entao esse e o unico jeito. `ate` e obrigatorio na pratica: cupom vencido no post faz a pessoa clicar, falhar e desconfiar do grupo. Deixe code vazio pra sair sem cupom.",
+  "coupon": { "code": "", "ate": "" },
   "_comment_categories": "Mais vendidos por categoria. Cada categoria custa ~21 chamadas por rodada (a lista + 2 por produto), entao va devagar. Rode `promo ml-categories` pra ver os IDs.",
   "categories": [
     { "id": "MLB1051", "name": "Celulares e Telefones", "max_price": 2500 },

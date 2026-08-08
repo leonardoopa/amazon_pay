@@ -20,6 +20,9 @@ class Offer:
     category: str | None = None
     available: bool = True
     free_shipping: bool = False
+    # Anuncio de loja oficial no ML. Vale citar no post: e sinal de confianca,
+    # e o anuncio mais barato quase nunca e de loja oficial.
+    official_store: bool = False
 
     @property
     def product_id(self) -> str:
