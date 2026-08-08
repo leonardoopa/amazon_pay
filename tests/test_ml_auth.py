@@ -57,6 +57,57 @@ def test_recusa_entrada_vazia():
         parse_callback("   ", STATE)
 
 
+# ---------- redirect_uri divergente ----------
+#
+# Esse foi o bug que segurou o projeto: o .env apontava pra example.com e o
+# DevCenter pra outro dominio. Autorizar no navegador funcionava (quem manda
+# ali e o DevCenter), e so a troca do code falhava -- com um invalid_grant
+# generico. Cada diagnostico custava uma volta inteira no navegador, porque o
+# code e de uso unico.
+
+
+def test_recusa_redirect_diferente_do_env():
+    outro = f"https://outro.dominio.com/callback?code=TG-abc123&state={STATE}"
+    with pytest.raises(RuntimeError, match="redirect_uri"):
+        parse_callback(outro, STATE, expected_redirect_uri="https://example.com/callback")
+
+
+def test_erro_mostra_os_dois_valores():
+    """Saber que divergiu nao ajuda; saber qual e qual resolve em 10 segundos."""
+    outro = f"https://outro.dominio.com/callback?code=TG-abc123&state={STATE}"
+    with pytest.raises(RuntimeError) as erro:
+        parse_callback(outro, STATE, expected_redirect_uri="https://example.com/callback")
+
+    mensagem = str(erro.value)
+    assert "https://example.com/callback" in mensagem
+    assert "https://outro.dominio.com/callback" in mensagem
+
+
+def test_aceita_redirect_igual():
+    assert parse_callback(CALLBACK, STATE, expected_redirect_uri="https://example.com/callback") == "TG-abc123"
+
+
+def test_barra_final_nao_conta_como_divergencia():
+    """O DevCenter e o .env discordam de barra final o tempo todo, e o ML
+    aceita os dois -- barrar aqui seria falso positivo."""
+    assert (
+        parse_callback(CALLBACK, STATE, expected_redirect_uri="https://example.com/callback/")
+        == "TG-abc123"
+    )
+
+
+def test_query_solta_nao_dispara_a_comparacao():
+    """Colar so a query string e legitimo e nao carrega dominio nenhum."""
+    assert (
+        parse_callback(
+            f"code=TG-abc123&state={STATE}",
+            STATE,
+            expected_redirect_uri="https://example.com/callback",
+        )
+        == "TG-abc123"
+    )
+
+
 def test_erro_sem_state_nao_passa_como_sucesso():
     """Um callback de erro sem state nao pode virar 'code ausente' generico."""
     with pytest.raises(RuntimeError, match="recusou|State"):

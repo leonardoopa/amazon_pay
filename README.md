@@ -1,24 +1,34 @@
 # amazon_pay — bot de ofertas para grupo de WhatsApp
 
-Monitora preços no Mercado Livre e na Amazon, guarda o histórico, e só te avisa
+Monitora preços no Mercado Livre e na Amazon, guarda o histórico, e só posta
 quando o preço cai **de verdade** contra a média histórica — não contra o
-"de R$X por R$Y" inflado da loja. O Gemini escreve o post pronto e manda no seu
-WhatsApp; você revisa e encaminha pro grupo.
+"de R$X por R$Y" inflado da loja. O Gemini escreve o post e ele sai no grupo.
 
 ```
 [daemon] → coleta ML/Amazon → SQLite (1 preço/dia) → filtro de desconto real
                                                           ↓
-                                     Gemini escreve o post → seu WhatsApp
-                                                                  ↓
-                                                       você encaminha pro grupo
+                                            Gemini escreve o post
+                                                          ↓
+                                        DELIVERY_BACKEND decide o resto
+                                     ↙                                ↘
+                        evolution: posta no grupo        cloud: manda pra você,
+                        (Baileys, não oficial)           você encaminha
 ```
 
-## Por que você posta e não o bot
+## Os dois caminhos de entrega
 
-A Cloud API oficial do WhatsApp **não envia para grupos comuns**. As libs
-não-oficiais (Baileys, whatsapp-web.js) violam os termos e derrubam o número.
-Então o bot te manda o texto no privado e você encaminha — o que ainda te dá
-um passo de revisão antes de qualquer coisa ir pro grupo.
+A Cloud API oficial da Meta **não alcança grupo comum**. A Groups API que a
+Meta lançou só serve grupo criado pelo próprio bot, com teto de **8
+participantes** — não é grupo de ofertas. Então são dois caminhos, e a escolha
+é sua:
+
+| `DELIVERY_BACKEND` | O que acontece | O custo |
+|---|---|---|
+| `cloud` (padrão) | O post chega no seu WhatsApp e você encaminha | Um passo manual por post, mas zero risco e você revisa antes |
+| `evolution` | O post cai no grupo sozinho | Roda em cima do Baileys: **viola os Termos da Meta e o número pode ser banido** |
+
+Se for de `evolution`, pareie um **chip secundário**. Não o seu número pessoal
+— um ban leva junto o WhatsApp da sua vida, não só o do bot.
 
 ## Setup
 
@@ -103,6 +113,18 @@ sintéticos — eles ficam com source `demo` e nunca se misturam ao histórico r
 
 ### Depois de liberada
 
+Antes de qualquer coisa, meça o que a API ainda entrega **nesta conta**:
+
+```bash
+docker compose run --rm amazon_pay ml-probe
+```
+
+O ML vem fechando a API pública endpoint por endpoint, sem anunciar e sem
+atualizar a doc — `/sites/MLB/search` hoje devolve 403 por política mesmo com
+token válido e app registrado, enquanto `/products/search` responde normal.
+O `ml-probe` bate em cada candidato com o seu token e diz qual está de pé, pra
+a estratégia de coleta sair de medição e não da documentação.
+
 Nos primeiros 7-10 dias, rode só coletando. O filtro precisa de histórico: sem
 pelo menos 7 dias de preço por produto (`MIN_OBSERVATIONS`) ele não tem como
 saber o que é preço normal, e não posta nada.
@@ -159,6 +181,145 @@ Aqui dá pra usar cron em vez do daemon:
 
 Outros comandos: `stats` (estado do banco), `flush` (reenvia a fila).
 
+## Como a coleta acompanha os preços
+
+O ML aposentou `/sites/MLB/search` e `/items` para apps comuns — os dois devolvem
+403 do policy agent mesmo com token válido e permissões concedidas. A coleta usa
+o **catálogo**, que continua aberto:
+
+1. **Descoberta** — `/products/search?q=` devolve produtos de catálogo já com
+   nome e fotos em resolução cheia. É como um produto entra no radar.
+2. **Preço** — `/products/{id}/items` lista os anúncios daquele produto, com
+   preço. Um celular típico tem 27 anúncios de vendedores diferentes, de
+   R$ 1.289 a R$ 1.899.
+3. **Acompanhamento** — a cada rodada, os produtos já no banco são reconsultados
+   pelo passo 2. Nome e foto vêm do banco, então é **uma chamada por produto**.
+
+### Descoberta por categoria
+
+Não existe endpoint de ofertas ou promoções para afiliado — o que o ML expõe
+com esse nome (`/seller-promotions/*`) é do lado do **vendedor**, sobre os
+anúncios dele. O mais perto disso é `/highlights/{site}/category/{id}`: os mais
+vendidos da categoria.
+
+Serve para achar o que você não pensaria em colocar na watchlist. Configure em
+`watchlist.json`:
+
+```json
+"categories": [
+  { "id": "MLB1051", "name": "Celulares e Telefones", "max_price": 2500 }
+]
+```
+
+Os IDs saem de:
+
+```bash
+promo ml-categories
+```
+
+**É a via mais cara das duas.** A lista de destaques traz só IDs — sem nome,
+sem preço — então cada produto vira duas chamadas (`/products/{id}` para nome e
+foto, `/products/{id}/items` para o preço), contra uma na busca por termo. Com o
+teto padrão de 10 produtos, cada categoria custa ~21 requisições por rodada.
+Comece com uma ou duas.
+
+Um detalhe do formato: a lista mistura `PRODUCT` com `USER_PRODUCT` (4 em 20 em
+algumas categorias). `USER_PRODUCT` é anúncio de um vendedor específico, não
+produto de catálogo, e `/products/{id}/items` não responde por ele — a coleta
+descarta esses antes de gastar chamada.
+
+A unidade de rastreio é o **produto de catálogo**, não o anúncio — e isso é
+melhor: o preço registrado é o **menor entre os anúncios ativos e novos**, que é
+o que interessa pro grupo. Anúncio individual some da noite pro dia; o produto
+fica. Anúncio usado é descartado, tanto por qualidade quanto porque fica fora
+das regras do programa de afiliados.
+
+O passo 3 é o que faz o histórico existir. Sem ele, um produto só acumularia
+observação enquanto aparecesse na busca, e quase nada chegaria aos
+`MIN_OBSERVATIONS` dias que o filtro exige.
+
+**Custo de API:** `ML_TRACK_LIMIT` (padrão 150) é literalmente quantas
+requisições a reconsulta gasta por rodada, já que não há multiget. Com o daemon
+de 2h isso dá ~1.800 chamadas/dia. A coleta avisa no log quando trunca.
+
+> O token do OAuth fica na mesma base do histórico (`data/promos.db`). Apagar o
+> banco derruba a autorização — é preciso rodar `ml-auth` de novo.
+
+## Link de afiliado
+
+**Não dá para montar link de afiliado do ML.** Um link real do programa é assim:
+
+```
+mercadolivre.com.br/social/<seu-nickname>?matt_word=...&matt_tool=...&ref=<blob>
+```
+
+O `ref` tem ~150 bytes assinados pelo servidor do ML, e **o ID do produto não
+aparece em lugar nenhum da URL** — ele está dentro do blob. Concatenar
+`matt_word`/`matt_tool` na URL do produto, que é o que vários projetos por aí
+fazem, produz um endereço diferente do que o programa emite. E não existe API
+oficial: o ML não expõe nenhuma.
+
+O link curto `meli.la` é o encurtador do próprio ML — pode usar. Encurtador de
+terceiros é proibido pelos termos do programa.
+
+### Automático (pelo painel)
+
+O bot usa o mesmo endpoint que o Link Builder do site chama. **Não é API
+pública** — é página interna, autenticada por cookie de sessão, e vai quebrar
+quando o ML mexer nela. Por isso toda falha aqui é não-fatal: a oferta é
+segurada, a rodada continua, e o `promo link` manual segue valendo.
+
+Capture o cookie uma vez: com o painel aberto e logado, DevTools → Network →
+qualquer request para `mercadolivre.com.br` → Copy → Copy as cURL, e pegue o
+valor do header `Cookie`. No `.env`:
+
+```
+ML_AFFILIATE_COOKIE=<o valor do header Cookie>
+ML_AFFILIATE_TAG=<seu nickname de afiliado, minúsculo>
+```
+
+Esse cookie é **acesso à sua conta inteira**, não só ao painel. Ele mora no
+`.env` (que é gitignored) e nunca aparece em log — as mensagens de erro citam
+o nome da variável, nunca o valor. Quando expirar, o erro diz para recapturar.
+
+Depois disso, o `run` gera o link sozinho quando a oferta passa no filtro. Para
+adiantar os produtos já rastreados, em lote:
+
+```bash
+promo link-all
+```
+
+O `x-csrf-token` do request **não** é o cookie `_csrf` — é outro valor, que
+muda a cada carregamento da página. Por isso o código busca o painel e raspa
+o `<meta name="csrf-token">` antes de postar, reaproveitando o token entre
+chamadas (a página tem 770 KB).
+
+Nem todo anúncio é elegível: o painel responde `200` mas com
+`"URL not allowed in affiliates program"` no item. Isso fica registrado em
+`affiliate_blocked` por 30 dias — sem isso o bot perguntaria de novo, para o
+mesmo anúncio inelegível, em toda rodada, para sempre.
+
+### Manual (o caminho de volta)
+
+Sem `ML_AFFILIATE_COOKIE` configurado, ou com ele expirado, o fluxo é o de
+antes:
+
+```bash
+promo pending-links
+```
+
+Lista os produtos rastreados sem link, com mais histórico primeiro. Gere em
+[mercadolivre.com.br/afiliados/linkbuilder](https://www.mercadolivre.com.br/afiliados/linkbuilder)
+e salve:
+
+```bash
+promo link MLB3953571145 https://meli.la/xxxxxxx
+```
+
+Oferta que passa no filtro **sem** link não vira post: o `run` segura ela e
+imprime o ID e a URL no log. Postar sem link seria queimar a oferta por
+comissão zero.
+
 ## Como o filtro decide
 
 `src/promo/scoring.py` é o coração do projeto:
@@ -172,7 +333,48 @@ Outros comandos: `stats` (estado do banco), `flush` (reenvia a fila).
 Tudo ajustável no `.env`. Mediana em vez de média é proposital: aguenta um pico
 de preço isolado sem distorcer.
 
+## Postar direto no grupo (Evolution API)
+
+Só com `DELIVERY_BACKEND=evolution`. Releia o aviso de ban lá em cima antes.
+
+Invente uma `EVOLUTION_API_KEY` no `.env` — ela é a senha do gateway, e quem a
+tiver manda mensagem como o número pareado. Depois:
+
+```bash
+docker compose up -d evolution
+```
+
+```bash
+docker compose run --rm amazon_pay wa-connect
+```
+
+O `wa-connect` cria a instância e devolve o código de pareamento. No celular do
+chip secundário: WhatsApp → Aparelhos conectados → Conectar. O código expira em
+menos de um minuto; se perder, rode de novo.
+
+Pareado, descubra o JID do grupo (grupo não tem telefone, tem JID):
+
+```bash
+docker compose run --rm amazon_pay wa-groups
+```
+
+Cole o `...@g.us` do grupo certo em `EVOLUTION_GROUP_JID` e teste:
+
+```bash
+docker compose run --rm amazon_pay test-whatsapp
+```
+
+A sessão do WhatsApp mora no volume `evolution_instances`. Apagar esse volume
+significa reparear pelo QR. E a porta 8080 fica presa em `127.0.0.1` de
+propósito: exposta na rede, ela é acesso total ao WhatsApp pareado.
+
+Neste backend não existe janela de 24h — ela é regra da Cloud API da Meta, e o
+Baileys não passa por ela. A fila só acumula por erro de rede ou instância
+caída (`NotConnected`, que o log identifica pedindo `wa-connect`).
+
 ## Janela de 24 horas do WhatsApp
+
+Só vale no backend `cloud`.
 
 Texto livre só sai se você falou com o número do bot nas últimas 24h. Fora
 disso a Meta exige template aprovado — o bot manda um template curto pedindo
@@ -205,12 +407,14 @@ mensagens por dia) fica em centavos.
 | Arquivo | O que faz |
 |---|---|
 | `src/promo/scoring.py` | decide o que é promoção real |
-| `src/promo/db.py` | schema + histórico de preços |
-| `src/promo/sources/mercadolivre.py` | OAuth + busca ML |
+| `src/promo/db.py` | schema, histórico de preços e links de afiliado |
+| `src/promo/sources/mercadolivre.py` | OAuth, busca de catálogo, preço e link de afiliado |
+| `src/promo/sources/ml_linkbuilder.py` | gera o link pelo painel (endpoint interno, frágil) |
 | `src/promo/sources/amazon.py` | Creators API |
 | `src/promo/copywriter.py` | prompt e chamada ao Gemini |
-| `src/promo/delivery/whatsapp.py` | Cloud API + janela de 24h |
+| `src/promo/delivery/whatsapp.py` | Cloud API, imagem + legenda, janela de 24h |
+| `src/promo/delivery/evolution.py` | Baileys via Evolution API, posta direto no grupo |
 | `src/promo/pipeline.py` | orquestra tudo |
 | `src/promo/cli.py` | comandos, incluindo o `daemon` |
-| `watchlist.json` | termos monitorados (montado no container, editável sem rebuild) |
+| `watchlist.json` | termos e categorias monitorados (montado no container, editável sem rebuild) |
 | `Dockerfile` / `docker-compose.yml` | imagem e serviço |

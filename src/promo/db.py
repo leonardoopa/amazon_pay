@@ -39,10 +39,31 @@ CREATE TABLE IF NOT EXISTS posts (
     baseline     REAL NOT NULL,
     discount_pct REAL NOT NULL,
     copy         TEXT NOT NULL,
+    image_url    TEXT,           -- imagem enviada junto do texto
+    attempts     INTEGER NOT NULL DEFAULT 0,
     status       TEXT NOT NULL,  -- pending | sent | failed
     error        TEXT,
     created_at   TEXT NOT NULL,
     sent_at      TEXT
+);
+
+-- Link de afiliado gerado a mao no Link Builder do ML. Nao da pra montar:
+-- o link real aponta pra /social/<nickname> com um `ref` assinado pelo ML,
+-- e o ID do produto nem aparece na URL. Ver README.
+CREATE TABLE IF NOT EXISTS affiliate_links (
+    product_id TEXT PRIMARY KEY REFERENCES products(id),
+    url        TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+-- Produtos que o programa de afiliados recusa ("URL not allowed in affiliates
+-- program", codigo 111). Sem registrar isso, o pipeline pediria link pro mesmo
+-- anuncio inelegivel em toda rodada, pra sempre. A elegibilidade muda com o
+-- tempo, entao a recusa expira -- ver AFFILIATE_RECHECK_DAYS.
+CREATE TABLE IF NOT EXISTS affiliate_blocked (
+    product_id TEXT PRIMARY KEY REFERENCES products(id),
+    reason     TEXT NOT NULL,
+    checked_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS oauth_tokens (
@@ -57,6 +78,22 @@ CREATE INDEX IF NOT EXISTS idx_price_history_product
 CREATE INDEX IF NOT EXISTS idx_posts_product
     ON posts(product_id, created_at DESC);
 """
+
+# Colunas acrescentadas depois do schema original. O CREATE TABLE IF NOT EXISTS
+# nao mexe em tabela que ja existe, entao banco antigo precisa do ALTER.
+# Tentativas de envio antes de desistir de um post.
+MAX_SEND_ATTEMPTS = 3
+
+# Quanto tempo respeitar uma recusa do programa de afiliados antes de perguntar
+# de novo. Elegibilidade muda (o vendedor entra no programa, a categoria passa
+# a ser aceita), entao a recusa nao pode ser definitiva -- mas 30 dias evitam
+# transformar cada anuncio inelegivel numa consulta por rodada.
+AFFILIATE_RECHECK_DAYS = 30
+
+MIGRATIONS = [
+    ("posts", "image_url", "ALTER TABLE posts ADD COLUMN image_url TEXT"),
+    ("posts", "attempts", "ALTER TABLE posts ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"),
+]
 
 
 def now() -> datetime:
@@ -82,6 +119,10 @@ def connect() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        for table, column, statement in MIGRATIONS:
+            existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                conn.execute(statement)
 
 
 def record_offer(conn: sqlite3.Connection, offer: Offer) -> None:
@@ -149,15 +190,125 @@ def price_history(
     return [row["price"] for row in rows]
 
 
+def tracked_products(
+    conn: sqlite3.Connection, source: str, window_days: int, limit: int
+) -> list[tuple[str, str, str | None]]:
+    """Produtos que valem reconsultar: (external_id, titulo, imagem).
+
+    Devolve titulo e imagem junto de proposito -- eles quase nao mudam, e
+    carrega-los do banco evita uma segunda chamada de API por produto na
+    reconsulta, que e o passo mais caro da rodada.
+
+    Descarta quem sumiu ha mais de `window_days`: historico mais velho que a
+    janela da baseline nao serve pra nada, e sem o corte a lista cresceria
+    indefinidamente a cada termo novo na watchlist.
+
+    Comparo por substr em vez de date() porque last_seen_at e um ISO completo
+    com offset de fuso, e o date() do SQLite tropeca nisso.
+    """
+    today = now().date().isoformat()
+    rows = conn.execute(
+        """
+        SELECT external_id, title, image_url FROM products
+        WHERE source = ?
+          AND substr(last_seen_at, 1, 10) >= date(?, ?)
+        ORDER BY last_seen_at DESC
+        LIMIT ?
+        """,
+        (source, today, f"-{window_days} days", limit),
+    ).fetchall()
+    return [(row["external_id"], row["title"], row["image_url"]) for row in rows]
+
+
 def last_post(conn: sqlite3.Connection, product_id: str) -> sqlite3.Row | None:
+    """Ultimo post do produto que ja saiu ou ainda vai sair.
+
+    Inclui 'pending' de proposito: quando a janela de 24h fecha, o post fica
+    na fila e a rodada seguinte repescava o mesmo produto, criando duplicata
+    que so aparecia quando a janela reabria e as duas saiam juntas.
+    """
     return conn.execute(
         """
         SELECT * FROM posts
-        WHERE product_id = ? AND status = 'sent'
+        WHERE product_id = ? AND status IN ('sent', 'pending')
         ORDER BY created_at DESC LIMIT 1
         """,
         (product_id,),
     ).fetchone()
+
+
+def affiliate_link(conn: sqlite3.Connection, product_id: str) -> str | None:
+    row = conn.execute(
+        "SELECT url FROM affiliate_links WHERE product_id = ?", (product_id,)
+    ).fetchone()
+    return row["url"] if row else None
+
+
+def save_affiliate_link(conn: sqlite3.Connection, product_id: str, url: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO affiliate_links (product_id, url, created_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(product_id) DO UPDATE SET url = excluded.url
+        """,
+        (product_id, url, _iso(now())),
+    )
+
+
+def products_missing_link(conn: sqlite3.Connection, limit: int = 50) -> list[sqlite3.Row]:
+    """Produtos rastreados que ainda nao tem link de afiliado.
+
+    Ordenados pelos que mais se aproximam de virar post (mais dias de
+    historico primeiro), pra gerar link do que tem chance de sair.
+
+    Fora da lista: quem o programa recusou ha menos de AFFILIATE_RECHECK_DAYS.
+    Sem esse corte, cada rodada gastaria uma consulta por anuncio inelegivel --
+    e eles nunca saem do banco, entao o desperdicio so cresce.
+    """
+    return conn.execute(
+        """
+        SELECT p.id, p.external_id, p.title, p.url, COUNT(h.observed_on) AS dias
+        FROM products p
+        JOIN price_history h ON h.product_id = p.id
+        LEFT JOIN affiliate_links a ON a.product_id = p.id
+        LEFT JOIN affiliate_blocked b
+               ON b.product_id = p.id
+              AND b.checked_at >= datetime(?, ?)
+        WHERE a.product_id IS NULL
+          AND b.product_id IS NULL
+        GROUP BY p.id
+        ORDER BY dias DESC, p.last_seen_at DESC
+        LIMIT ?
+        """,
+        (_iso(now()), f"-{AFFILIATE_RECHECK_DAYS} days", limit),
+    ).fetchall()
+
+
+def mark_affiliate_blocked(
+    conn: sqlite3.Connection, product_id: str, reason: str
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO affiliate_blocked (product_id, reason, checked_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(product_id) DO UPDATE SET
+            reason     = excluded.reason,
+            checked_at = excluded.checked_at
+        """,
+        (product_id, reason[:200], _iso(now())),
+    )
+
+
+def affiliate_blocked(conn: sqlite3.Connection, product_id: str) -> str | None:
+    """Motivo da recusa, se ela ainda vale. None = pode tentar de novo."""
+    row = conn.execute(
+        """
+        SELECT reason FROM affiliate_blocked
+        WHERE product_id = ? AND checked_at >= datetime(?, ?)
+        """,
+        (product_id, _iso(now()), f"-{AFFILIATE_RECHECK_DAYS} days"),
+    ).fetchone()
+    return row["reason"] if row else None
 
 
 def create_post(
@@ -167,13 +318,15 @@ def create_post(
     baseline: float,
     discount_pct: float,
     copy: str,
+    image_url: str | None = None,
 ) -> int:
     cursor = conn.execute(
         """
-        INSERT INTO posts (product_id, price, baseline, discount_pct, copy, status, created_at)
-        VALUES (?, ?, ?, ?, ?, 'pending', ?)
+        INSERT INTO posts (product_id, price, baseline, discount_pct, copy,
+                           image_url, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
         """,
-        (product_id, price, baseline, discount_pct, copy, _iso(now())),
+        (product_id, price, baseline, discount_pct, copy, image_url, _iso(now())),
     )
     return int(cursor.lastrowid)
 
@@ -181,7 +334,7 @@ def create_post(
 def pending_posts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Posts que ficaram na fila (janela de 24h fechada, erro de rede etc.)."""
     return conn.execute(
-        "SELECT id, copy FROM posts WHERE status = 'pending' ORDER BY created_at"
+        "SELECT id, copy, image_url FROM posts WHERE status = 'pending' ORDER BY created_at"
     ).fetchall()
 
 
@@ -192,10 +345,23 @@ def mark_post_sent(conn: sqlite3.Connection, post_id: int) -> None:
     )
 
 
-def mark_post_failed(conn: sqlite3.Connection, post_id: int, error: str) -> None:
+def mark_post_failed(
+    conn: sqlite3.Connection, post_id: int, error: str, max_attempts: int = MAX_SEND_ATTEMPTS
+) -> None:
+    """Conta a tentativa e so desiste depois de `max_attempts`.
+
+    Antes um timeout de rede marcava 'failed' na primeira falha, e o flush so
+    busca 'pending' -- a oferta era perdida pra sempre por um erro transitorio.
+    """
     conn.execute(
-        "UPDATE posts SET status = 'failed', error = ? WHERE id = ?",
-        (error[:500], post_id),
+        """
+        UPDATE posts
+        SET attempts = attempts + 1,
+            error    = ?,
+            status   = CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'pending' END
+        WHERE id = ?
+        """,
+        (error[:500], max_attempts, post_id),
     )
 
 

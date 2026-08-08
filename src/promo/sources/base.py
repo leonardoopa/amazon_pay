@@ -17,3 +17,8 @@ class Source(Protocol):
     def affiliate_url(self, offer: Offer) -> str:
         """Aplica a tag de afiliado na URL do produto."""
         ...
+
+    # Opcional, fora do Protocol de proposito: `fetch_by_ids(ids) -> list[Offer]`,
+    # que reconsulta produtos ja conhecidos sem passar pela busca. Quem
+    # implementa mantem o historico avancando mesmo quando o produto sai do
+    # ranking; o pipeline detecta por getattr e simplesmente pula quem nao tem.

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import secrets
 import urllib.parse
 import webbrowser
@@ -28,17 +29,59 @@ from datetime import timedelta
 import httpx
 
 from ..config import MercadoLivreConfig
-from ..db import connect, load_token, now, save_token
+from ..db import (
+    affiliate_blocked,
+    affiliate_link,
+    connect,
+    mark_affiliate_blocked,
+    load_token,
+    now,
+    save_affiliate_link,
+    save_token,
+)
 from ..models import Offer
 
 AUTH_HOST = "https://auth.mercadolivre.com.br"
 API_HOST = "https://api.mercadolibre.com"
 PROVIDER = "mercadolivre"
 
+log = logging.getLogger("promo")
+
 # `offline_access` e o que faz o ML devolver refresh_token; sem ele o acesso
 # morre com o access_token e o daemon para sozinho ate alguem reautorizar.
 # `read` basta: o bot so consulta catalogo publico, nunca escreve na conta.
 SCOPES = "offline_access read"
+
+# Site publico: o catalogo nao devolve permalink (vem string vazia), entao a
+# URL do produto e montada a partir do ID.
+SITE_HOST = "https://www.mercadolivre.com.br"
+
+# Quantos produtos de catalogo pegar por termo da watchlist. Cada produto
+# custa um GET a mais pra descobrir o preco, entao isso multiplica a rodada.
+PRODUCTS_PER_KEYWORD = 10
+
+# Idem para os mais vendidos de uma categoria. O endpoint sempre devolve 20,
+# mas aqui cada produto custa DOIS GETs (nome/foto + preco) porque a lista de
+# destaques so traz IDs -- entao o teto e mais apertado que o da busca.
+PRODUCTS_PER_CATEGORY = 10
+
+
+def _best_image(product: dict) -> str | None:
+    """Maior imagem do produto de catalogo.
+
+    O catalogo ja entrega `pictures` na resolucao cheia (sufixo -F na CDN,
+    ~39 KB contra 1,7 KB do thumbnail), entao nao ha o que promover aqui.
+    O fallback do thumbnail fica pra quem vier de uma rota mais pobre.
+    """
+    for picture in product.get("pictures") or []:
+        url = picture.get("secure_url") or picture.get("url")
+        if url:
+            return url
+
+    thumbnail = product.get("thumbnail")
+    if thumbnail and "-I." in thumbnail:
+        return thumbnail.replace("-I.", "-O.")
+    return thumbnail
 
 
 def new_pkce_pair() -> tuple[str, str]:
@@ -60,6 +103,7 @@ class MercadoLivre:
     def __init__(self, config: MercadoLivreConfig) -> None:
         self.config = config
         self._client = httpx.Client(timeout=20.0)
+        self._builder = None  # LinkBuilder, criado sob demanda
 
     # ---------- OAuth ----------
 
@@ -154,59 +198,357 @@ class MercadoLivre:
 
     # ---------- Busca ----------
 
-    def search(self, keyword: str, limit: int = 50) -> list[Offer]:
+    def search(self, keyword: str, limit: int = PRODUCTS_PER_KEYWORD) -> list[Offer]:
+        """Descobre produtos de catalogo para um termo.
+
+        Uma chamada ja traz nome e fotos de cada produto; o preco vem depois,
+        um GET por produto em /products/{id}/items.
+        """
         response = self._client.get(
-            f"{API_HOST}/sites/{self.config.site_id}/search",
-            params={"q": keyword, "limit": min(limit, 50)},
+            f"{API_HOST}/products/search",
+            params={
+                "site_id": self.config.site_id,
+                "status": "active",
+                "q": keyword,
+                "limit": limit,
+            },
             headers={"Authorization": f"Bearer {self.access_token()}"},
         )
         response.raise_for_status()
-        return [self._to_offer(item) for item in response.json().get("results", [])]
 
-    def _to_offer(self, item: dict) -> Offer:
-        shipping = item.get("shipping") or {}
+        offers = []
+        for product in response.json().get("results", [])[:limit]:
+            offer = self._offer_for(
+                product["id"],
+                title=product.get("name") or "",
+                image_url=_best_image(product),
+            )
+            if offer is not None:
+                offers.append(offer)
+        return offers
+
+    def highlights(
+        self, category_id: str, limit: int = PRODUCTS_PER_CATEGORY
+    ) -> list[Offer]:
+        """Mais vendidos de uma categoria.
+
+        Este e o mais perto que o ML chega de "me diga o que esta bombando":
+        nao existe endpoint de ofertas/promocoes para afiliado, entao a
+        descoberta por categoria substitui ter que adivinhar termos de busca.
+
+        Cuidado com o custo: a lista traz so IDs, entao cada produto vira duas
+        chamadas -- uma pro nome e foto, outra pro preco.
+        """
+        response = self._client.get(
+            f"{API_HOST}/highlights/{self.config.site_id}/category/{category_id}",
+            headers={"Authorization": f"Bearer {self.access_token()}"},
+        )
+        if response.status_code == 404:
+            log.warning("Categoria %s nao tem destaques (ou nao existe)", category_id)
+            return []
+        response.raise_for_status()
+
+        # USER_PRODUCT e anuncio de um vendedor especifico, nao produto de
+        # catalogo -- /products/{id}/items nao responde por ele. Vem misturado
+        # na lista (4 em 20 em algumas categorias).
+        ids = [
+            item["id"]
+            for item in response.json().get("content", [])
+            if item.get("type") == "PRODUCT" and item.get("id")
+        ][:limit]
+
+        offers = []
+        for product_id in ids:
+            meta = self._product_meta(product_id)
+            if meta is None:
+                continue
+            title, image_url = meta
+            offer = self._offer_for(product_id, title=title, image_url=image_url)
+            if offer is not None:
+                offers.append(offer)
+        return offers
+
+    def _product_meta(self, product_id: str) -> tuple[str, str | None] | None:
+        """Nome e foto de um produto de catalogo.
+
+        So e preciso na descoberta por categoria: a busca por termo ja devolve
+        os dois na mesma resposta, e a reconsulta le do banco.
+        """
+        response = self._client.get(
+            f"{API_HOST}/products/{product_id}",
+            headers={"Authorization": f"Bearer {self.access_token()}"},
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        product = response.json()
+        return (product.get("name") or ""), _best_image(product)
+
+    def categories(self) -> list[tuple[str, str]]:
+        """Categorias raiz do site: (id, nome). Usado pelo `ml-categories`."""
+        response = self._client.get(
+            f"{API_HOST}/sites/{self.config.site_id}/categories",
+            headers={"Authorization": f"Bearer {self.access_token()}"},
+        )
+        response.raise_for_status()
+        return [(c["id"], c["name"]) for c in response.json()]
+
+    def fetch_by_ids(self, tracked: list[tuple[str, str, str | None]]) -> list[Offer]:
+        """Reconsulta produtos ja conhecidos: (external_id, titulo, imagem).
+
+        Nome e foto vem do banco em vez de uma segunda chamada -- eles quase
+        nao mudam, e o que interessa aqui e o preco de hoje. Um GET por
+        produto; o teto por rodada e ML_TRACK_LIMIT.
+        """
+        offers = []
+        for external_id, title, image_url in tracked:
+            offer = self._offer_for(external_id, title=title, image_url=image_url)
+            if offer is not None:
+                offers.append(offer)
+        return offers
+
+    def _offer_for(
+        self, product_id: str, title: str, image_url: str | None
+    ) -> Offer | None:
+        """Menor preco entre os anuncios ativos de um produto de catalogo.
+
+        O mesmo produto tem dezenas de anuncios de vendedores diferentes (27
+        num celular tipico, variando de R$ 1.289 a R$ 1.899). O que importa
+        pro grupo e o menor preco disponivel, entao a baseline e o historico
+        do minimo -- nao de um anuncio especifico, que pode sumir amanha.
+        """
+        response = self._client.get(
+            f"{API_HOST}/products/{product_id}/items",
+            headers={"Authorization": f"Bearer {self.access_token()}"},
+        )
+        if response.status_code == 404:
+            return None  # produto saiu do catalogo
+        response.raise_for_status()
+
+        # `condition` importa alem da qualidade: anuncio usado fica fora das
+        # regras do programa de afiliados.
+        candidatos = [
+            listing
+            for listing in response.json().get("results", [])
+            if listing.get("price") and listing.get("condition") == "new"
+        ]
+        if not candidatos:
+            return None
+
+        melhor = min(candidatos, key=lambda listing: listing["price"])
+        shipping = melhor.get("shipping") or {}
         return Offer(
             source=PROVIDER,
-            external_id=item["id"],
-            title=item["title"],
-            price=float(item["price"]),
+            external_id=product_id,
+            title=title,
+            price=float(melhor["price"]),
             original_price=(
-                float(item["original_price"]) if item.get("original_price") else None
+                float(melhor["original_price"]) if melhor.get("original_price") else None
             ),
-            url=item.get("permalink", ""),
-            currency=item.get("currency_id", "BRL"),
-            image_url=item.get("thumbnail"),
-            category=item.get("category_id"),
-            available=item.get("available_quantity", 0) > 0,
+            url=f"{SITE_HOST}/p/{product_id}",
+            currency=melhor.get("currency_id", "BRL"),
+            image_url=image_url,
+            category=melhor.get("category_id"),
+            available=True,  # ter anuncio ativo na lista ja e a disponibilidade
             free_shipping=bool(shipping.get("free_shipping")),
         )
 
     # ---------- Afiliado ----------
 
-    def affiliate_url(self, offer: Offer) -> str:
-        """Anexa os params do seu programa de afiliado ML.
+    def _link_builder(self) -> "LinkBuilder | None":
+        """Cliente do painel, ou None se a sessao nao foi configurada."""
+        from .ml_linkbuilder import LinkBuilder
 
-        O ML entrega esses params no painel de Afiliados (ex.: matt_tool /
-        matt_word). Deixe ML_AFFILIATE_PARAMS vazio pra postar link limpo.
+        if not (self.config.affiliate_cookie and self.config.affiliate_tag):
+            return None
+        if self._builder is None:
+            self._builder = LinkBuilder(
+                self.config.affiliate_cookie, self.config.affiliate_tag
+            )
+        return self._builder
+
+    def affiliate_url(self, offer: Offer) -> str | None:
+        """Link de afiliado do produto: do banco, ou gerado na hora.
+
+        Nao da pra montar esse link. Um link real do programa aponta pra
+        `mercadolivre.com.br/social/<nickname>?...&ref=<blob>`, onde o blob
+        tem ~150 bytes assinados pelo servidor e o ID do produto nem aparece
+        na URL. Concatenar matt_word/matt_tool na URL do produto -- que e o
+        que varios projetos por ai fazem -- produz um endereco diferente do
+        que o programa emite.
+
+        O banco vem primeiro e nao e so cache: e o que mantem os links dos
+        produtos ja postados quando o cookie do painel expira.
         """
-        if not self.config.affiliate_params:
-            return offer.url
-        separator = "&" if "?" in offer.url else "?"
-        return f"{offer.url}{separator}{self.config.affiliate_params}"
+        with connect() as conn:
+            existente = affiliate_link(conn, offer.product_id)
+            if existente:
+                return existente
+            recusado = affiliate_blocked(conn, offer.product_id)
+
+        if recusado:
+            # Ja sabemos que o programa nao aceita este anuncio. Perguntar de
+            # novo a cada rodada nao mudaria a resposta.
+            log.debug("%s fora do programa de afiliados: %s", offer.external_id, recusado)
+            return None
+
+        builder = self._link_builder()
+        if builder is None:
+            return None  # sem sessao: cai no fluxo manual do `promo link`
+
+        try:
+            resultado = builder.create([offer.url])
+        except Exception as exc:  # noqa: BLE001 - painel fora do ar segura a
+            # oferta, nao derruba a rodada. Sem link o post nao renderia nada.
+            log.warning("Link Builder falhou para %s: %s", offer.external_id, exc)
+            return None
+
+        motivo = resultado.recusados.get(offer.url)
+        if motivo:
+            log.info("%s fora do programa de afiliados: %s", offer.external_id, motivo)
+            with connect() as conn:
+                mark_affiliate_blocked(conn, offer.product_id, motivo)
+            return None
+
+        link = resultado.links.get(offer.url)
+        if not link:
+            log.warning("Link Builder nao devolveu link para %s", offer.external_id)
+            return None
+
+        with connect() as conn:
+            save_affiliate_link(conn, offer.product_id, link)
+        return link
 
 
-def parse_callback(pasted: str, expected_state: str) -> str:
-    """Extrai o `code` da URL de callback colada, validando o state.
+def probe(config: MercadoLivreConfig) -> list[tuple[str, int, str]]:
+    """Bate nos endpoints candidatos com o token real e diz quais respondem.
+
+    O ML foi fechando a API publica sem anunciar, e endpoint por endpoint: hoje
+    `/sites/{site}/search` devolve 403 por politica mesmo com token valido e
+    app registrado, enquanto `/products/search` responde normal. Como isso muda
+    de novo sem aviso, a estrategia de coleta nao pode ser deduzida da doc --
+    tem que ser medida na conta que vai rodar.
+
+    Devolve (rotulo, status HTTP, resumo) na ordem em que foram testados.
+    """
+    client = MercadoLivre(config)
+    headers = {"Authorization": f"Bearer {client.access_token()}"}
+    site = config.site_id
+
+    BUSCA_CATALOGO = "catalogo: busca por termo (usado hoje)"
+    ANUNCIOS = "anuncios do produto (de onde sai o preco)"
+
+    alvos = [
+        (
+            BUSCA_CATALOGO,
+            f"{API_HOST}/products/search",
+            {"site_id": site, "status": "active", "q": "fone bluetooth", "limit": 1},
+        ),
+        # URL vazia: so da pra montar depois que a busca acima devolver um ID.
+        (ANUNCIOS, "", {}),
+        (
+            "busca de anuncios (bloqueada desde 2025)",
+            f"{API_HOST}/sites/{site}/search",
+            {"q": "fone bluetooth", "limit": 1},
+        ),
+        (
+            "mais vendidos da categoria",
+            f"{API_HOST}/highlights/{site}/category/MLB1051",
+            {},
+        ),
+        (
+            "categorias do site",
+            f"{API_HOST}/sites/{site}/categories",
+            {},
+        ),
+    ]
+
+    resultados: list[tuple[str, int, str]] = []
+    primeiro_produto: str | None = None
+
+    for rotulo, url, params in alvos:
+        if rotulo == ANUNCIOS:
+            if primeiro_produto is None:
+                resultados.append((rotulo, 0, "pulado: a busca de catalogo nao devolveu produto"))
+                continue
+            url = f"{API_HOST}/products/{primeiro_produto}/items"
+
+        try:
+            response = client._client.get(url, params=params, headers=headers)
+        except Exception as exc:  # noqa: BLE001 - rede fora nao pode matar o diagnostico
+            resultados.append((rotulo, 0, f"erro de rede: {exc}"))
+            continue
+
+        resumo = _resumo_da_resposta(response)
+        if rotulo == BUSCA_CATALOGO and response.status_code == 200:
+            achados = response.json().get("results") or []
+            if achados:
+                primeiro_produto = achados[0].get("id")
+
+        resultados.append((rotulo, response.status_code, resumo))
+
+    return resultados
+
+
+def _resumo_da_resposta(response: httpx.Response) -> str:
+    """Uma linha util: quantos itens vieram, ou o motivo da recusa."""
+    if response.status_code >= 400:
+        try:
+            corpo = response.json()
+        except ValueError:
+            return response.text[:120]
+        return str(corpo.get("message") or corpo.get("error") or corpo)[:120]
+
+    try:
+        corpo = response.json()
+    except ValueError:
+        return f"{len(response.content)} bytes"
+
+    if isinstance(corpo, list):
+        return f"{len(corpo)} itens"
+    resultados = corpo.get("results")
+    if isinstance(resultados, list):
+        return f"{len(resultados)} resultados"
+    return f"ok ({', '.join(list(corpo)[:4])})"
+
+
+def parse_callback(
+    pasted: str, expected_state: str, expected_redirect_uri: str | None = None
+) -> str:
+    """Extrai o `code` da URL de callback colada, validando state e redirect.
 
     Aceita tanto a URL inteira quanto so a query string, porque e comum a
     pessoa colar so um pedaco.
+
+    A conferencia do redirect_uri existe porque a divergencia entre o que esta
+    no .env e o que esta registrado no DevCenter e silenciosa ate o pior
+    momento: a autorizacao no navegador funciona (quem manda ali e o DevCenter),
+    e so a troca do code falha, com um `invalid_grant` generico que nao diz
+    qual dos dois lados esta errado. O code e de uso unico, entao cada tentativa
+    custa uma volta inteira no navegador. Melhor barrar aqui, com o nome dos
+    dois valores na tela.
     """
     pasted = pasted.strip()
     if not pasted:
         raise RuntimeError("Nada colado.")
 
-    query = urllib.parse.urlparse(pasted).query or pasted.lstrip("?")
+    parsed = urllib.parse.urlparse(pasted)
+    query = parsed.query or pasted.lstrip("?")
     params = urllib.parse.parse_qs(query)
+
+    # So compara quando veio URL inteira; colar so a query string e legitimo.
+    if expected_redirect_uri and parsed.scheme:
+        veio = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        esperado = expected_redirect_uri.rstrip("/")
+        if veio.rstrip("/") != esperado:
+            raise RuntimeError(
+                "O redirect_uri do .env nao e o que o Mercado Livre usou.\n"
+                f"  ML_REDIRECT_URI (.env) : {expected_redirect_uri}\n"
+                f"  para onde o ML mandou  : {veio}\n"
+                "O valor do .env tem que ser identico ao registrado no DevCenter "
+                "-- e o segundo acima e justamente o que esta registrado la. "
+                "Ajuste o .env e rode ml-auth de novo."
+            )
 
     if "error" in params:
         detail = params.get("error_description", params["error"])[0]
@@ -244,5 +586,6 @@ def run_auth_flow(config: MercadoLivreConfig) -> None:
         pass
 
     pasted = input("URL de callback: ")
-    client.exchange_code(parse_callback(pasted, state), code_verifier=verifier)
+    code = parse_callback(pasted, state, expected_redirect_uri=config.redirect_uri)
+    client.exchange_code(code, code_verifier=verifier)
     print("\nToken do Mercado Livre salvo. Ja pode rodar `collect`.")

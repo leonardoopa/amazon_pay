@@ -15,6 +15,11 @@ from .models import Offer
 
 SOURCE = "demo"
 
+# Imagem real da CDN do ML: o ponto de `demo --send` e exercitar o caminho de
+# imagem de verdade, incluindo a Meta baixando de mlstatic.com. Um placeholder
+# de outro dominio validaria menos.
+DEMO_IMAGE = "https://http2.mlstatic.com/D_NQ_NP_694193-MLA115535213717_082026-O.jpg"
+
 # Precos em BRL, proximos do real pra o texto sair plausivel.
 CATALOG = [
     # (id, titulo, preco normal, preco promocional, frete gratis)
@@ -45,10 +50,10 @@ def seed(conn: sqlite3.Connection, days: int = 60) -> int:
             """
             INSERT INTO products (id, source, external_id, title, url, image_url,
                                   category, first_seen_at, last_seen_at)
-            VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
             ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at
             """,
-            (product_id, SOURCE, external_id, title, url, ts, ts),
+            (product_id, SOURCE, external_id, title, url, DEMO_IMAGE, ts, ts),
         )
 
         for offset in range(1, days + 1):
@@ -80,6 +85,8 @@ def clear(conn: sqlite3.Connection) -> int:
     marks = ",".join("?" * len(ids))
     conn.execute(f"DELETE FROM posts WHERE product_id IN ({marks})", ids)
     conn.execute(f"DELETE FROM price_history WHERE product_id IN ({marks})", ids)
+    # Precisa vir antes do DELETE de products: a FK impede orfao.
+    conn.execute(f"DELETE FROM affiliate_links WHERE product_id IN ({marks})", ids)
     cursor = conn.execute(f"DELETE FROM products WHERE id IN ({marks})", ids)
     return cursor.rowcount
 
@@ -94,6 +101,7 @@ def current_offers() -> list[Offer]:
             price=promo,
             original_price=normal,
             url=f"https://produto.mercadolivre.com.br/{external_id}",
+            image_url=DEMO_IMAGE,
             free_shipping=free_shipping,
         )
         for external_id, title, normal, promo, free_shipping in CATALOG

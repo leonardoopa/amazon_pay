@@ -11,11 +11,17 @@ import threading
 from .config import (
     MercadoLivreConfig,
     MissingConfig,
-    WhatsAppConfig,
     run_interval_seconds,
 )
 from .db import connect, init_db
-from .pipeline import build_sources, collect, flush_pending, load_watchlist, run
+from .pipeline import (
+    build_sources,
+    collect,
+    flush_pending,
+    load_categories,
+    load_watchlist,
+    run,
+)
 from .sources.mercadolivre import run_auth_flow
 
 
@@ -39,16 +45,50 @@ def cmd_ml_auth(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ml_probe(_: argparse.Namespace) -> int:
+    """Diz quais endpoints do ML respondem NESTA conta, agora.
+
+    O ML foi fechando a API publica endpoint por endpoint e sem anunciar, entao
+    a doc nao serve de referencia. Antes de mudar a coleta, meça.
+    """
+    from .sources.mercadolivre import probe
+
+    init_db()
+    resultados = probe(MercadoLivreConfig.load())
+
+    for rotulo, status, resumo in resultados:
+        marca = "ok  " if status == 200 else ("--  " if status == 0 else "FALHA")
+        codigo = str(status) if status else "---"
+        print(f"{marca} {codigo:>4}  {rotulo}")
+        print(f"            {resumo}")
+
+    funcionando = sum(1 for _, status, _ in resultados if status == 200)
+    print(f"\n{funcionando} de {len(resultados)} endpoints respondendo.")
+    return 0 if funcionando else 1
+
+
 def cmd_collect(_: argparse.Namespace) -> int:
     """So coleta e grava historico -- util nos primeiros dias, sem postar nada."""
     init_db()
     from .db import record_offer
 
-    offers = collect(build_sources(), load_watchlist())
+    offers = collect(build_sources(), load_watchlist(), categories=load_categories())
     with connect() as conn:
         for offer in offers:
             record_offer(conn, offer)
     print(f"{len(offers)} observacoes de preco gravadas.")
+    return 0
+
+
+def cmd_ml_categories(_: argparse.Namespace) -> int:
+    """Lista as categorias raiz do site, com os IDs pro watchlist.json."""
+    from .sources.mercadolivre import MercadoLivre
+
+    init_db()
+    for category_id, nome in MercadoLivre(MercadoLivreConfig.load()).categories():
+        print(f"{category_id:<10} {nome}")
+    print('\nAcompanhe os mais vendidos colocando em watchlist.json:')
+    print('  "categories": [{"id": "MLB1051", "name": "Celulares", "max_price": 3000}]')
     return 0
 
 
@@ -70,7 +110,9 @@ def cmd_seed(args: argparse.Namespace) -> int:
             print(f"{removed} produtos de demo removidos.")
             return 0
         created = fixtures.seed(conn, days=args.days)
-    print(f"{created} produtos com {args.days} dias de historico. Rode `demo` pra ver os textos.")
+    print(f"{created} produtos SINTETICOS com {args.days} dias de historico.")
+    print("Os anuncios nao existem no ML e os links nao abrem -- servem so pra")
+    print("exercitar scoring, texto e entrega. Rode `demo` pra ver os textos.")
     return 0
 
 
@@ -91,13 +133,26 @@ def cmd_demo(args: argparse.Namespace) -> int:
     with connect() as conn:
         scored = [s for s in (score(conn, o, rules) for o in fixtures.current_offers()) if s]
 
+    print("=" * 48)
+    print("DADOS SINTETICOS -- os produtos nao existem e os links nao abrem.")
+    print("Avalie o tom do texto e o calculo do desconto, nao os links.")
+    print("=" * 48)
+
     if not scored:
         print("Nada pontuou. Rode `seed` primeiro.")
         return 1
 
+    from .db import affiliate_link
+
     copywriter = None if args.no_ai else Copywriter()
+    drafts: list[tuple] = []
     for item in scored:
-        link = item.offer.url
+        # Mostra o link real quando ja existe: um preview com a URL crua
+        # esconde exatamente o passo que falta pra oferta render comissao.
+        with connect() as conn:
+            link = affiliate_link(conn, item.offer.product_id)
+        sem_link = link is None
+        link = link or item.offer.url
         if copywriter is None:
             text = fallback_copy(item, link)
         else:
@@ -107,10 +162,41 @@ def cmd_demo(args: argparse.Namespace) -> int:
                 print(f"[Gemini falhou: {exc}]")
                 text = fallback_copy(item, link)
         print("\n" + "-" * 48)
-        print(f"[{item.discount_pct:.0f}% abaixo da media de R$ {item.baseline:.2f}]")
+        aviso = "  SEM LINK DE AFILIADO -- nao renderia comissao" if sem_link else ""
+        print(f"[{item.discount_pct:.0f}% abaixo da media de R$ {item.baseline:.2f}]{aviso}")
         print(text)
+        drafts.append((item, text))
 
     print(f"\n{len(scored)} posts gerados.")
+
+    if not args.send:
+        return 0
+
+    # O caminho de entrega e o unico que os testes nao cobrem de verdade:
+    # depende da Meta aceitar o token, o numero e a URL da imagem. Mandar 1
+    # post real valida isso hoje, sem esperar a baseline amadurecer.
+    from .config import delivery_backend
+    from .delivery import NotConnected, WindowClosed, build_delivery
+
+    item, text = drafts[0]
+    delivery = build_delivery()
+    destino = getattr(delivery.config, "group_jid", None) or getattr(
+        delivery.config, "to", "?"
+    )
+    print(f"\nEnviando 1 post de demo via {delivery_backend()} para {destino}...")
+    try:
+        delivery.send_post(text, item.offer.image_url)
+    except WindowClosed:
+        print(
+            "Janela de 24h fechada. Mande qualquer mensagem para o numero do bot "
+            "no WhatsApp e rode de novo.",
+            file=sys.stderr,
+        )
+        return 1
+    except NotConnected as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print("Enviado. Confira se a imagem veio junto do texto, numa mensagem so.")
     return 0
 
 
@@ -156,11 +242,11 @@ def cmd_flush(_: argparse.Namespace) -> int:
 
 
 def cmd_test_whatsapp(_: argparse.Namespace) -> int:
-    from .delivery import WhatsApp, WindowClosed
+    from .delivery import NotConnected, WindowClosed, build_delivery
 
-    whatsapp = WhatsApp(WhatsAppConfig.load())
+    texto = "Teste do bot de ofertas. Se chegou, ta funcionando."
     try:
-        whatsapp.send_text("Teste do bot de ofertas. Se chegou, ta funcionando.")
+        build_delivery().send_post(texto)
         print("Mensagem enviada.")
     except WindowClosed:
         print(
@@ -168,6 +254,119 @@ def cmd_test_whatsapp(_: argparse.Namespace) -> int:
             "no WhatsApp e rode de novo."
         )
         return 1
+    except NotConnected as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_wa_connect(args: argparse.Namespace) -> int:
+    """Cria a instancia e emite o codigo pra parear o numero do bot.
+
+    Parear e um passo humano e presencial: o codigo expira em menos de um
+    minuto. Nao da pra automatizar, e nem deveria -- e o unico momento em que
+    voce confirma qual numero vai assinar os posts.
+    """
+    # group_jid so e conhecido DEPOIS de parear (sai do wa-groups), entao o
+    # .load() completo falharia justamente em quem ainda nao pareou.
+    evolution = _evolution_sem_grupo()
+
+    print(evolution.create_instance().get("status", "instancia criada"))
+    estado = evolution.state()
+    if estado == "open":
+        print("Numero ja pareado. Rode `promo wa-groups` pra pegar o JID do grupo.")
+        return 0
+
+    numero = (args.number or "").lstrip("+").replace(" ", "").replace("-", "")
+    dados = evolution.connect(numero or None)
+
+    # `pairingCode` so vem preenchido em algumas versoes/fluxos -- na 2.3.7 ele
+    # volta null mesmo passando o numero. Nao caia pro campo `code`: ele e o
+    # conteudo do QR, uma string de 200+ chars que ninguem digita.
+    if dados.get("pairingCode"):
+        print(f"\nNo WhatsApp do numero +{numero}:")
+        print("  Aparelhos conectados > Conectar aparelho > Conectar com numero")
+        print(f"\n  CODIGO: {dados['pairingCode']}\n")
+        print("Expira em menos de um minuto. Se perder, rode de novo.")
+        return 0
+
+    # Salvar o QR num PNG parece obvio e NAO funciona: a Evolution rotaciona o
+    # QR a cada ~30s e cada novo invalida o anterior. Entre gerar o arquivo,
+    # abrir a imagem e apontar a camera, o codigo ja morreu -- e o WhatsApp
+    # responde "nao foi possivel conectar", que parece erro de celular.
+    # O painel da propria Evolution renova o QR na tela; use ele.
+    painel = f"{_evolution_sem_grupo().config.base_url.rstrip('/')}/manager"
+    print(f"\nAbra o painel: {painel}")
+    print("  1. Server URL: a mesma acima, sem /manager")
+    print("  2. API Key: o valor de EVOLUTION_API_KEY do seu .env")
+    print(f"  3. Clique na instancia '{_evolution_sem_grupo().config.instance}' e conecte")
+    print("\nNo celular: Aparelhos conectados > Conectar aparelho.")
+    print("O QR do painel se renova sozinho, entao da pra tentar quantas vezes quiser.")
+    print("\nPareado? Rode `promo wa-groups --search <nome do grupo>`.")
+    return 0
+
+
+def cmd_wa_logout(_: argparse.Namespace) -> int:
+    """Desconecta o numero pareado, sem apagar a instancia.
+
+    Existe pro momento de trocar o numero de teste pelo chip dedicado: desloga,
+    e o proximo `wa-connect` pareia outro numero na mesma instancia.
+    """
+    evolution = _evolution_sem_grupo()
+    if evolution.state() != "open":
+        print("Nenhum numero conectado.")
+        return 0
+
+    evolution.logout()
+    print("Numero desconectado. O aparelho tambem some de 'Aparelhos conectados'.")
+    print("Pra parear outro: `promo wa-connect`, e atualize EVOLUTION_GROUP_JID.")
+    return 0
+
+
+def _evolution_sem_grupo():
+    """Evolution antes de existir grupo configurado (usado no pareamento)."""
+    from .config import EvolutionConfig, _get, _optional
+    from .delivery import Evolution
+
+    return Evolution(
+        EvolutionConfig(
+            base_url=_optional("EVOLUTION_BASE_URL", "http://localhost:8080"),
+            api_key=_get("EVOLUTION_API_KEY"),
+            instance=_optional("EVOLUTION_INSTANCE", "ofertas"),
+            group_jid="",
+        )
+    )
+
+
+def cmd_wa_groups(args: argparse.Namespace) -> int:
+    """Acha o JID do grupo de ofertas pra colar no .env.
+
+    O `--search` nao e conveniencia: quando o numero pareado e pessoal, a
+    listagem crua joga no terminal (e no log) o nome de todo grupo privado de
+    que a pessoa participa. Filtrar por nome mostra so o que interessa.
+    """
+    grupos = _evolution_sem_grupo().groups()
+    if not grupos:
+        print("Nenhum grupo. O numero pareado precisa ser membro do grupo de ofertas.")
+        return 1
+
+    total = len(grupos)
+    if args.search:
+        alvo = args.search.lower()
+        grupos = [g for g in grupos if alvo in (g.get("subject") or "").lower()]
+        if not grupos:
+            print(f"Nenhum dos {total} grupos casa com '{args.search}'.")
+            print("Confira o nome exato, ou rode sem --search pra ver todos.")
+            return 1
+
+    for grupo in grupos:
+        membros = grupo.get("size", "?")
+        print(f"{grupo.get('subject', 'sem nome')}  ({membros} membros)")
+        print(f"  {grupo.get('id')}\n")
+
+    if args.search:
+        print(f"({len(grupos)} de {total} grupos; os outros nao foram exibidos)")
+    print("Cole o ID do grupo certo em EVOLUTION_GROUP_JID no .env.")
     return 0
 
 
@@ -199,16 +398,156 @@ def cmd_stats(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_link(args: argparse.Namespace) -> int:
+    """Guarda um link de afiliado gerado a mao no Link Builder do ML."""
+    from .db import save_affiliate_link
+
+    init_db()
+    if not args.url.startswith("https://"):
+        print("O link precisa comecar com https://", file=sys.stderr)
+        return 2
+
+    with connect() as conn:
+        # Aceita tanto o ID do anuncio ("MLB123") quanto o interno
+        # ("mercadolivre:MLB123"), porque e o primeiro que voce copia do
+        # `pending-links` e da URL do produto.
+        if ":" in args.product_id:
+            rows = conn.execute(
+                "SELECT id FROM products WHERE id = ?", (args.product_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id FROM products WHERE external_id = ?", (args.product_id,)
+            ).fetchall()
+
+        if not rows:
+            print(
+                f"Anuncio {args.product_id} nao esta no banco. Rode `collect` primeiro.",
+                file=sys.stderr,
+            )
+            return 2
+        if len(rows) > 1:
+            nomes = ", ".join(row["id"] for row in rows)
+            print(f"ID ambiguo entre fontes ({nomes}). Passe o ID completo.", file=sys.stderr)
+            return 2
+
+        product_id = rows[0]["id"]
+        save_affiliate_link(conn, product_id, args.url)
+
+    print(f"Link salvo para {product_id}.")
+    return 0
+
+
+def cmd_link_all(args: argparse.Namespace) -> int:
+    """Gera de uma vez os links que faltam, pelo painel de afiliados.
+
+    Em lote porque o endpoint aceita varias URLs por chamada -- gerar um a um
+    seria uma requisicao (e um risco de rate limit) por produto.
+    """
+    from .db import mark_affiliate_blocked, products_missing_link, save_affiliate_link
+    from .sources.ml_linkbuilder import LinkBuilder, SessionExpired
+
+    init_db()
+    config = MercadoLivreConfig.load()
+    if not (config.affiliate_cookie and config.affiliate_tag):
+        print(
+            "ML_AFFILIATE_COOKIE / ML_AFFILIATE_TAG nao configurados -- a geracao "
+            "automatica esta desligada. Veja o README, ou siga com `promo link`.",
+            file=sys.stderr,
+        )
+        return 2
+
+    with connect() as conn:
+        faltando = products_missing_link(conn, args.limit)
+
+    # So Mercado Livre: o link da Amazon e a URL do produto com a partner tag,
+    # montada pela propria fonte, e nao passa por painel nenhum.
+    faltando = [row for row in faltando if row["id"].startswith("mercadolivre:")]
+    if not faltando:
+        print("Todo produto rastreado do ML ja tem link.")
+        return 0
+
+    builder = LinkBuilder(config.affiliate_cookie, config.affiliate_tag)
+    try:
+        resultado = builder.create([row["url"] for row in faltando])
+    except SessionExpired as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+    salvos, recusados = 0, []
+    with connect() as conn:
+        for row in faltando:
+            link = resultado.links.get(row["url"])
+            if link:
+                save_affiliate_link(conn, row["id"], link)
+                salvos += 1
+                continue
+            motivo = resultado.recusados.get(row["url"])
+            if motivo:
+                # Anotado pra nao voltar a pedir: inelegivel nao muda de ideia
+                # entre uma rodada e outra.
+                mark_affiliate_blocked(conn, row["id"], motivo)
+                recusados.append((row["external_id"], row["title"][:40], motivo))
+
+    print(f"{salvos} link(s) gerados e salvos.")
+
+    if recusados:
+        # Silenciar isso faria o backfill parecer completo. E o motivo importa:
+        # "URL not allowed" e regra do programa, nao erro seu.
+        print(f"\n{len(recusados)} fora do programa de afiliados:")
+        for external_id, titulo, motivo in recusados:
+            print(f"  {external_id}  {titulo}")
+            print(f"    {motivo}")
+
+    restante = len(faltando) - salvos - len(recusados)
+    if restante:
+        print(f"\n{restante} produto(s) sem resposta do painel -- tente de novo.")
+    return 0
+
+
+def cmd_pending_links(args: argparse.Namespace) -> int:
+    """Lista produtos rastreados que ainda nao tem link de afiliado.
+
+    O ML so emite link pelo Link Builder (desktop), entao esse e o passo
+    manual do fluxo: gere os links dos que estao mais perto de virar post.
+    """
+    from .db import products_missing_link
+
+    init_db()
+    with connect() as conn:
+        rows = products_missing_link(conn, args.limit)
+
+    if not rows:
+        print("Todo produto rastreado ja tem link.")
+        return 0
+
+    print(f"{len(rows)} produto(s) sem link de afiliado (mais historico primeiro):\n")
+    for row in rows:
+        print(f"{row['dias']:>3} dias  {row['external_id']}  {row['title'][:50]}")
+        print(f"           {row['url']}\n")
+    print("Gere em mercadolivre.com.br/afiliados/linkbuilder e salve com:")
+    print("  promo link <ID> <link>")
+    return 0
+
+
 COMMANDS = {
     "init": (cmd_init, "Cria o banco SQLite"),
     "ml-auth": (cmd_ml_auth, "Autoriza o app no Mercado Livre (abre o navegador)"),
+    "ml-probe": (cmd_ml_probe, "Testa quais endpoints do ML ainda respondem"),
+    "ml-categories": (cmd_ml_categories, "Lista as categorias do site e seus IDs"),
     "collect": (cmd_collect, "So coleta precos, sem postar (use nos primeiros dias)"),
     "run": (cmd_run, "Coleta, filtra, escreve e envia no WhatsApp"),
     "seed": (cmd_seed, "Cria historico sintetico pra testar sem a API do ML"),
     "demo": (cmd_demo, "Gera os posts a partir do historico sintetico"),
     "daemon": (cmd_daemon, "Roda em loop (usado pelo container)"),
     "flush": (cmd_flush, "Reenvia os posts que ficaram na fila"),
-    "test-whatsapp": (cmd_test_whatsapp, "Manda uma mensagem de teste pra voce"),
+    "link": (cmd_link, "Salva o link de afiliado de um produto (manual)"),
+    "link-all": (cmd_link_all, "Gera pelo painel os links que faltam, em lote"),
+    "pending-links": (cmd_pending_links, "Lista produtos sem link de afiliado"),
+    "wa-connect": (cmd_wa_connect, "Pareia o chip secundario na Evolution (QR)"),
+    "wa-groups": (cmd_wa_groups, "Acha o JID do grupo (use --search)"),
+    "wa-logout": (cmd_wa_logout, "Desconecta o numero pareado da Evolution"),
+    "test-whatsapp": (cmd_test_whatsapp, "Manda uma mensagem de teste pelo backend ativo"),
     "stats": (cmd_stats, "Mostra o estado do banco"),
 }
 
@@ -218,8 +557,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # Aceita `-v` antes e depois do subcomando: `promo collect -v` e a ordem
+    # que a mao escreve sozinha. O SUPPRESS e essencial -- sem ele o default
+    # do subparser sobrescreveria com False um `-v` dado la na frente.
+    verboso = argparse.ArgumentParser(add_help=False)
+    verboso.add_argument(
+        "-v", "--verbose", action="store_true", default=argparse.SUPPRESS
+    )
+
     for name, (_, help_text) in COMMANDS.items():
-        sub = subparsers.add_parser(name, help=help_text)
+        sub = subparsers.add_parser(name, help=help_text, parents=[verboso])
         if name == "run":
             sub.add_argument(
                 "--dry-run",
@@ -236,6 +583,29 @@ def main(argv: list[str] | None = None) -> int:
                 "--no-ai",
                 action="store_true",
                 help="Usa o texto padrao em vez de chamar o Gemini",
+            )
+            sub.add_argument(
+                "--send",
+                action="store_true",
+                help="Envia 1 post de demo no WhatsApp pra validar a entrega",
+            )
+        if name == "link":
+            sub.add_argument("product_id", help="ID do anuncio, ex.: MLB3953571145")
+            sub.add_argument("url", help="Link gerado no Link Builder do ML")
+        if name == "wa-groups":
+            sub.add_argument(
+                "--search",
+                default=None,
+                help="Mostra so os grupos cujo nome contem este texto",
+            )
+        if name == "wa-connect":
+            sub.add_argument(
+                "--number",
+                help="Numero do bot em E.164 sem '+' (ex.: 5581996257747)",
+            )
+        if name in ("pending-links", "link-all"):
+            sub.add_argument(
+                "--limit", type=int, default=20, help="Quantos produtos processar"
             )
         if name == "daemon":
             sub.add_argument(

@@ -39,7 +39,11 @@ class MercadoLivreConfig:
     client_secret: str
     redirect_uri: str
     site_id: str
-    affiliate_params: str
+    # Sessao do painel de afiliados. Vazios = geracao automatica desligada, e o
+    # fluxo volta a ser o `promo link` manual. Nao sao obrigatorios porque
+    # cookie expira, e cookie expirado nao pode derrubar a coleta junto.
+    affiliate_cookie: str = ""
+    affiliate_tag: str = ""
 
     @classmethod
     def load(cls) -> "MercadoLivreConfig":
@@ -48,7 +52,8 @@ class MercadoLivreConfig:
             client_secret=_get("ML_CLIENT_SECRET"),
             redirect_uri=_optional("ML_REDIRECT_URI", "http://localhost:8123/callback"),
             site_id=_optional("ML_SITE_ID", "MLB"),
-            affiliate_params=_optional("ML_AFFILIATE_PARAMS"),
+            affiliate_cookie=_optional("ML_AFFILIATE_COOKIE"),
+            affiliate_tag=_optional("ML_AFFILIATE_TAG"),
         )
 
 
@@ -91,6 +96,32 @@ class WhatsAppConfig:
 
 
 @dataclass(frozen=True)
+class EvolutionConfig:
+    """Evolution API -- entrega direto no grupo, por fora da API oficial."""
+
+    base_url: str
+    api_key: str
+    instance: str
+    group_jid: str
+
+    @classmethod
+    def load(cls) -> "EvolutionConfig":
+        return cls(
+            base_url=_optional("EVOLUTION_BASE_URL", "http://localhost:8080"),
+            api_key=_get("EVOLUTION_API_KEY"),
+            instance=_optional("EVOLUTION_INSTANCE", "ofertas"),
+            # Sai do `promo wa-groups`; termina em @g.us. Nao e o numero do grupo,
+            # e o JID -- grupo nao tem numero de telefone.
+            group_jid=_get("EVOLUTION_GROUP_JID"),
+        )
+
+
+def delivery_backend() -> str:
+    """'evolution' (posta no grupo) ou 'cloud' (manda pra voce encaminhar)."""
+    return _optional("DELIVERY_BACKEND", "cloud").strip().lower()
+
+
+@dataclass(frozen=True)
 class Rules:
     min_discount_pct: float
     baseline_window_days: int
@@ -129,3 +160,15 @@ def gemini_api_key() -> str:
 def run_interval_seconds() -> int:
     """Intervalo do modo daemon (usado pelo container)."""
     return _int("RUN_INTERVAL_SECONDS", 7200)
+
+
+def track_limit() -> int:
+    """Teto de produtos reconsultados por rodada, por fonte.
+
+    O ML aposentou o multiget de anuncios; hoje o preco sai de
+    /products/{id}/items, que e **uma chamada por produto**. Entao esse numero
+    e literalmente quantas requisicoes a reconsulta gasta. Com o daemon de 2h
+    o padrao da ~1.800 chamadas/dia. Suba com parcimonia -- a coleta avisa no
+    log quando trunca.
+    """
+    return _int("ML_TRACK_LIMIT", 150)
