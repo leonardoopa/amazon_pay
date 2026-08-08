@@ -351,6 +351,7 @@ class MercadoLivre:
             category=melhor.get("category_id"),
             available=True,  # ter anuncio ativo na lista ja e a disponibilidade
             free_shipping=bool(shipping.get("free_shipping")),
+            official_store=bool(melhor.get("official_store_id")),
         )
 
     # ---------- Afiliado ----------

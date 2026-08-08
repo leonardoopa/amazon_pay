@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -56,6 +57,26 @@ def load_watchlist(path: Path | None = None) -> list[Watch]:
         Watch(term=entry["term"], max_price=entry.get("max_price"))
         for entry in data["keywords"]
     ]
+
+
+def load_coupon(path: Path | None = None) -> str | None:
+    """Cupom de campanha do watchlist.json, se ainda estiver valendo.
+
+    Cupom do ML e de campanha (vale no site inteiro por alguns dias), nao por
+    produto -- por isso mora num campo so, nao no cadastro de cada oferta. E
+    por isso tem `ate`: cupom vencido no post e pior que post sem cupom, porque
+    a pessoa clica, tenta, falha, e passa a desconfiar do grupo.
+    """
+    path = path or ROOT / "watchlist.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    cupom = data.get("coupon") or {}
+    codigo, ate = cupom.get("code"), cupom.get("ate")
+    if not codigo:
+        return None
+    if ate and date.fromisoformat(ate) < date.today():
+        log.info("Cupom %s venceu em %s; post sai sem cupom.", codigo, ate)
+        return None
+    return codigo
 
 
 def load_categories(path: Path | None = None) -> list[Category]:
@@ -218,6 +239,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         return []
 
     copywriter = Copywriter()
+    cupom = load_coupon()
     drafts: list[tuple[ScoredOffer, str]] = []
     sem_link: list[ScoredOffer] = []
 
@@ -230,10 +252,10 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             sem_link.append(scored)
             continue
         try:
-            text = copywriter.write(scored, link)
+            text = copywriter.write(scored, link, cupom)
         except Exception as exc:  # noqa: BLE001 - sem IA ainda da pra postar
             log.warning("Gemini falhou, usando texto padrao: %s", exc)
-            text = fallback_copy(scored, link)
+            text = fallback_copy(scored, link, cupom)
         drafts.append((scored, text))
 
     if sem_link:
