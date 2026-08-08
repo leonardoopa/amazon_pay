@@ -32,12 +32,18 @@ services:
     restart: unless-stopped
     environment:
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
-      # Sem banco externo: a sessao vive no volume abaixo. Perder esse volume
-      # significa reparear o numero pelo QR.
-      DATABASE_ENABLED: "false"
+      # A v2 exige Postgres -- ela roda Prisma e sai em loop de "Database
+      # provider invalid" se voce tentar subir sem banco. Nao ha modo
+      # so-arquivo, apesar do volume de instancias existir.
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution@postgres:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution
+      # A credencial da sessao do WhatsApp vive aqui: sem isso, todo restart
+      # do container pede pareamento novo.
+      DATABASE_SAVE_DATA_INSTANCE: "true"
       CACHE_REDIS_ENABLED: "false"
       CACHE_LOCAL_ENABLED: "true"
-      # Sem isso a instancia acorda desconectada depois de um restart.
       CONFIG_SESSION_PHONE_CLIENT: Ofertas
       DEL_INSTANCE: "false"
     volumes:
@@ -46,6 +52,27 @@ services:
       # So no loopback: o `wa-connect` e o `wa-groups` rodam da sua maquina, e
       # essa porta com a API key e acesso total ao WhatsApp pareado.
       - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: evolution_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_postgres:/var/lib/postgresql/data
+    # Sem ports: so a Evolution fala com ele, pela rede interna do compose.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   evolution_instances:
+  evolution_postgres:

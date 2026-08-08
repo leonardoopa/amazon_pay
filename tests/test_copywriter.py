@@ -57,8 +57,8 @@ class FakeClient:
 def test_facts_carregam_os_numeros_reais():
     facts = _facts(make_scored(), LINK)
 
-    assert "R$ 150.00" in facts
-    assert "R$ 200.00" in facts
+    assert "R$ 150,00" in facts
+    assert "R$ 200,00" in facts
     assert "25%" in facts
     assert LINK in facts
     assert "Mercado Livre" in facts
@@ -108,7 +108,7 @@ def test_write_recusa_resposta_vazia():
 def test_fallback_tem_disclosure_e_numeros():
     text = fallback_copy(make_scored(lowest_ever=True), LINK)
 
-    assert "*R$ 150.00*" in text
+    assert "*R$ 150,00*" in text
     assert "25%" in text
     assert LINK in text
     assert text.endswith("Link de afiliado - o preco pra voce nao muda.")
@@ -144,3 +144,103 @@ def test_disclosure_nao_e_duplicada_quando_o_modelo_acerta():
     copy = Copywriter(client=client).write(make_scored(source="amazon"), LINK)
 
     assert copy.count(AMAZON_DISCLOSURE) == 1
+
+
+# ---------- formato de moeda ----------
+#
+# O modelo copia os numeros do prompt caractere por caractere -- e e isso que
+# impede ele de inventar preco. O efeito colateral: formato errado no prompt
+# vira formato errado no post. Um "R$ 27.00" num grupo brasileiro le como erro.
+
+
+def test_formata_em_padrao_brasileiro():
+    from promo.copywriter import brl
+
+    assert brl(27.0) == "27,00"
+    assert brl(1234.5) == "1.234,50"
+    assert brl(0.99) == "0,99"
+
+
+def test_separador_de_milhar_em_valor_alto():
+    from promo.copywriter import brl
+
+    assert brl(1234567.89) == "1.234.567,89"
+
+
+def test_nenhum_ponto_decimal_chega_ao_post():
+    """A regressao concreta: o primeiro post real saiu com 'R$ 27.00'."""
+    from promo.copywriter import brl
+
+    scored = make_scored()
+    facts = _facts(scored, LINK)
+    precos = [linha for linha in facts.splitlines() if "R$" in linha]
+
+    assert precos
+    for linha in precos:
+        valor = linha.split("R$ ")[1].split()[0]
+        assert "." not in valor.rsplit(",", 1)[-1]
+        assert "," in valor
+
+
+# ---------- afirmacoes sem lastro ----------
+#
+# Observado em producao: com lowest_ever=False, e sem o fato no prompt, o
+# Gemini escreveu "(menor preco ja registrado!)". Temperatura 0.8 escrevendo
+# copy de oferta puxa pro superlativo sozinho. Pedir no system prompt nao
+# basta -- a trava tem que ser deterministica, igual a da divulgacao.
+
+
+def test_recusa_menor_preco_inventado():
+    from promo.copywriter import _reject_unfounded_claims
+
+    scored = make_scored(lowest_ever=False)
+    with pytest.raises(RuntimeError, match="menor preco"):
+        _reject_unfounded_claims("Que achado! *R$ 48,00*, menor preço já registrado!", scored)
+
+
+def test_aceita_menor_preco_quando_e_verdade():
+    from promo.copywriter import _reject_unfounded_claims
+
+    scored = make_scored(lowest_ever=True)
+    _reject_unfounded_claims("*R$ 48,00* — menor preço já registrado!", scored)
+
+
+def test_pega_variacoes_da_afirmacao():
+    from promo.copywriter import _reject_unfounded_claims
+
+    scored = make_scored(lowest_ever=False)
+    for frase in (
+        "o melhor preço que já vi",
+        "PREÇO MAIS BAIXO do ano",
+        "nunca esteve tão barato",
+        "menor preco sem acento tambem",
+    ):
+        with pytest.raises(RuntimeError):
+            _reject_unfounded_claims(frase, scored)
+
+
+def test_recusa_urgencia_inventada():
+    """Nao sabemos estoque nem prazo -- qualquer urgencia e invencao."""
+    from promo.copywriter import _reject_unfounded_claims
+
+    scored = make_scored(lowest_ever=True)
+    for frase in (
+        "Corre que acaba!",
+        "Últimas unidades",
+        "so hoje",
+        "Por tempo limitado",
+        "estoque limitado",
+    ):
+        with pytest.raises(RuntimeError, match="urgencia"):
+            _reject_unfounded_claims(frase, scored)
+
+
+def test_texto_honesto_passa():
+    from promo.copywriter import _reject_unfounded_claims
+
+    scored = make_scored(lowest_ever=False)
+    _reject_unfounded_claims(
+        "Achadinho bom 🎧\nFone Redmi\n*R$ 27,00* — 32% abaixo da média de R$ 39,90\n"
+        "https://meli.la/x\nLink de afiliado - o preco pra voce nao muda.",
+        scored,
+    )

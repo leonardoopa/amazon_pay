@@ -260,12 +260,12 @@ def cmd_test_whatsapp(_: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_wa_connect(_: argparse.Namespace) -> int:
-    """Cria a instancia e mostra o QR pra parear o chip secundario.
+def cmd_wa_connect(args: argparse.Namespace) -> int:
+    """Cria a instancia e emite o codigo pra parear o numero do bot.
 
-    Parear e um passo humano e presencial: o QR expira em ~40s e some quando
-    alguem le. Nao da pra automatizar, e nem deveria -- e o unico momento em
-    que voce confirma qual numero vai assinar os posts.
+    Parear e um passo humano e presencial: o codigo expira em menos de um
+    minuto. Nao da pra automatizar, e nem deveria -- e o unico momento em que
+    voce confirma qual numero vai assinar os posts.
     """
     # group_jid so e conhecido DEPOIS de parear (sai do wa-groups), entao o
     # .load() completo falharia justamente em quem ainda nao pareou.
@@ -277,13 +277,49 @@ def cmd_wa_connect(_: argparse.Namespace) -> int:
         print("Numero ja pareado. Rode `promo wa-groups` pra pegar o JID do grupo.")
         return 0
 
-    dados = evolution.connect()
-    codigo = dados.get("code") or dados.get("pairingCode")
-    print("\nAbra o WhatsApp do chip secundario > Aparelhos conectados > Conectar")
-    if dados.get("base64"):
-        print("QR em base64 na resposta da API (renderize ou use o codigo abaixo).")
-    print(f"\nCodigo de pareamento:\n\n  {codigo}\n")
-    print("Depois de parear, rode `promo wa-groups`.")
+    numero = (args.number or "").lstrip("+").replace(" ", "").replace("-", "")
+    dados = evolution.connect(numero or None)
+
+    # `pairingCode` so vem preenchido em algumas versoes/fluxos -- na 2.3.7 ele
+    # volta null mesmo passando o numero. Nao caia pro campo `code`: ele e o
+    # conteudo do QR, uma string de 200+ chars que ninguem digita.
+    if dados.get("pairingCode"):
+        print(f"\nNo WhatsApp do numero +{numero}:")
+        print("  Aparelhos conectados > Conectar aparelho > Conectar com numero")
+        print(f"\n  CODIGO: {dados['pairingCode']}\n")
+        print("Expira em menos de um minuto. Se perder, rode de novo.")
+        return 0
+
+    # Salvar o QR num PNG parece obvio e NAO funciona: a Evolution rotaciona o
+    # QR a cada ~30s e cada novo invalida o anterior. Entre gerar o arquivo,
+    # abrir a imagem e apontar a camera, o codigo ja morreu -- e o WhatsApp
+    # responde "nao foi possivel conectar", que parece erro de celular.
+    # O painel da propria Evolution renova o QR na tela; use ele.
+    painel = f"{_evolution_sem_grupo().config.base_url.rstrip('/')}/manager"
+    print(f"\nAbra o painel: {painel}")
+    print("  1. Server URL: a mesma acima, sem /manager")
+    print("  2. API Key: o valor de EVOLUTION_API_KEY do seu .env")
+    print(f"  3. Clique na instancia '{_evolution_sem_grupo().config.instance}' e conecte")
+    print("\nNo celular: Aparelhos conectados > Conectar aparelho.")
+    print("O QR do painel se renova sozinho, entao da pra tentar quantas vezes quiser.")
+    print("\nPareado? Rode `promo wa-groups --search <nome do grupo>`.")
+    return 0
+
+
+def cmd_wa_logout(_: argparse.Namespace) -> int:
+    """Desconecta o numero pareado, sem apagar a instancia.
+
+    Existe pro momento de trocar o numero de teste pelo chip dedicado: desloga,
+    e o proximo `wa-connect` pareia outro numero na mesma instancia.
+    """
+    evolution = _evolution_sem_grupo()
+    if evolution.state() != "open":
+        print("Nenhum numero conectado.")
+        return 0
+
+    evolution.logout()
+    print("Numero desconectado. O aparelho tambem some de 'Aparelhos conectados'.")
+    print("Pra parear outro: `promo wa-connect`, e atualize EVOLUTION_GROUP_JID.")
     return 0
 
 
@@ -302,17 +338,34 @@ def _evolution_sem_grupo():
     )
 
 
-def cmd_wa_groups(_: argparse.Namespace) -> int:
-    """Lista os grupos do numero pareado, com o JID pra colar no .env."""
+def cmd_wa_groups(args: argparse.Namespace) -> int:
+    """Acha o JID do grupo de ofertas pra colar no .env.
+
+    O `--search` nao e conveniencia: quando o numero pareado e pessoal, a
+    listagem crua joga no terminal (e no log) o nome de todo grupo privado de
+    que a pessoa participa. Filtrar por nome mostra so o que interessa.
+    """
     grupos = _evolution_sem_grupo().groups()
     if not grupos:
         print("Nenhum grupo. O numero pareado precisa ser membro do grupo de ofertas.")
         return 1
 
+    total = len(grupos)
+    if args.search:
+        alvo = args.search.lower()
+        grupos = [g for g in grupos if alvo in (g.get("subject") or "").lower()]
+        if not grupos:
+            print(f"Nenhum dos {total} grupos casa com '{args.search}'.")
+            print("Confira o nome exato, ou rode sem --search pra ver todos.")
+            return 1
+
     for grupo in grupos:
         membros = grupo.get("size", "?")
         print(f"{grupo.get('subject', 'sem nome')}  ({membros} membros)")
         print(f"  {grupo.get('id')}\n")
+
+    if args.search:
+        print(f"({len(grupos)} de {total} grupos; os outros nao foram exibidos)")
     print("Cole o ID do grupo certo em EVOLUTION_GROUP_JID no .env.")
     return 0
 
@@ -492,7 +545,8 @@ COMMANDS = {
     "link-all": (cmd_link_all, "Gera pelo painel os links que faltam, em lote"),
     "pending-links": (cmd_pending_links, "Lista produtos sem link de afiliado"),
     "wa-connect": (cmd_wa_connect, "Pareia o chip secundario na Evolution (QR)"),
-    "wa-groups": (cmd_wa_groups, "Lista os grupos do numero pareado e seus JIDs"),
+    "wa-groups": (cmd_wa_groups, "Acha o JID do grupo (use --search)"),
+    "wa-logout": (cmd_wa_logout, "Desconecta o numero pareado da Evolution"),
     "test-whatsapp": (cmd_test_whatsapp, "Manda uma mensagem de teste pelo backend ativo"),
     "stats": (cmd_stats, "Mostra o estado do banco"),
 }
@@ -538,6 +592,17 @@ def main(argv: list[str] | None = None) -> int:
         if name == "link":
             sub.add_argument("product_id", help="ID do anuncio, ex.: MLB3953571145")
             sub.add_argument("url", help="Link gerado no Link Builder do ML")
+        if name == "wa-groups":
+            sub.add_argument(
+                "--search",
+                default=None,
+                help="Mostra so os grupos cujo nome contem este texto",
+            )
+        if name == "wa-connect":
+            sub.add_argument(
+                "--number",
+                help="Numero do bot em E.164 sem '+' (ex.: 5581996257747)",
+            )
         if name in ("pending-links", "link-all"):
             sub.add_argument(
                 "--limit", type=int, default=20, help="Quantos produtos processar"

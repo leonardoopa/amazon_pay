@@ -55,9 +55,26 @@ class Evolution:
         response.raise_for_status()
         return response.json()
 
-    def connect(self) -> dict:
-        """Devolve o QR code pra parear o numero (ou o estado, se ja pareado)."""
-        response = self._client.get(f"/instance/connect/{self.config.instance}")
+    def connect(self, number: str | None = None) -> dict:
+        """Inicia o pareamento.
+
+        Com `number` o WhatsApp emite um codigo de 8 caracteres pra digitar no
+        celular; sem ele, sobra o QR em base64. O codigo e melhor aqui porque
+        o pareamento acontece pelo terminal -- pedir pra alguem apontar a
+        camera pra um QR que so existe dentro de um JSON nao ajuda ninguem.
+
+        O numero vai em E.164 sem "+" (ex.: 5581996257747).
+        """
+        response = self._client.get(
+            f"/instance/connect/{self.config.instance}",
+            params={"number": number} if number else None,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def logout(self) -> dict:
+        """Desconecta o numero, preservando a instancia e a config."""
+        response = self._client.delete(f"/instance/logout/{self.config.instance}")
         response.raise_for_status()
         return response.json()
 
