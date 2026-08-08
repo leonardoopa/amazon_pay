@@ -132,8 +132,10 @@ def run_interval_seconds() -> int:
 def track_limit() -> int:
     """Teto de produtos reconsultados por rodada, por fonte.
 
-    Cada 20 IDs viram 1 chamada, entao o padrao custa 20 requisicoes -- pouco
-    perto do limite do ML e suficiente pra uma watchlist de algumas dezenas de
-    termos. Suba se a coleta comecar a avisar que truncou.
+    O ML aposentou o multiget de anuncios; hoje o preco sai de
+    /products/{id}/items, que e **uma chamada por produto**. Entao esse numero
+    e literalmente quantas requisicoes a reconsulta gasta. Com o daemon de 2h
+    o padrao da ~1.800 chamadas/dia. Suba com parcimonia -- a coleta avisa no
+    log quando trunca.
     """
-    return _int("ML_TRACK_LIMIT", 400)
+    return _int("ML_TRACK_LIMIT", 150)

@@ -174,10 +174,14 @@ def price_history(
     return [row["price"] for row in rows]
 
 
-def tracked_external_ids(
+def tracked_products(
     conn: sqlite3.Connection, source: str, window_days: int, limit: int
-) -> list[str]:
-    """IDs ja conhecidos que valem reconsultar nesta rodada.
+) -> list[tuple[str, str, str | None]]:
+    """Produtos que valem reconsultar: (external_id, titulo, imagem).
+
+    Devolve titulo e imagem junto de proposito -- eles quase nao mudam, e
+    carrega-los do banco evita uma segunda chamada de API por produto na
+    reconsulta, que e o passo mais caro da rodada.
 
     Descarta quem sumiu ha mais de `window_days`: historico mais velho que a
     janela da baseline nao serve pra nada, e sem o corte a lista cresceria
@@ -189,7 +193,7 @@ def tracked_external_ids(
     today = now().date().isoformat()
     rows = conn.execute(
         """
-        SELECT external_id FROM products
+        SELECT external_id, title, image_url FROM products
         WHERE source = ?
           AND substr(last_seen_at, 1, 10) >= date(?, ?)
         ORDER BY last_seen_at DESC
@@ -197,7 +201,7 @@ def tracked_external_ids(
         """,
         (source, today, f"-{window_days} days", limit),
     ).fetchall()
-    return [row["external_id"] for row in rows]
+    return [(row["external_id"], row["title"], row["image_url"]) for row in rows]
 
 
 def last_post(conn: sqlite3.Connection, product_id: str) -> sqlite3.Row | None:

@@ -14,10 +14,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from promo.db import SCHEMA, now, record_offer, tracked_external_ids  # noqa: E402
+from promo.db import SCHEMA, now, record_offer, tracked_products  # noqa: E402
 from promo.models import Offer  # noqa: E402
 from promo.pipeline import refetch_tracked  # noqa: E402
-from promo.sources.mercadolivre import MULTIGET_CHUNK, _best_image  # noqa: E402
+from promo.sources.mercadolivre import SITE_HOST, _best_image  # noqa: E402
 
 
 def make_conn() -> sqlite3.Connection:
@@ -47,19 +47,19 @@ def seen_at(conn: sqlite3.Connection, external_id: str, days_ago: int) -> None:
 
 
 class FakeSource:
-    """Fonte com multiget, pra checar o que o pipeline manda reconsultar."""
+    """Fonte que reconsulta por ID, pra checar o que o pipeline manda."""
 
     name = "mercadolivre"
 
     def __init__(self, fail: bool = False) -> None:
-        self.asked: list[str] = []
+        self.asked: list[tuple[str, str, str | None]] = []
         self.fail = fail
 
-    def fetch_by_ids(self, external_ids: list[str]) -> list[Offer]:
-        self.asked = list(external_ids)
+    def fetch_by_ids(self, tracked: list[tuple[str, str, str | None]]) -> list[Offer]:
+        self.asked = list(tracked)
         if self.fail:
             raise RuntimeError("500 do ML")
-        return [make_offer(i) for i in external_ids]
+        return [make_offer(external_id) for external_id, _, _ in tracked]
 
 
 class SourceSemMultiget:
@@ -70,13 +70,35 @@ class Rules:
     baseline_window_days = 60
 
 
-# ---------- tracked_external_ids ----------
+def ids(rows: list[tuple[str, str, str | None]]) -> list[str]:
+    return [row[0] for row in rows]
+
+
+# ---------- tracked_products ----------
 
 
 def test_devolve_produto_conhecido():
     conn = make_conn()
     record_offer(conn, make_offer("MLB1"))
-    assert tracked_external_ids(conn, "mercadolivre", 60, 400) == ["MLB1"]
+    assert ids(tracked_products(conn, "mercadolivre", 60, 400)) == ["MLB1"]
+
+
+def test_traz_titulo_e_imagem_para_evitar_chamada_extra():
+    """A reconsulta so precisa do preco; nome e foto vem do banco."""
+    conn = make_conn()
+    offer = Offer(
+        source="mercadolivre",
+        external_id="MLB1",
+        title="Celular Samsung",
+        price=100.0,
+        url="https://www.mercadolivre.com.br/p/MLB1",
+        image_url="https://http2.mlstatic.com/foto-F.jpg",
+    )
+    record_offer(conn, offer)
+
+    assert tracked_products(conn, "mercadolivre", 60, 400) == [
+        ("MLB1", "Celular Samsung", "https://http2.mlstatic.com/foto-F.jpg")
+    ]
 
 
 def test_ignora_produto_fora_da_janela():
@@ -84,14 +106,14 @@ def test_ignora_produto_fora_da_janela():
     conn = make_conn()
     record_offer(conn, make_offer("MLB1"))
     seen_at(conn, "MLB1", days_ago=90)
-    assert tracked_external_ids(conn, "mercadolivre", 60, 400) == []
+    assert tracked_products(conn, "mercadolivre", 60, 400) == []
 
 
 def test_mantem_produto_na_borda_da_janela():
     conn = make_conn()
     record_offer(conn, make_offer("MLB1"))
     seen_at(conn, "MLB1", days_ago=59)
-    assert tracked_external_ids(conn, "mercadolivre", 60, 400) == ["MLB1"]
+    assert ids(tracked_products(conn, "mercadolivre", 60, 400)) == ["MLB1"]
 
 
 def test_nao_mistura_fontes():
@@ -105,14 +127,15 @@ def test_nao_mistura_fontes():
         url="https://amazon.com.br/x",
     )
     record_offer(conn, amazon)
-    assert tracked_external_ids(conn, "mercadolivre", 60, 400) == ["MLB1"]
+    assert ids(tracked_products(conn, "mercadolivre", 60, 400)) == ["MLB1"]
 
 
 def test_respeita_o_teto():
+    """O teto e literal: cada produto custa uma chamada de API."""
     conn = make_conn()
     for index in range(10):
         record_offer(conn, make_offer(f"MLB{index}"))
-    assert len(tracked_external_ids(conn, "mercadolivre", 60, 3)) == 3
+    assert len(tracked_products(conn, "mercadolivre", 60, 3)) == 3
 
 
 # ---------- refetch_tracked ----------
@@ -127,7 +150,7 @@ def test_reconsulta_produto_que_saiu_da_busca(monkeypatch):
     source = FakeSource()
     offers = refetch_tracked(source, Rules())
 
-    assert source.asked == ["MLB1"]
+    assert ids(source.asked) == ["MLB1"]
     assert [o.external_id for o in offers] == ["MLB1"]
 
 
@@ -155,13 +178,13 @@ def test_erro_na_reconsulta_nao_derruba_a_rodada(monkeypatch):
 # ---------- imagem ----------
 
 
-def test_prefere_a_imagem_grande_do_multiget():
-    """O thumbnail da busca tem ~100px; imagem de post precisa da resolucao cheia."""
-    item = {
+def test_prefere_as_pictures_do_catalogo():
+    """O catalogo entrega -F (~39 KB); o thumbnail tem 1,7 KB."""
+    produto = {
         "thumbnail": "https://http2.mlstatic.com/D_NQ_NP_1-I.jpg",
-        "pictures": [{"secure_url": "https://http2.mlstatic.com/D_NQ_NP_1-O.jpg"}],
+        "pictures": [{"url": "https://http2.mlstatic.com/D_NQ_NP_1-F.jpg"}],
     }
-    assert _best_image(item) == "https://http2.mlstatic.com/D_NQ_NP_1-O.jpg"
+    assert _best_image(produto) == "https://http2.mlstatic.com/D_NQ_NP_1-F.jpg"
 
 
 def test_promove_o_thumbnail_da_busca_para_resolucao_cheia():
@@ -180,9 +203,9 @@ def test_sem_imagem_nenhuma():
     assert _best_image({}) is None
 
 
-def test_multiget_respeita_o_limite_do_ml():
-    """20 IDs por chamada e limite do ML, nao escolha nossa."""
-    assert MULTIGET_CHUNK == 20
+def test_url_do_produto_e_montada_do_id():
+    """O catalogo devolve permalink vazio, entao a URL sai do ID."""
+    assert SITE_HOST == "https://www.mercadolivre.com.br"
 
 
 class _as_ctx:

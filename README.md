@@ -161,22 +161,34 @@ Outros comandos: `stats` (estado do banco), `flush` (reenvia a fila).
 
 ## Como a coleta acompanha os preços
 
-Cada rodada faz duas coisas por fonte:
+O ML aposentou `/sites/MLB/search` e `/items` para apps comuns — os dois devolvem
+403 do policy agent mesmo com token válido e permissões concedidas. A coleta usa
+o **catálogo**, que continua aberto:
 
-1. **Descoberta** — busca cada termo do `watchlist.json` e pega o top 50 do
-   ranking. É como um produto entra no radar.
-2. **Acompanhamento** — reconsulta por ID (`/items?ids=`, 20 por chamada) todos
-   os produtos que já estão no banco e foram vistos dentro da janela da
-   baseline.
+1. **Descoberta** — `/products/search?q=` devolve produtos de catálogo já com
+   nome e fotos em resolução cheia. É como um produto entra no radar.
+2. **Preço** — `/products/{id}/items` lista os anúncios daquele produto, com
+   preço. Um celular típico tem 27 anúncios de vendedores diferentes, de
+   R$ 1.289 a R$ 1.899.
+3. **Acompanhamento** — a cada rodada, os produtos já no banco são reconsultados
+   pelo passo 2. Nome e foto vêm do banco, então é **uma chamada por produto**.
 
-O passo 2 é o que faz o histórico existir. O ranking de busca muda todo dia, e
-justamente os produtos que entram em promoção são os que oscilam — sem
-reconsultar por ID eles sumiriam do radar antes de acumular os
-`MIN_OBSERVATIONS` dias que o filtro exige, e quase nada seria postado.
+A unidade de rastreio é o **produto de catálogo**, não o anúncio — e isso é
+melhor: o preço registrado é o **menor entre os anúncios ativos e novos**, que é
+o que interessa pro grupo. Anúncio individual some da noite pro dia; o produto
+fica. Anúncio usado é descartado, tanto por qualidade quanto porque fica fora
+das regras do programa de afiliados.
 
-O teto por rodada é `ML_TRACK_LIMIT` (padrão 400 = 20 chamadas). Quando bate no
-teto a coleta avisa no log em vez de truncar em silêncio. Produto que some do ML
-para de receber observação e sai da lista sozinho quando envelhece.
+O passo 3 é o que faz o histórico existir. Sem ele, um produto só acumularia
+observação enquanto aparecesse na busca, e quase nada chegaria aos
+`MIN_OBSERVATIONS` dias que o filtro exige.
+
+**Custo de API:** `ML_TRACK_LIMIT` (padrão 150) é literalmente quantas
+requisições a reconsulta gasta por rodada, já que não há multiget. Com o daemon
+de 2h isso dá ~1.800 chamadas/dia. A coleta avisa no log quando trunca.
+
+> O token do OAuth fica na mesma base do histórico (`data/promos.db`). Apagar o
+> banco derruba a autorização — é preciso rodar `ml-auth` de novo.
 
 ## Link de afiliado — o passo manual
 

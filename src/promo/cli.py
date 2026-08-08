@@ -325,8 +325,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # Aceita `-v` antes e depois do subcomando: `promo collect -v` e a ordem
+    # que a mao escreve sozinha. O SUPPRESS e essencial -- sem ele o default
+    # do subparser sobrescreveria com False um `-v` dado la na frente.
+    verboso = argparse.ArgumentParser(add_help=False)
+    verboso.add_argument(
+        "-v", "--verbose", action="store_true", default=argparse.SUPPRESS
+    )
+
     for name, (_, help_text) in COMMANDS.items():
-        sub = subparsers.add_parser(name, help=help_text)
+        sub = subparsers.add_parser(name, help=help_text, parents=[verboso])
         if name == "run":
             sub.add_argument(
                 "--dry-run",

@@ -24,7 +24,7 @@ from .db import (
     mark_post_sent,
     pending_posts,
     record_offer,
-    tracked_external_ids,
+    tracked_products,
 )
 from .delivery import WhatsApp, WindowClosed
 from .models import Offer, ScoredOffer
@@ -106,11 +106,11 @@ def refetch_tracked(source, rules: Rules) -> list[Offer]:
 
     limit = track_limit()
     with connect() as conn:
-        ids = tracked_external_ids(conn, source.name, rules.baseline_window_days, limit)
+        tracked = tracked_products(conn, source.name, rules.baseline_window_days, limit)
 
-    if not ids:
+    if not tracked:
         return []
-    if len(ids) == limit:
+    if len(tracked) == limit:
         log.warning(
             "%s: teto de %d produtos reconsultados atingido; o resto fica sem "
             "observacao nesta rodada (suba ML_TRACK_LIMIT)",
@@ -119,12 +119,14 @@ def refetch_tracked(source, rules: Rules) -> list[Offer]:
         )
 
     try:
-        found = fetch(ids)
+        found = fetch(tracked)
     except Exception as exc:  # noqa: BLE001 - idem: nao derruba a rodada
-        log.warning("%s falhou ao reconsultar %d produtos: %s", source.name, len(ids), exc)
+        log.warning(
+            "%s falhou ao reconsultar %d produtos: %s", source.name, len(tracked), exc
+        )
         return []
 
-    log.info("%s: %d de %d produtos reconsultados", source.name, len(found), len(ids))
+    log.info("%s: %d de %d produtos reconsultados", source.name, len(found), len(tracked))
     return found
 
 

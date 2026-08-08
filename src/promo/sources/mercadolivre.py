@@ -40,27 +40,28 @@ PROVIDER = "mercadolivre"
 # `read` basta: o bot so consulta catalogo publico, nunca escreve na conta.
 SCOPES = "offline_access read"
 
-# Teto do /items?ids= do ML numa chamada so.
-MULTIGET_CHUNK = 20
+# Site publico: o catalogo nao devolve permalink (vem string vazia), entao a
+# URL do produto e montada a partir do ID.
+SITE_HOST = "https://www.mercadolivre.com.br"
+
+# Quantos produtos de catalogo pegar por termo da watchlist. Cada produto
+# custa um GET a mais pra descobrir o preco, entao isso multiplica a rodada.
+PRODUCTS_PER_KEYWORD = 10
 
 
-def _best_image(item: dict) -> str | None:
-    """Maior imagem disponivel do anuncio.
+def _best_image(product: dict) -> str | None:
+    """Maior imagem do produto de catalogo.
 
-    O `thumbnail` da busca tem ~100px -- serve pra listagem, fica horrivel
-    como imagem de post. O multiget traz `pictures` com a resolucao cheia,
-    entao preferimos ela sempre que vier.
-
-    Na busca nao ha `pictures`, mas a CDN do ML serve a versao grande da
-    mesma imagem trocando o sufixo `-I` por `-O`. Isso da imagem decente ja
-    na descoberta, sem esperar a rodada seguinte de multiget.
+    O catalogo ja entrega `pictures` na resolucao cheia (sufixo -F na CDN,
+    ~39 KB contra 1,7 KB do thumbnail), entao nao ha o que promover aqui.
+    O fallback do thumbnail fica pra quem vier de uma rota mais pobre.
     """
-    for picture in item.get("pictures") or []:
+    for picture in product.get("pictures") or []:
         url = picture.get("secure_url") or picture.get("url")
         if url:
             return url
 
-    thumbnail = item.get("thumbnail")
+    thumbnail = product.get("thumbnail")
     if thumbnail and "-I." in thumbnail:
         return thumbnail.replace("-I.", "-O.")
     return thumbnail
@@ -179,60 +180,92 @@ class MercadoLivre:
 
     # ---------- Busca ----------
 
-    def search(self, keyword: str, limit: int = 50) -> list[Offer]:
-        """Descobre produtos novos: top N do ranking de busca do termo."""
+    def search(self, keyword: str, limit: int = PRODUCTS_PER_KEYWORD) -> list[Offer]:
+        """Descobre produtos de catalogo para um termo.
+
+        Uma chamada ja traz nome e fotos de cada produto; o preco vem depois,
+        um GET por produto em /products/{id}/items.
+        """
         response = self._client.get(
-            f"{API_HOST}/sites/{self.config.site_id}/search",
-            params={"q": keyword, "limit": min(limit, 50)},
+            f"{API_HOST}/products/search",
+            params={
+                "site_id": self.config.site_id,
+                "status": "active",
+                "q": keyword,
+                "limit": limit,
+            },
             headers={"Authorization": f"Bearer {self.access_token()}"},
         )
         response.raise_for_status()
-        return [self._to_offer(item) for item in response.json().get("results", [])]
 
-    def fetch_by_ids(self, external_ids: list[str]) -> list[Offer]:
-        """Reconsulta produtos que ja estao no banco, por ID.
-
-        A busca so devolve o top 50 do ranking do momento, e o ranking muda
-        todo dia -- um produto so acumularia os MIN_OBSERVATIONS dias se
-        ficasse no topo o tempo todo. Justamente os que entram em promocao
-        oscilam e sumiriam do radar antes da baseline amadurecer. Aqui o
-        historico continua independente de onde ele esteja na busca.
-        """
-        offers: list[Offer] = []
-        token = self.access_token()  # uma vez so: o loop abaixo nao renova
-
-        for start in range(0, len(external_ids), MULTIGET_CHUNK):
-            chunk = external_ids[start : start + MULTIGET_CHUNK]
-            response = self._client.get(
-                f"{API_HOST}/items",
-                params={"ids": ",".join(chunk)},
-                headers={"Authorization": f"Bearer {token}"},
+        offers = []
+        for product in response.json().get("results", [])[:limit]:
+            offer = self._offer_for(
+                product["id"],
+                title=product.get("name") or "",
+                image_url=_best_image(product),
             )
-            response.raise_for_status()
-            for entry in response.json():
-                # Anuncio removido volta com code != 200. Ignorar basta: sem
-                # observacao nova o last_seen_at envelhece e ele sai da lista.
-                if entry.get("code") == 200:
-                    offers.append(self._to_offer(entry["body"]))
+            if offer is not None:
+                offers.append(offer)
         return offers
 
-    def _to_offer(self, item: dict) -> Offer:
-        shipping = item.get("shipping") or {}
-        # `status` so vem no multiget; na busca o default mantem o comportamento.
-        active = item.get("status", "active") == "active"
+    def fetch_by_ids(self, tracked: list[tuple[str, str, str | None]]) -> list[Offer]:
+        """Reconsulta produtos ja conhecidos: (external_id, titulo, imagem).
+
+        Nome e foto vem do banco em vez de uma segunda chamada -- eles quase
+        nao mudam, e o que interessa aqui e o preco de hoje. Um GET por
+        produto; o teto por rodada e ML_TRACK_LIMIT.
+        """
+        offers = []
+        for external_id, title, image_url in tracked:
+            offer = self._offer_for(external_id, title=title, image_url=image_url)
+            if offer is not None:
+                offers.append(offer)
+        return offers
+
+    def _offer_for(
+        self, product_id: str, title: str, image_url: str | None
+    ) -> Offer | None:
+        """Menor preco entre os anuncios ativos de um produto de catalogo.
+
+        O mesmo produto tem dezenas de anuncios de vendedores diferentes (27
+        num celular tipico, variando de R$ 1.289 a R$ 1.899). O que importa
+        pro grupo e o menor preco disponivel, entao a baseline e o historico
+        do minimo -- nao de um anuncio especifico, que pode sumir amanha.
+        """
+        response = self._client.get(
+            f"{API_HOST}/products/{product_id}/items",
+            headers={"Authorization": f"Bearer {self.access_token()}"},
+        )
+        if response.status_code == 404:
+            return None  # produto saiu do catalogo
+        response.raise_for_status()
+
+        # `condition` importa alem da qualidade: anuncio usado fica fora das
+        # regras do programa de afiliados.
+        candidatos = [
+            listing
+            for listing in response.json().get("results", [])
+            if listing.get("price") and listing.get("condition") == "new"
+        ]
+        if not candidatos:
+            return None
+
+        melhor = min(candidatos, key=lambda listing: listing["price"])
+        shipping = melhor.get("shipping") or {}
         return Offer(
             source=PROVIDER,
-            external_id=item["id"],
-            title=item["title"],
-            price=float(item["price"]),
+            external_id=product_id,
+            title=title,
+            price=float(melhor["price"]),
             original_price=(
-                float(item["original_price"]) if item.get("original_price") else None
+                float(melhor["original_price"]) if melhor.get("original_price") else None
             ),
-            url=item.get("permalink", ""),
-            currency=item.get("currency_id", "BRL"),
-            image_url=_best_image(item),
-            category=item.get("category_id"),
-            available=active and item.get("available_quantity", 0) > 0,
+            url=f"{SITE_HOST}/p/{product_id}",
+            currency=melhor.get("currency_id", "BRL"),
+            image_url=image_url,
+            category=melhor.get("category_id"),
+            available=True,  # ter anuncio ativo na lista ja e a disponibilidade
             free_shipping=bool(shipping.get("free_shipping")),
         )
 
