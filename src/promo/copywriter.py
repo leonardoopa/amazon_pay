@@ -31,27 +31,55 @@ DISCLOSURES = {
     "mercadolivre": "Link de afiliado - o preco pra voce nao muda.",
 }
 
-SYSTEM = """Voce escreve posts curtos de oferta para um grupo de WhatsApp brasileiro.
+SYSTEM = """Voce escreve posts de oferta para um grupo de WhatsApp brasileiro.
 
-Tom: direto, animado sem ser forcado, como um amigo que achou um bom preco.
-Portugues do Brasil, informal.
+O post tem que fazer a pessoa QUERER o produto antes de olhar o preco. Quem le
+esta rolando o feed: se a primeira linha nao segurar, o resto nao existe.
 
-Formato (siga exatamente):
-- 1 linha de gancho com no maximo 1 emoji
-- nome do produto (pode encurtar nomes gigantes de marketplace, sem mudar o sentido)
-- preco atual e a comparacao com a media historica
-- se for o menor preco ja registrado, diga isso
-- o link, sozinho numa linha
-- ultima linha: exatamente o texto que eu informar em "Divulgacao obrigatoria"
+Tom: brasileiro, informal, bem-humorado. Como um amigo que achou o preco e
+avisa o grupo. Pode ser engracado, mas nunca forcado nem apelativo.
+
+Estrutura do post, linha a linha. NUNCA copie os rotulos abaixo para o texto:
+eles descrevem o que escrever, nao sao o que escrever.
+
+  1. chamada em CAIXA ALTA
+  2. vazia
+  3. nome do produto
+  4. vazia
+  5. o preco, no formato: De R$ <media> por *R$ <preco>*
+  6. vazia
+  7. a URL, sozinha
+  8. vazia
+  9. a divulgacao obrigatoria
+
+Duas linhas opcionais, que voce SO escreve quando eu mandar explicitamente:
+- cupom: entra logo depois do preco, como "Use o cupom: CODIGO 🎟️"
+- loja oficial: entra logo antes da URL, como "Loja oficial no ML"
+
+Quando eu disser que NAO ha cupom, ou que NAO e loja oficial, a linha
+correspondente simplesmente nao existe no post. Nao invente, nao adapte, nao
+escreva variacao ("loja verificada", "vendedor oficial"). Loja oficial e um
+selo do Mercado Livre, nao um adjetivo.
+
+Sobre a linha de chamada:
+- CAIXA ALTA, curta, no maximo 1 emoji.
+- O melhor gancho costuma ser o preco virando piada ou espanto:
+  "37 CONTO DA POLO DA HERING", "O TRIO PERFEITO PRO SEU ROSTO".
+- Pode usar giria ("conto", "pila"). Nao invente numero: se citar preco na
+  chamada, use exatamente o preco que eu passei, podendo arredondar pra baixo
+  ao real inteiro (R$ 27,00 pode virar "27 CONTO").
 
 Regras rigidas:
-- Use SOMENTE os numeros que eu passar. Nunca invente preco, desconto ou prazo.
-- Nao escreva "ultimas unidades", "so hoje" ou qualquer urgencia que eu nao tenha informado.
-- Nao prometa qualidade do produto: voce nao testou.
-- A linha de divulgacao obrigatoria deve ser copiada CARACTERE POR CARACTERE.
-  Nao reescreva, nao traduza, nao encurte, nao adicione emoji nela.
-- Maximo 6 linhas. Sem markdown, sem asteriscos de titulo.
-- Formatacao do WhatsApp: *negrito* so no preco.
+- Use SOMENTE os numeros que eu passar. Nunca invente preco, desconto, cupom,
+  prazo, parcela ou forma de pagamento.
+- Nao escreva "ultimas unidades", "so hoje", "corre que acaba" nem qualquer
+  urgencia que eu nao tenha informado. Escassez inventada e mentira.
+- Nao prometa qualidade nem resultado: voce nao testou o produto.
+- Nao cite loja oficial se eu nao informar.
+- A divulgacao obrigatoria vai copiada CARACTERE POR CARACTERE. Nao reescreva,
+  nao traduza, nao encurte, nao adicione emoji nela.
+- Formatacao do WhatsApp: *negrito* so no preco final.
+- Sem markdown de titulo, sem asterisco fora do preco.
 
 Responda apenas com o texto do post, nada mais."""
 
@@ -61,10 +89,10 @@ class Copywriter:
         self._client = client or genai.Client(api_key=gemini_api_key())
         self._model = copy_model()
 
-    def write(self, scored: ScoredOffer, link: str) -> str:
+    def write(self, scored: ScoredOffer, link: str, coupon: str | None = None) -> str:
         response = self._client.models.generate_content(
             model=self._model,
-            contents=_facts(scored, link),
+            contents=_facts(scored, link, coupon),
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM,
                 max_output_tokens=MAX_OUTPUT_TOKENS,
@@ -136,6 +164,22 @@ URGENCIA_FALSA = re.compile(
 )
 
 
+# "Loja oficial" e selo do ML, nao adjetivo. Observado na pratica: com
+# official_store=False e sem o fato no prompt, o post saiu com "Loja oficial no
+# ML" mesmo assim -- o modelo preenche o formato que aprendeu. Atribuir selo
+# que o vendedor nao tem engana o grupo e e reclamacao direta pro programa.
+LOJA_OFICIAL = re.compile(r"loja\s+oficial", re.IGNORECASE)
+
+# Instrucao do proprio prompt que vazou pro texto. Barato de checar e obvio
+# quando acontece -- e um post com "o link sozinho numa linha" no meio destroi
+# a credibilidade do grupo de uma vez.
+VAZOU_PROMPT = re.compile(
+    r"linha\s+de\s+chamada|caixa\s+alta|em\s+branco|sozinh[ao]\s+numa\s+linha"
+    r"|divulgacao\s+obrigatoria|<[a-z_]+>",
+    re.IGNORECASE,
+)
+
+
 def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
     """Barra post que afirma o que o dado nao sustenta.
 
@@ -160,13 +204,27 @@ def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
             f"O texto inventou urgencia ({achado.group(0)!r}); nao temos esse dado."
         )
 
+    if not scored.offer.official_store and LOJA_OFICIAL.search(text):
+        raise RuntimeError(
+            "O texto diz 'loja oficial', mas o anuncio nao e de loja oficial."
+        )
 
-def _facts(scored: ScoredOffer, link: str) -> str:
+    achado = VAZOU_PROMPT.search(text)
+    if achado:
+        raise RuntimeError(
+            f"Instrucao do prompt vazou pro post ({achado.group(0)!r})."
+        )
+
+
+def _facts(scored: ScoredOffer, link: str, coupon: str | None = None) -> str:
     offer = scored.offer
     facts = [
         f"Produto: {offer.title}",
-        f"Preco agora: R$ {brl(offer.price)}",
-        f"Media historica ({scored.observations} dias): R$ {brl(scored.baseline)}",
+        # O "De" e a nossa mediana, nao o preco riscado da loja -- esse vem
+        # nulo na maioria dos anuncios, e quando vem e o numero inflado na
+        # vespera que o projeto inteiro existe pra ignorar.
+        f"De (media de {scored.observations} dias): R$ {brl(scored.baseline)}",
+        f"Por (preco agora): R$ {brl(offer.price)}",
         f"Desconto contra a media: {scored.discount_pct:.0f}%",
         f"Loja: {'Mercado Livre' if offer.source == 'mercadolivre' else 'Amazon'}",
         f"Link: {link}",
@@ -175,6 +233,18 @@ def _facts(scored: ScoredOffer, link: str) -> str:
         facts.append("Este e o menor preco desde que comecamos a monitorar.")
     if offer.free_shipping:
         facts.append("Frete gratis.")
+    # Sempre dizer o estado das duas linhas opcionais, inclusive quando e
+    # "nao". Deixar o assunto de fora nao equivale a proibir: o modelo preenche
+    # o formato que aprendeu, e escreve "Loja oficial no ML" sozinho -- foi o
+    # que aconteceu em 3 de 3 posts antes desta instrucao existir.
+    facts.append(
+        f"Cupom: {coupon}" if coupon else "Cupom: NAO ha. NAO escreva linha de cupom."
+    )
+    facts.append(
+        "Loja oficial: SIM, e anuncio de loja oficial no ML."
+        if offer.official_store
+        else "Loja oficial: NAO. NAO escreva 'loja oficial' nem variacao disso."
+    )
     facts.append(f"Divulgacao obrigatoria (copie literalmente): {disclosure_for(offer.source)}")
     return "\n".join(facts)
 
@@ -195,16 +265,30 @@ def _enforce_disclosure(text: str, source: str) -> str:
     return f"{text}\n{disclosure}"
 
 
-def fallback_copy(scored: ScoredOffer, link: str) -> str:
-    """Texto sem IA, usado se a chamada ao Gemini falhar."""
+def fallback_copy(
+    scored: ScoredOffer, link: str, coupon: str | None = None
+) -> str:
+    """Texto sem IA, usado quando o Gemini falha ou inventa.
+
+    Segue o mesmo formato do prompt, menos a linha de chamada -- que e
+    justamente a parte que precisa de criatividade e que nao da pra fabricar
+    com template sem soar automatica. Post sem gracinha e melhor que oferta
+    perdida, e melhor ainda que post mentiroso.
+    """
     offer = scored.offer
     lines = [
-        "Achei um bom preco",
         offer.title,
-        f"*R$ {brl(offer.price)}* — {scored.discount_pct:.0f}% abaixo da media de R$ {brl(scored.baseline)}",
+        "",
+        f"De R$ {brl(scored.baseline)} por *R$ {brl(offer.price)}*",
     ]
+    if coupon:
+        lines.append(f"Use o cupom: {coupon} 🎟️")
     if scored.lowest_ever:
         lines.append("Menor preco desde que comecamos a monitorar.")
+    lines.append("")
+    if offer.official_store:
+        lines.append("Loja oficial no ML")
     lines.append(link)
+    lines.append("")
     lines.append(disclosure_for(offer.source))
     return "\n".join(lines)

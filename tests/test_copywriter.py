@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -106,12 +107,53 @@ def test_write_recusa_resposta_vazia():
 
 
 def test_fallback_tem_disclosure_e_numeros():
+    """O fallback segue o mesmo formato De/Por do post principal.
+
+    Sem porcentagem de proposito: o "De R$ 200,00 por R$ 150,00" ja mostra a
+    queda, e o formato pedido pro grupo nao usa percentual.
+    """
     text = fallback_copy(make_scored(lowest_ever=True), LINK)
 
-    assert "*R$ 150,00*" in text
-    assert "25%" in text
+    assert "De R$ 200,00 por *R$ 150,00*" in text
     assert LINK in text
     assert text.endswith("Link de afiliado - o preco pra voce nao muda.")
+
+
+def test_recusa_loja_oficial_inventada():
+    """Observado na pratica: com official_store=False, e sem o fato no prompt,
+    o post saiu com 'Loja oficial no ML'. Selo do ML nao e adjetivo."""
+    texto = "PRECO BOM\n\nProduto\n\nDe R$ 200,00 por *R$ 150,00*\n\nLoja oficial no ML\nlink"
+    copywriter = Copywriter(client=FakeClient(texto))
+
+    with pytest.raises(RuntimeError, match="loja oficial"):
+        copywriter.write(make_scored(), LINK)
+
+
+def test_aceita_loja_oficial_quando_e_verdade():
+    texto = "PRECO BOM\n\nProduto\n\nDe R$ 200,00 por *R$ 150,00*\n\nLoja oficial no ML\nlink"
+    scored = make_scored()
+    scored = replace(scored, offer=replace(scored.offer, official_store=True))
+
+    assert "Loja oficial" in Copywriter(client=FakeClient(texto)).write(scored, LINK)
+
+
+def test_recusa_instrucao_do_prompt_vazada():
+    """Aconteceu: saiu a linha literal 'o link sozinho numa linha' no post."""
+    texto = "PRECO BOM\n\nProduto\n\nDe R$ 200,00 por *R$ 150,00*\n\no link sozinho numa linha\nlink"
+    copywriter = Copywriter(client=FakeClient(texto))
+
+    with pytest.raises(RuntimeError, match="vazou"):
+        copywriter.write(make_scored(), LINK)
+
+
+def test_fallback_inclui_cupom_quando_existe():
+    text = fallback_copy(make_scored(), LINK, coupon="MELIDATADUPLA")
+    assert "Use o cupom: MELIDATADUPLA" in text
+
+
+def test_fallback_sem_cupom_nao_inventa_linha():
+    """Linha de cupom vazia e pior que ausente: a pessoa procura o codigo."""
+    assert "cupom" not in fallback_copy(make_scored(), LINK).lower()
 
 
 # --- Divulgacao obrigatoria (Clausula 5 do Contrato de Associados) ---
