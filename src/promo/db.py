@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS affiliate_links (
     created_at TEXT NOT NULL
 );
 
+-- Produtos que o programa de afiliados recusa ("URL not allowed in affiliates
+-- program", codigo 111). Sem registrar isso, o pipeline pediria link pro mesmo
+-- anuncio inelegivel em toda rodada, pra sempre. A elegibilidade muda com o
+-- tempo, entao a recusa expira -- ver AFFILIATE_RECHECK_DAYS.
+CREATE TABLE IF NOT EXISTS affiliate_blocked (
+    product_id TEXT PRIMARY KEY REFERENCES products(id),
+    reason     TEXT NOT NULL,
+    checked_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS oauth_tokens (
     provider      TEXT PRIMARY KEY,
     access_token  TEXT,
@@ -73,6 +83,12 @@ CREATE INDEX IF NOT EXISTS idx_posts_product
 # nao mexe em tabela que ja existe, entao banco antigo precisa do ALTER.
 # Tentativas de envio antes de desistir de um post.
 MAX_SEND_ATTEMPTS = 3
+
+# Quanto tempo respeitar uma recusa do programa de afiliados antes de perguntar
+# de novo. Elegibilidade muda (o vendedor entra no programa, a categoria passa
+# a ser aceita), entao a recusa nao pode ser definitiva -- mas 30 dias evitam
+# transformar cada anuncio inelegivel numa consulta por rodada.
+AFFILIATE_RECHECK_DAYS = 30
 
 MIGRATIONS = [
     ("posts", "image_url", "ALTER TABLE posts ADD COLUMN image_url TEXT"),
@@ -243,7 +259,11 @@ def products_missing_link(conn: sqlite3.Connection, limit: int = 50) -> list[sql
     """Produtos rastreados que ainda nao tem link de afiliado.
 
     Ordenados pelos que mais se aproximam de virar post (mais dias de
-    historico primeiro), pra voce gerar link do que tem chance de sair.
+    historico primeiro), pra gerar link do que tem chance de sair.
+
+    Fora da lista: quem o programa recusou ha menos de AFFILIATE_RECHECK_DAYS.
+    Sem esse corte, cada rodada gastaria uma consulta por anuncio inelegivel --
+    e eles nunca saem do banco, entao o desperdicio so cresce.
     """
     return conn.execute(
         """
@@ -251,13 +271,44 @@ def products_missing_link(conn: sqlite3.Connection, limit: int = 50) -> list[sql
         FROM products p
         JOIN price_history h ON h.product_id = p.id
         LEFT JOIN affiliate_links a ON a.product_id = p.id
+        LEFT JOIN affiliate_blocked b
+               ON b.product_id = p.id
+              AND b.checked_at >= datetime(?, ?)
         WHERE a.product_id IS NULL
+          AND b.product_id IS NULL
         GROUP BY p.id
         ORDER BY dias DESC, p.last_seen_at DESC
         LIMIT ?
         """,
-        (limit,),
+        (_iso(now()), f"-{AFFILIATE_RECHECK_DAYS} days", limit),
     ).fetchall()
+
+
+def mark_affiliate_blocked(
+    conn: sqlite3.Connection, product_id: str, reason: str
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO affiliate_blocked (product_id, reason, checked_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(product_id) DO UPDATE SET
+            reason     = excluded.reason,
+            checked_at = excluded.checked_at
+        """,
+        (product_id, reason[:200], _iso(now())),
+    )
+
+
+def affiliate_blocked(conn: sqlite3.Connection, product_id: str) -> str | None:
+    """Motivo da recusa, se ela ainda vale. None = pode tentar de novo."""
+    row = conn.execute(
+        """
+        SELECT reason FROM affiliate_blocked
+        WHERE product_id = ? AND checked_at >= datetime(?, ?)
+        """,
+        (product_id, _iso(now()), f"-{AFFILIATE_RECHECK_DAYS} days"),
+    ).fetchone()
+    return row["reason"] if row else None
 
 
 def create_post(

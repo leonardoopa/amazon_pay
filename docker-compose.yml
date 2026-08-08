@@ -7,15 +7,45 @@ services:
     env_file: .env
     environment:
       DB_PATH: /app/data/promos.db
+      # Dentro da rede do compose o host e o nome do servico, nao localhost.
+      EVOLUTION_BASE_URL: http://evolution:8080
     volumes:
       - ./data:/app/data
       # Editar a watchlist sem rebuildar a imagem.
       - ./watchlist.json:/app/watchlist.json:ro
     # Sem ports: o `ml-auth` e por colagem manual da URL, nada escuta.
     command: ["daemon"]
+    depends_on:
+      - evolution
     healthcheck:
       test: ["CMD", "amazon_pay", "stats"]
       interval: 5m
       timeout: 30s
       retries: 3
       start_period: 30s
+
+  # Gateway nao oficial (Baileys) -- e o que alcanca grupo comum do WhatsApp.
+  # O numero pareado aqui pode ser banido pela Meta: use um chip secundario.
+  evolution:
+    image: evoapicloud/evolution-api:latest
+    container_name: evolution_api
+    restart: unless-stopped
+    environment:
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      # Sem banco externo: a sessao vive no volume abaixo. Perder esse volume
+      # significa reparear o numero pelo QR.
+      DATABASE_ENABLED: "false"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      # Sem isso a instancia acorda desconectada depois de um restart.
+      CONFIG_SESSION_PHONE_CLIENT: Ofertas
+      DEL_INSTANCE: "false"
+    volumes:
+      - evolution_instances:/evolution/instances
+    ports:
+      # So no loopback: o `wa-connect` e o `wa-groups` rodam da sua maquina, e
+      # essa porta com a API key e acesso total ao WhatsApp pareado.
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  evolution_instances:

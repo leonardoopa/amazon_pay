@@ -13,7 +13,6 @@ from .config import (
     MissingConfig,
     ROOT,
     Rules,
-    WhatsAppConfig,
     track_limit,
 )
 from .copywriter import Copywriter, fallback_copy
@@ -26,7 +25,7 @@ from .db import (
     record_offer,
     tracked_products,
 )
-from .delivery import WhatsApp, WindowClosed
+from .delivery import NotConnected, WindowClosed, build_delivery
 from .models import Offer, ScoredOffer
 from .scoring import score
 from .sources.amazon import Amazon
@@ -41,12 +40,35 @@ class Watch:
     max_price: float | None = None
 
 
+@dataclass
+class Category:
+    """Categoria acompanhada pelos mais vendidos do ML."""
+
+    id: str
+    name: str = ""
+    max_price: float | None = None
+
+
 def load_watchlist(path: Path | None = None) -> list[Watch]:
     path = path or ROOT / "watchlist.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     return [
         Watch(term=entry["term"], max_price=entry.get("max_price"))
         for entry in data["keywords"]
+    ]
+
+
+def load_categories(path: Path | None = None) -> list[Category]:
+    """Categorias do watchlist.json. Ausente e o normal -- o campo e opcional."""
+    path = path or ROOT / "watchlist.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return [
+        Category(
+            id=entry["id"],
+            name=entry.get("name", ""),
+            max_price=entry.get("max_price"),
+        )
+        for entry in data.get("categories", [])
     ]
 
 
@@ -69,9 +91,17 @@ def build_sources() -> list:
 
 
 def collect(
-    sources: list, watchlist: list[Watch], rules: Rules | None = None
+    sources: list,
+    watchlist: list[Watch],
+    rules: Rules | None = None,
+    categories: list[Category] | None = None,
 ) -> list[Offer]:
-    """Descobre produtos novos pela busca e reconsulta os que ja conhecemos."""
+    """Descobre produtos novos e reconsulta os que ja conhecemos.
+
+    Duas vias de descoberta, complementares: os termos da watchlist acham o que
+    voce sabe que quer, e os mais vendidos por categoria acham o que voce nao
+    pensaria em procurar. As duas alimentam o mesmo historico de precos.
+    """
     rules = rules or Rules.load()
     offers: list[Offer] = []
     for source in sources:
@@ -86,7 +116,33 @@ def collect(
             offers.extend(found)
             log.info("%s: %d ofertas para '%s'", source.name, len(found), watch.term)
 
+        offers.extend(collect_categories(source, categories or []))
         offers.extend(refetch_tracked(source, rules))
+    return offers
+
+
+def collect_categories(source, categories: list[Category]) -> list[Offer]:
+    """Mais vendidos das categorias acompanhadas.
+
+    Fonte sem `highlights` (Amazon) e ignorada em silencio -- categoria e
+    conceito do ML, nao um recurso que toda loja precise ter.
+    """
+    destaques = getattr(source, "highlights", None)
+    if destaques is None or not categories:
+        return []
+
+    offers: list[Offer] = []
+    for category in categories:
+        rotulo = category.name or category.id
+        try:
+            found = destaques(category.id)
+        except Exception as exc:  # noqa: BLE001 - idem: nao derruba a rodada
+            log.warning("%s falhou na categoria '%s': %s", source.name, rotulo, exc)
+            continue
+        if category.max_price is not None:
+            found = [o for o in found if o.price <= category.max_price]
+        offers.extend(found)
+        log.info("%s: %d mais vendidos em '%s'", source.name, len(found), rotulo)
     return offers
 
 
@@ -135,7 +191,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     sources = build_sources()
     by_name = {source.name: source for source in sources}
 
-    offers = collect(sources, load_watchlist(), rules)
+    offers = collect(sources, load_watchlist(), rules, load_categories())
 
     picked: list[ScoredOffer] = []
     with connect() as conn:
@@ -216,7 +272,7 @@ def deliver(drafts: list[tuple[ScoredOffer, str]]) -> None:
 
 
 def flush_pending() -> None:
-    whatsapp = WhatsApp(WhatsAppConfig.load())
+    delivery = build_delivery()
 
     with connect() as conn:
         queue = [(row["id"], row["copy"], row["image_url"]) for row in pending_posts(conn)]
@@ -227,14 +283,24 @@ def flush_pending() -> None:
 
     for index, (post_id, text, image_url) in enumerate(queue):
         try:
-            whatsapp.send_post(text, image_url)
+            delivery.send_post(text, image_url)
         except WindowClosed:
-            # Fora da janela de 24h so passa template. Pinga voce pedindo uma
-            # resposta qualquer -- isso reabre a janela e a proxima rodada
-            # (ou `promo flush`) entrega o que ficou na fila.
+            # So o backend 'cloud' chega aqui. Fora da janela de 24h so passa
+            # template: pinga voce pedindo uma resposta qualquer, o que reabre a
+            # janela pra proxima rodada (ou `promo flush`) drenar o resto.
             remaining = len(queue) - index
             log.warning("Janela de 24h fechada, %d na fila. Enviando template.", remaining)
-            whatsapp.send_ping_template(remaining)
+            delivery.send_ping_template(remaining)
+            return
+        except NotConnected as exc:
+            # So o backend 'evolution'. Reparar exige o QR na mao, entao insistir
+            # nos outros posts da fila so gastaria tentativa a toa -- eles ficam
+            # 'pending' e saem quando o numero voltar.
+            log.error(
+                "Instancia da Evolution caiu, %d post(s) ficam na fila: %s",
+                len(queue) - index,
+                exc,
+            )
             return
         except Exception as exc:  # noqa: BLE001
             log.error("Falha ao enviar post %d: %s", post_id, exc)
