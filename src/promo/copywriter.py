@@ -61,13 +61,24 @@ correspondente simplesmente nao existe no post. Nao invente, nao adapte, nao
 escreva variacao ("loja verificada", "vendedor oficial"). Loja oficial e um
 selo do Mercado Livre, nao um adjetivo.
 
-Sobre a linha de chamada:
+Sobre a linha de chamada -- e a linha que decide se o post e lido:
 - CAIXA ALTA, curta, no maximo 1 emoji.
-- O melhor gancho costuma ser o preco virando piada ou espanto:
-  "37 CONTO DA POLO DA HERING", "O TRIO PERFEITO PRO SEU ROSTO".
-- Pode usar giria ("conto", "pila"). Nao invente numero: se citar preco na
-  chamada, use exatamente o preco que eu passei, podendo arredondar pra baixo
-  ao real inteiro (R$ 27,00 pode virar "27 CONTO").
+- Pode usar giria ("conto", "pila", "sai correndo", "toma"). Nao invente
+  numero: se citar preco, use exatamente o que eu passei, podendo arredondar
+  pra baixo ao real inteiro (R$ 27,00 pode virar "27 CONTO").
+
+Varie o ANGULO da chamada. Escolha o que combina com o produto, e nao repita o
+mesmo tipo duas vezes seguidas:
+- preco como espanto: "37 CONTO DA POLO DA HERING"
+- para quem serve: "O TRIO PERFEITO PRO SEU ROSTO"
+- a dor que resolve: "CHEGA DE FRITAR NO OLEO"
+- comparacao do dia a dia: "MAIS BARATO QUE O TEU IFOOD DE ONTEM"
+- a pergunta incredula: "QUEM AUTORIZOU ESSE PRECO?"
+- o caso de uso concreto: "PRO CAFE DA MANHA EM 5 MINUTOS"
+- conselho de amigo: "COMPRA LOGO QUE EU JA COMPREI"
+
+Nao comece toda chamada com o nome da categoria do produto. "AIR FRYER POR X"
+seguido de "AIR FRYER POR Y" e o erro mais comum e o mais chato de ler.
 
 Regras rigidas:
 - Use SOMENTE os numeros que eu passar. Nunca invente preco, desconto, cupom,
@@ -89,10 +100,16 @@ class Copywriter:
         self._client = client or genai.Client(api_key=gemini_api_key())
         self._model = copy_model()
 
-    def write(self, scored: ScoredOffer, link: str, coupon: str | None = None) -> str:
+    def write(
+        self,
+        scored: ScoredOffer,
+        link: str,
+        coupon: str | None = None,
+        avoid: list[str] | None = None,
+    ) -> str:
         response = self._client.models.generate_content(
             model=self._model,
-            contents=_facts(scored, link, coupon),
+            contents=_facts(scored, link, coupon, avoid),
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM,
                 max_output_tokens=MAX_OUTPUT_TOKENS,
@@ -216,7 +233,12 @@ def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
         )
 
 
-def _facts(scored: ScoredOffer, link: str, coupon: str | None = None) -> str:
+def _facts(
+    scored: ScoredOffer,
+    link: str,
+    coupon: str | None = None,
+    avoid: list[str] | None = None,
+) -> str:
     offer = scored.offer
     facts = [
         f"Produto: {offer.title}",
@@ -245,6 +267,13 @@ def _facts(scored: ScoredOffer, link: str, coupon: str | None = None) -> str:
         if offer.official_store
         else "Loja oficial: NAO. NAO escreva 'loja oficial' nem variacao disso."
     )
+    if avoid:
+        # O modelo nao tem memoria entre chamadas: sem isso ele reencontra a
+        # mesma piada boa toda vez, e o grupo le a mesma formula o dia inteiro.
+        facts.append(
+            "Chamadas ja usadas nos posts recentes -- NAO repita a formula nem "
+            "o angulo delas:\n" + "\n".join(f"  - {linha}" for linha in avoid)
+        )
     facts.append(f"Divulgacao obrigatoria (copie literalmente): {disclosure_for(offer.source)}")
     return "\n".join(facts)
 
