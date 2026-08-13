@@ -107,3 +107,88 @@ def test_inclui_pendentes():
 
 def test_banco_sem_post_devolve_vazio():
     assert recent_headlines(make_conn()) == []
+
+
+# ---------- fatia quente ----------
+#
+# Volume exige carteira grande; carteira grande nao cabe num ciclo de minutos.
+# A saida e reconsultar so quem pode virar post logo: quem ja esta colado na
+# propria minima historica.
+
+
+def add_history(conn: sqlite3.Connection, external_id: str, precos: list[float]) -> None:
+    """Cria produto com uma serie de precos, o ultimo sendo o de hoje."""
+    conn.execute(
+        "INSERT OR IGNORE INTO products (id, source, external_id, title, url,"
+        " first_seen_at, last_seen_at) VALUES (?,?,?,?,?,?,?)",
+        (f"mercadolivre:{external_id}", "mercadolivre", external_id, "P", "u", "x", "x"),
+    )
+    for dia, preco in enumerate(precos):
+        conn.execute(
+            "INSERT INTO price_history (product_id, observed_on, price, available)"
+            " VALUES (?, date('now', ?), ?, 1)",
+            (f"mercadolivre:{external_id}", f"-{len(precos) - dia - 1} days", preco),
+        )
+
+
+def test_produto_colado_na_minima_e_quente():
+    from promo.db import hot_products
+
+    conn = make_conn()
+    add_history(conn, "MLB9", [100.0, 90.0, 91.0])  # 91 esta 1% acima da minima 90
+
+    assert [p[0] for p in hot_products(conn, "mercadolivre", 10, 25)] == ["MLB9"]
+
+
+def test_produto_longe_da_minima_fica_de_fora():
+    """Quem esta 40% acima da propria minima nao vira oferta com queda pequena.
+    Reconsultar ele a cada 15 min e gastar chamada por nada."""
+    from promo.db import hot_products
+
+    conn = make_conn()
+    add_history(conn, "MLB9", [100.0, 50.0, 70.0])  # 70 esta 40% acima da minima
+
+    assert hot_products(conn, "mercadolivre", 10, 25) == []
+
+
+def test_margem_maior_inclui_mais_produtos():
+    from promo.db import hot_products
+
+    conn = make_conn()
+    add_history(conn, "MLB9", [100.0, 50.0, 70.0])
+
+    assert hot_products(conn, "mercadolivre", 10, 25) == []
+    assert len(hot_products(conn, "mercadolivre", 50, 25)) == 1
+
+
+def test_ordena_do_mais_colado_na_minima():
+    """Se o teto cortar, cortar os menos promissores."""
+    from promo.db import hot_products
+
+    conn = make_conn()
+    add_history(conn, "MLB_perto", [100.0, 100.0, 101.0])  # 1% acima
+    add_history(conn, "MLB_meio", [100.0, 100.0, 108.0])   # 8% acima
+
+    assert [p[0] for p in hot_products(conn, "mercadolivre", 10, 25)] == [
+        "MLB_perto",
+        "MLB_meio",
+    ]
+
+
+def test_respeita_o_teto_da_fatia_quente():
+    from promo.db import hot_products
+
+    conn = make_conn()
+    for i in range(10):
+        add_history(conn, f"MLB{i}", [100.0, 100.0, 100.0])
+
+    assert len(hot_products(conn, "mercadolivre", 10, 3)) == 3
+
+
+def test_nao_mistura_fontes():
+    from promo.db import hot_products
+
+    conn = make_conn()
+    add_history(conn, "MLB9", [100.0, 100.0, 100.0])
+
+    assert hot_products(conn, "amazon", 10, 25) == []

@@ -15,6 +15,10 @@ from .config import (
     ROOT,
     Rules,
     discovery_interval_hours,
+    full_refetch_interval_hours,
+    hot_interval_minutes,
+    hot_margin_pct,
+    hot_track_limit,
     track_limit,
 )
 from .copywriter import Copywriter, fallback_copy
@@ -24,6 +28,7 @@ from .db import (
     mark_post_failed,
     mark_post_sent,
     get_meta,
+    hot_products,
     hours_since,
     pending_posts,
     recent_headlines,
@@ -145,11 +150,13 @@ def collect(
 
         if descobrir:
             offers.extend(collect_categories(source, categories or []))
-        offers.extend(refetch_tracked(source, rules))
+        if _due("last_full_refetch", full_refetch_interval_hours()):
+            offers.extend(refetch_tracked(source, rules))
+            _stamp("last_full_refetch")
+        offers.extend(refetch_hot(source))
 
     if descobrir:
-        with connect() as conn:
-            set_meta(conn, DISCOVERY_KEY, _iso_now())
+        _stamp(DISCOVERY_KEY)
     return offers
 
 
@@ -160,6 +167,51 @@ def _iso_now() -> str:
     from .db import now
 
     return now().isoformat()
+
+
+def refetch_hot(source) -> list[Offer]:
+    """Nivel rapido: so os produtos colados na propria minima historica.
+
+    A carteira inteira nao cabe num ciclo de minutos -- 400 produtos a cada 15
+    min sao 38 mil chamadas por dia. Mas quase nenhum deles pode virar post na
+    proxima hora: quem esta 40% acima da propria minima nao vira oferta com
+    mais uma queda pequena. Reconsultar so a fatia quente pega a oferta
+    relampago pagando por dezenas de produtos, nao por centenas.
+    """
+    intervalo = hot_interval_minutes()
+    fetch = getattr(source, "fetch_by_ids", None)
+    if intervalo <= 0 or fetch is None:
+        return []
+    if not _due("last_hot_refetch", intervalo / 60):
+        return []
+
+    with connect() as conn:
+        quentes = hot_products(conn, source.name, hot_margin_pct(), hot_track_limit())
+
+    _stamp("last_hot_refetch")
+    if not quentes:
+        return []
+
+    try:
+        found = fetch(quentes)
+    except Exception as exc:  # noqa: BLE001 - idem: nao derruba a rodada
+        log.warning("%s falhou no ciclo rapido: %s", source.name, exc)
+        return []
+
+    log.info("%s: %d produtos quentes reconsultados", source.name, len(found))
+    return found
+
+
+def _due(chave: str, intervalo_horas: float) -> bool:
+    """Passou tempo suficiente desde a ultima vez que `chave` foi carimbada?"""
+    with connect() as conn:
+        passadas = hours_since(conn, chave)
+    return passadas is None or passadas >= intervalo_horas
+
+
+def _stamp(chave: str) -> None:
+    with connect() as conn:
+        set_meta(conn, chave, _iso_now())
 
 
 def _time_to_discover() -> bool:

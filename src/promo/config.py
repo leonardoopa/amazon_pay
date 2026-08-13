@@ -162,6 +162,26 @@ def run_interval_seconds() -> int:
     return _int("RUN_INTERVAL_SECONDS", 7200)
 
 
+def full_refetch_interval_hours() -> float:
+    """Horas entre reconsultas da carteira INTEIRA."""
+    return float(_optional("FULL_REFETCH_INTERVAL_HOURS", "2"))
+
+
+def hot_interval_minutes() -> float:
+    """Minutos entre reconsultas da fatia quente. 0 desliga o nivel rapido."""
+    return float(_optional("HOT_INTERVAL_MINUTES", "15"))
+
+
+def hot_track_limit() -> int:
+    """Quantos produtos quentes reconsultar. E o custo por ciclo rapido."""
+    return _int("HOT_TRACK_LIMIT", 25)
+
+
+def hot_margin_pct() -> float:
+    """Folga sobre a minima historica pra um produto contar como quente."""
+    return float(_optional("HOT_MARGIN_PCT", "10"))
+
+
 def products_per_keyword() -> int:
     """Candidatos de catalogo por termo da watchlist.
 
