@@ -14,6 +14,7 @@ from .config import (
     MissingConfig,
     ROOT,
     Rules,
+    discovery_interval_hours,
     track_limit,
 )
 from .copywriter import Copywriter, fallback_copy
@@ -22,8 +23,12 @@ from .db import (
     create_post,
     mark_post_failed,
     mark_post_sent,
+    get_meta,
+    hours_since,
     pending_posts,
+    recent_headlines,
     record_offer,
+    set_meta,
     tracked_products,
 )
 from .delivery import NotConnected, WindowClosed, build_delivery
@@ -124,9 +129,10 @@ def collect(
     pensaria em procurar. As duas alimentam o mesmo historico de precos.
     """
     rules = rules or Rules.load()
+    descobrir = _time_to_discover()
     offers: list[Offer] = []
     for source in sources:
-        for watch in watchlist:
+        for watch in watchlist if descobrir else []:
             try:
                 found = source.search(watch.term)
             except Exception as exc:  # noqa: BLE001 - uma fonte quebrada nao derruba a rodada
@@ -137,9 +143,49 @@ def collect(
             offers.extend(found)
             log.info("%s: %d ofertas para '%s'", source.name, len(found), watch.term)
 
-        offers.extend(collect_categories(source, categories or []))
+        if descobrir:
+            offers.extend(collect_categories(source, categories or []))
         offers.extend(refetch_tracked(source, rules))
+
+    if descobrir:
+        with connect() as conn:
+            set_meta(conn, DISCOVERY_KEY, _iso_now())
     return offers
+
+
+DISCOVERY_KEY = "last_discovery_at"
+
+
+def _iso_now() -> str:
+    from .db import now
+
+    return now().isoformat()
+
+
+def _time_to_discover() -> bool:
+    """Descobrir agora, ou so manter o historico do que ja conhecemos?
+
+    A reconsulta roda sempre: e ela que faz a baseline existir. A descoberta e
+    que e intermitente, porque e cara e o resultado dela muda devagar.
+    """
+    intervalo = discovery_interval_hours()
+    if intervalo <= 0:
+        return True
+
+    with connect() as conn:
+        passadas = hours_since(conn, DISCOVERY_KEY)
+
+    if passadas is None:
+        return True  # primeira rodada: sem carteira, nao ha o que reconsultar
+    if passadas >= intervalo:
+        return True
+
+    log.info(
+        "Descoberta pulada (rodou ha %.1fh, intervalo %dh). So reconsulta.",
+        passadas,
+        intervalo,
+    )
+    return False
 
 
 def collect_categories(source, categories: list[Category]) -> list[Offer]:
@@ -240,6 +286,8 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
 
     copywriter = Copywriter()
     cupom = load_coupon()
+    with connect() as conn:
+        recentes = recent_headlines(conn)
     drafts: list[tuple[ScoredOffer, str]] = []
     sem_link: list[ScoredOffer] = []
 
@@ -252,10 +300,13 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             sem_link.append(scored)
             continue
         try:
-            text = copywriter.write(scored, link, cupom)
+            text = copywriter.write(scored, link, cupom, recentes)
         except Exception as exc:  # noqa: BLE001 - sem IA ainda da pra postar
             log.warning("Gemini falhou, usando texto padrao: %s", exc)
             text = fallback_copy(scored, link, cupom)
+        # Alimenta a proxima chamada desta mesma rodada: sem isso as 5 ofertas
+        # do lote saem com a mesma formula, que e o caso mais visivel de todos.
+        recentes.append(text.strip().splitlines()[0].strip())
         drafts.append((scored, text))
 
     if sem_link:

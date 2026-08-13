@@ -162,6 +162,36 @@ def run_interval_seconds() -> int:
     return _int("RUN_INTERVAL_SECONDS", 7200)
 
 
+def products_per_keyword() -> int:
+    """Candidatos de catalogo por termo da watchlist.
+
+    Medido: ~65% dos produtos que a busca devolve tem ZERO anuncio ativo em
+    /products/{id}/items -- sao entradas mortas do catalogo, e `status=active`
+    na busca nao filtra isso. Entao pra rastrear N produtos e preciso pedir
+    cerca de 3N. Cada candidato custa 1 chamada, morto ou vivo.
+    """
+    return _int("PRODUCTS_PER_KEYWORD", 20)
+
+
+def products_per_category() -> int:
+    """Idem para os mais vendidos. Cada um custa DUAS chamadas (nome + preco)."""
+    return _int("PRODUCTS_PER_CATEGORY", 10)
+
+
+def discovery_interval_hours() -> int:
+    """Horas entre rodadas de descoberta (busca por termo + mais vendidos).
+
+    A descoberta e cara e quase nao muda: o top-10 do catalogo por termo e o
+    ranking de mais vendidos de uma categoria sao praticamente os mesmos de uma
+    hora pra outra. Rodar ela em toda rodada de 2h gasta o orcamento de API que
+    deveria estar mantendo o historico de uma carteira grande -- e carteira
+    grande e o unico jeito de ter volume de post.
+
+    0 desliga o intervalo e volta a descobrir em toda rodada.
+    """
+    return _int("DISCOVERY_INTERVAL_HOURS", 12)
+
+
 def track_limit() -> int:
     """Teto de produtos reconsultados por rodada, por fonte.
 
