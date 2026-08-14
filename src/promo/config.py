@@ -162,6 +162,14 @@ def run_interval_seconds() -> int:
     return _int("RUN_INTERVAL_SECONDS", 7200)
 
 
+def ofertas_pages() -> int:
+    """Paginas da vitrine /ofertas lidas por rodada (~45 produtos cada).
+
+    0 desliga a fonte e o grupo volta a postar so o que a nossa medicao provar.
+    """
+    return _int("OFERTAS_PAGES", 2)
+
+
 def full_refetch_interval_hours() -> float:
     """Horas entre reconsultas da carteira INTEIRA."""
     return float(_optional("FULL_REFETCH_INTERVAL_HOURS", "2"))

@@ -61,3 +61,36 @@ def _in_cooldown(
 
     # Dentro do cooldown, so repassa se o desconto melhorou 10 p.p. ou mais.
     return discount_pct < previous["discount_pct"] + 10
+
+
+def score_campaign(
+    conn: sqlite3.Connection, offer: Offer, rules: Rules
+) -> ScoredOffer | None:
+    """Pontua oferta da vitrine do ML, sem historico proprio.
+
+    Existe pra dar volume desde o primeiro dia: a baseline precisa de dias pra
+    amadurecer, e grupo mudo nao segura ninguem. O desconto aqui e contra o
+    preco riscado da LOJA, entao o post sai marcado como nao verificado --
+    `verified=False` -- e o texto nao pode afirmar que o preco caiu de verdade.
+
+    Ainda assim passa pelo cooldown: repetir o mesmo produto no grupo cansa
+    igual, venha ele da vitrine ou da nossa medicao.
+    """
+    if not offer.available or offer.price <= 0 or not offer.original_price:
+        return None
+
+    desconto = (offer.original_price - offer.price) / offer.original_price * 100
+    if desconto < rules.min_discount_pct:
+        return None
+
+    if _in_cooldown(conn, offer, desconto, rules):
+        return None
+
+    return ScoredOffer(
+        offer=offer,
+        baseline=offer.original_price,
+        discount_pct=desconto,
+        observations=0,
+        lowest_ever=False,
+        verified=False,
+    )

@@ -16,6 +16,7 @@ from .config import (
     Rules,
     discovery_interval_hours,
     full_refetch_interval_hours,
+    ofertas_pages,
     hot_interval_minutes,
     hot_margin_pct,
     hot_track_limit,
@@ -38,9 +39,10 @@ from .db import (
 )
 from .delivery import NotConnected, WindowClosed, build_delivery
 from .models import Offer, ScoredOffer
-from .scoring import score
+from .scoring import score, score_campaign
 from .sources.amazon import Amazon
 from .sources.mercadolivre import MercadoLivre
+from .sources.ml_ofertas import MLOfertas
 
 log = logging.getLogger("promo")
 
@@ -111,6 +113,16 @@ def build_sources() -> list:
     except MissingConfig as exc:
         log.warning("Mercado Livre desativado: %s", exc)
 
+    # A vitrine nao precisa de OAuth (e pagina publica), mas reaproveita o
+    # Link Builder da fonte de catalogo pra gerar link de afiliado.
+    if ofertas_pages() > 0:
+        builder = None
+        for fonte in sources:
+            builder = getattr(fonte, "_link_builder", lambda: None)()
+            if builder:
+                break
+        sources.append(MLOfertas(builder))
+
     try:
         sources.append(Amazon(AmazonConfig.load()))
     except MissingConfig as exc:
@@ -150,6 +162,7 @@ def collect(
 
         if descobrir:
             offers.extend(collect_categories(source, categories or []))
+        offers.extend(collect_vitrine(source))
         if _due("last_full_refetch", full_refetch_interval_hours()):
             offers.extend(refetch_tracked(source, rules))
             _stamp("last_full_refetch")
@@ -167,6 +180,28 @@ def _iso_now() -> str:
     from .db import now
 
     return now().isoformat()
+
+
+def collect_vitrine(source) -> list[Offer]:
+    """Ofertas do dia do ML. Uma requisicao traz ~45 produtos.
+
+    Roda em toda rodada de proposito: e a fonte mais barata que temos, e a
+    vitrine gira ao longo do dia. Gravar essas ofertas tambem alimenta o
+    historico -- produto que hoje entra como repasse pode, em alguns dias,
+    virar oferta verificada pela nossa propria medicao.
+    """
+    fetch = getattr(source, "fetch", None)
+    if fetch is None:
+        return []
+
+    try:
+        found = fetch(ofertas_pages())
+    except Exception as exc:  # noqa: BLE001 - HTML muda; nao derruba a rodada
+        log.warning("%s falhou na vitrine: %s", source.name, exc)
+        return []
+
+    log.info("%s: %d ofertas da vitrine", source.name, len(found))
+    return found
 
 
 def refetch_hot(source) -> list[Offer]:
@@ -324,14 +359,33 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             if current is None or offer.price < current.price:
                 unique[offer.product_id] = offer
 
+        # Verificadas primeiro: sao as unicas que podem afirmar que o preco
+        # caiu de verdade, e sao o motivo de alguem preferir este grupo.
         for offer in unique.values():
             scored = score(conn, offer, rules)
             if scored is not None:
                 picked.append(scored)
 
+        ja_escolhido = {s.offer.product_id for s in picked}
+        repasses: list[ScoredOffer] = []
+        for offer in unique.values():
+            if offer.source != "ml_ofertas" or offer.product_id in ja_escolhido:
+                continue
+            scored = score_campaign(conn, offer, rules)
+            if scored is not None:
+                repasses.append(scored)
+
     picked.sort(key=lambda s: s.discount_pct, reverse=True)
-    picked = picked[: rules.max_offers_per_run]
-    log.info("%d ofertas passaram no filtro", len(picked))
+    repasses.sort(key=lambda s: s.discount_pct, reverse=True)
+    # Repasse preenche o que sobrou da cota, nunca desloca uma verificada.
+    picked = (picked + repasses)[: rules.max_offers_per_run]
+    verificadas = sum(1 for s in picked if s.verified)
+    log.info(
+        "%d ofertas selecionadas (%d verificadas, %d repasse da vitrine)",
+        len(picked),
+        verificadas,
+        len(picked) - verificadas,
+    )
 
     if not picked:
         return []

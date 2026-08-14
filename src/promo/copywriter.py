@@ -52,12 +52,19 @@ eles descrevem o que escrever, nao sao o que escrever.
   8. vazia
   9. a divulgacao obrigatoria
 
-Duas linhas opcionais, que voce SO escreve quando eu mandar explicitamente:
+Tres linhas opcionais, que voce SO escreve quando eu mandar explicitamente:
 - cupom: entra logo depois do preco, como "Use o cupom: CODIGO 🎟️"
 - loja oficial: entra logo antes da URL, como "Loja oficial no ML"
+- selo de acompanhamento: entra logo depois do preco, so quando eu disser que
+  ACOMPANHAMOS o produto. Escreva com suas palavras, em 1 linha, usando os dias
+  e o preco medio que eu passar. Exemplos do tom:
+    "📊 Acompanhamos ha 12 dias: nunca vimos tao barato"
+    "📊 12 dias de olho nesse preco, e hoje e o fundo do poco"
+  Esse selo e o que diferencia o grupo: significa que alguem mediu o preco ao
+  longo do tempo em vez de repetir o desconto que a loja alega.
 
-Quando eu disser que NAO ha cupom, ou que NAO e loja oficial, a linha
-correspondente simplesmente nao existe no post. Nao invente, nao adapte, nao
+Quando eu disser que NAO ha cupom, que NAO e loja oficial, ou que NAO
+acompanhamos o produto, a linha correspondente simplesmente nao existe no post. Nao invente, nao adapte, nao
 escreva variacao ("loja verificada", "vendedor oficial"). Loja oficial e um
 selo do Mercado Livre, nao um adjetivo.
 
@@ -87,6 +94,9 @@ Regras rigidas:
   urgencia que eu nao tenha informado. Escassez inventada e mentira.
 - Nao prometa qualidade nem resultado: voce nao testou o produto.
 - Nao cite loja oficial se eu nao informar.
+- Quando eu disser que NAO acompanhamos o produto, nao escreva nada que sugira
+  medicao nossa ("acompanhamos", "monitoramos", "menor preco que ja vimos",
+  "de olho ha dias"). Nesse caso o desconto e o que a loja alega, e so.
 - A divulgacao obrigatoria vai copiada CARACTERE POR CARACTERE. Nao reescreva,
   nao traduza, nao encurte, nao adicione emoji nela.
 - Formatacao do WhatsApp: *negrito* so no preco final.
@@ -197,6 +207,16 @@ VAZOU_PROMPT = re.compile(
 )
 
 
+# Linguagem que so o post verificado pode usar. Repassar oferta da vitrine
+# dizendo "acompanhamos ha dias" e mentira sobre o proprio metodo -- e o metodo
+# e o unico ativo que o grupo tem contra os que so espelham campanha.
+ACOMPANHAMENTO = re.compile(
+    r"acompanh|monitor|de olho|venho vendo|ja vimos|vimos esse pre[çc]o"
+    r"|ha \d+ dias|nossa m[eé]dia",
+    re.IGNORECASE,
+)
+
+
 def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
     """Barra post que afirma o que o dado nao sustenta.
 
@@ -225,6 +245,14 @@ def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
         raise RuntimeError(
             "O texto diz 'loja oficial', mas o anuncio nao e de loja oficial."
         )
+
+    if not scored.verified:
+        achado = ACOMPANHAMENTO.search(text)
+        if achado:
+            raise RuntimeError(
+                f"O texto sugere acompanhamento ({achado.group(0)!r}), mas esta "
+                "oferta e repasse da vitrine do ML -- nao medimos nada nela."
+            )
 
     achado = VAZOU_PROMPT.search(text)
     if achado:
@@ -267,6 +295,17 @@ def _facts(
         if offer.official_store
         else "Loja oficial: NAO. NAO escreva 'loja oficial' nem variacao disso."
     )
+    if scored.verified:
+        facts.append(
+            f"Acompanhamos: SIM, ha {scored.observations} dias. O 'De' acima e a "
+            "media que NOS medimos nesse periodo, nao o preco riscado da loja. "
+            "Escreva o selo de acompanhamento."
+        )
+    else:
+        facts.append(
+            "Acompanhamos: NAO. O 'De' acima e o preco riscado pela propria loja. "
+            "NAO escreva selo de acompanhamento nem sugira medicao nossa."
+        )
     if avoid:
         # O modelo nao tem memoria entre chamadas: sem isso ele reencontra a
         # mesma piada boa toda vez, e o grupo le a mesma formula o dia inteiro.
