@@ -66,6 +66,14 @@ CREATE TABLE IF NOT EXISTS affiliate_blocked (
     checked_at TEXT NOT NULL
 );
 
+-- Chave/valor de controle do proprio bot (ex.: quando a descoberta rodou
+-- pela ultima vez). Vive no banco em vez de memoria porque o daemon reinicia,
+-- e um contador em memoria zeraria junto.
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS oauth_tokens (
     provider      TEXT PRIMARY KEY,
     access_token  TEXT,
@@ -220,6 +228,39 @@ def tracked_products(
     return [(row["external_id"], row["title"], row["image_url"]) for row in rows]
 
 
+def hot_products(
+    conn: sqlite3.Connection, source: str, margin_pct: float, limit: int
+) -> list[tuple[str, str, str | None]]:
+    """Produtos perto da propria minima historica: (external_id, titulo, imagem).
+
+    A carteira inteira nao cabe num polling de minutos, mas so uma fatia dela
+    pode virar post na proxima hora. Produto que hoje esta 40% acima da propria
+    minima nao vira oferta com mais uma queda pequena; produto que ja esta
+    colado na minima, sim. Sao esses que vale reconsultar com frequencia.
+
+    `margin_pct` e a folga sobre a minima: 10 significa "ate 10% acima dela".
+    """
+    rows = conn.execute(
+        """
+        SELECT p.external_id, p.title, p.image_url
+        FROM products p
+        JOIN (
+            SELECT product_id, MIN(price) AS minimo, MAX(observed_on) AS ultimo
+            FROM price_history GROUP BY product_id
+        ) h ON h.product_id = p.id
+        JOIN price_history atual
+          ON atual.product_id = p.id AND atual.observed_on = h.ultimo
+        WHERE p.source = ?
+          AND h.minimo > 0
+          AND atual.price <= h.minimo * (1 + ? / 100.0)
+        ORDER BY atual.price / h.minimo ASC
+        LIMIT ?
+        """,
+        (source, margin_pct, limit),
+    ).fetchall()
+    return [(r["external_id"], r["title"], r["image_url"]) for r in rows]
+
+
 def last_post(conn: sqlite3.Connection, product_id: str) -> sqlite3.Row | None:
     """Ultimo post do produto que ja saiu ou ainda vai sair.
 
@@ -331,6 +372,24 @@ def create_post(
     return int(cursor.lastrowid)
 
 
+def recent_headlines(conn: sqlite3.Connection, limit: int = 12) -> list[str]:
+    """Primeira linha dos ultimos posts, pra nao repetir a chamada.
+
+    Cada chamada ao Gemini e independente: ele nao lembra do que escreveu ontem,
+    nem ha hora atras. Sem esse historico o grupo recebe "AIR FRYER POR 389
+    PILA" e "AIR FRYER POR 279 PILA" no mesmo dia, e a graca morre na segunda.
+    """
+    rows = conn.execute(
+        """
+        SELECT copy FROM posts
+        WHERE status IN ('sent', 'pending')
+        ORDER BY created_at DESC LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [linha for row in rows if (linha := row["copy"].strip().splitlines()[0].strip())]
+
+
 def pending_posts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Posts que ficaram na fila (janela de 24h fechada, erro de rede etc.)."""
     return conn.execute(
@@ -363,6 +422,34 @@ def mark_post_failed(
         """,
         (error[:500], max_attempts, post_id),
     )
+
+
+def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
+
+
+def hours_since(conn: sqlite3.Connection, key: str) -> float | None:
+    """Horas desde que `key` foi carimbada. None se nunca foi."""
+    marca = get_meta(conn, key)
+    if not marca:
+        return None
+
+    quando = datetime.fromisoformat(marca)
+    if quando.tzinfo is None:
+        # Carimbo sem fuso so aparece se alguem escreveu na mao (ou com
+        # datetime('now') do proprio SQLite). Assumir UTC erra no maximo
+        # algumas horas; estourar TypeError derrubaria a rodada inteira.
+        quando = quando.replace(tzinfo=UTC)
+    return (now() - quando).total_seconds() / 3600
 
 
 def save_token(

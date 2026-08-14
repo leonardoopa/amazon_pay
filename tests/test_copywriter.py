@@ -286,3 +286,63 @@ def test_texto_honesto_passa():
         "https://meli.la/x\nLink de afiliado - o preco pra voce nao muda.",
         scored,
     )
+
+
+# --- 429 de cota e falsos positivos das guardas ---
+#
+# O free tier do Gemini corta em 20 requisicoes por dia. Sem retry, a rajada de
+# uma rodada derruba posts pro fallback -- que sai sem linha de chamada, ou
+# seja, o post que o grupo ignora.
+
+
+def test_le_o_retry_delay_do_erro_de_cota():
+    from promo.copywriter import _retry_delay
+
+    erro = RuntimeError(
+        "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, "
+        "'details': [{'retryDelay': '12.5s'}]}}"
+    )
+    assert _retry_delay(erro) == pytest.approx(13.5)
+
+
+def test_erro_que_nao_e_cota_nao_tem_espera():
+    from promo.copywriter import _retry_delay
+
+    assert _retry_delay(RuntimeError("500 internal")) is None
+
+
+def test_espera_absurda_e_recusada():
+    """Cota diaria estourada devolve delay enorme; travar a rodada esperando
+    seria pior que cair pro texto padrao."""
+    from promo.copywriter import _retry_delay
+
+    erro = RuntimeError("429 RESOURCE_EXHAUSTED 'retryDelay': '3600s'")
+    assert _retry_delay(erro) is None
+
+
+def test_cota_sem_retry_delay_nao_trava():
+    from promo.copywriter import _retry_delay
+
+    assert _retry_delay(RuntimeError("429 RESOURCE_EXHAUSTED sem detalhe")) is None
+
+
+def test_produto_monitor_nao_dispara_guarda_de_acompanhamento():
+    """A regex antiga casava 'monitor' e barrava todo post de monitor -- o
+    produto. Guarda que rejeita post legitimo custa oferta."""
+    from promo.copywriter import ACOMPANHAMENTO
+
+    assert not ACOMPANHAMENTO.search("Monitor 27 Polegadas 60 Hrz Office Bright")
+    assert not ACOMPANHAMENTO.search("Kit acompanha 2 baterias e maleta")
+
+
+def test_afirmacao_de_acompanhamento_ainda_e_pega():
+    from promo.copywriter import ACOMPANHAMENTO
+
+    for frase in (
+        "Acompanhamos ha 12 dias",
+        "monitoramos esse preco",
+        "nunca vimos tao barato",
+        "estamos de olho nesse produto",
+        "nossa media dos ultimos dias",
+    ):
+        assert ACOMPANHAMENTO.search(frase), frase

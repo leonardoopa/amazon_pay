@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import random
+import time
 from datetime import date
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +16,15 @@ from .config import (
     MissingConfig,
     ROOT,
     Rules,
+    discovery_interval_hours,
+    drip_interval_seconds,
+    full_refetch_interval_hours,
+    hot_interval_minutes,
+    hot_margin_pct,
+    hot_track_limit,
+    max_pending_queue,
+    ofertas_pages,
+    run_interval_seconds,
     track_limit,
 )
 from .copywriter import Copywriter, fallback_copy
@@ -22,15 +33,21 @@ from .db import (
     create_post,
     mark_post_failed,
     mark_post_sent,
+    get_meta,
+    hot_products,
+    hours_since,
     pending_posts,
+    recent_headlines,
     record_offer,
+    set_meta,
     tracked_products,
 )
 from .delivery import NotConnected, WindowClosed, build_delivery
 from .models import Offer, ScoredOffer
-from .scoring import score
+from .scoring import score, score_campaign
 from .sources.amazon import Amazon
 from .sources.mercadolivre import MercadoLivre
+from .sources.ml_ofertas import MLOfertas
 
 log = logging.getLogger("promo")
 
@@ -101,6 +118,16 @@ def build_sources() -> list:
     except MissingConfig as exc:
         log.warning("Mercado Livre desativado: %s", exc)
 
+    # A vitrine nao precisa de OAuth (e pagina publica), mas reaproveita o
+    # Link Builder da fonte de catalogo pra gerar link de afiliado.
+    if ofertas_pages() > 0:
+        builder = None
+        for fonte in sources:
+            builder = getattr(fonte, "_link_builder", lambda: None)()
+            if builder:
+                break
+        sources.append(MLOfertas(builder))
+
     try:
         sources.append(Amazon(AmazonConfig.load()))
     except MissingConfig as exc:
@@ -124,9 +151,10 @@ def collect(
     pensaria em procurar. As duas alimentam o mesmo historico de precos.
     """
     rules = rules or Rules.load()
+    descobrir = _time_to_discover()
     offers: list[Offer] = []
     for source in sources:
-        for watch in watchlist:
+        for watch in watchlist if descobrir else []:
             try:
                 found = source.search(watch.term)
             except Exception as exc:  # noqa: BLE001 - uma fonte quebrada nao derruba a rodada
@@ -137,9 +165,119 @@ def collect(
             offers.extend(found)
             log.info("%s: %d ofertas para '%s'", source.name, len(found), watch.term)
 
-        offers.extend(collect_categories(source, categories or []))
-        offers.extend(refetch_tracked(source, rules))
+        if descobrir:
+            offers.extend(collect_categories(source, categories or []))
+        offers.extend(collect_vitrine(source))
+        if _due("last_full_refetch", full_refetch_interval_hours()):
+            offers.extend(refetch_tracked(source, rules))
+            _stamp("last_full_refetch")
+        offers.extend(refetch_hot(source))
+
+    if descobrir:
+        _stamp(DISCOVERY_KEY)
     return offers
+
+
+DISCOVERY_KEY = "last_discovery_at"
+
+
+def _iso_now() -> str:
+    from .db import now
+
+    return now().isoformat()
+
+
+def collect_vitrine(source) -> list[Offer]:
+    """Ofertas do dia do ML. Uma requisicao traz ~45 produtos.
+
+    Roda em toda rodada de proposito: e a fonte mais barata que temos, e a
+    vitrine gira ao longo do dia. Gravar essas ofertas tambem alimenta o
+    historico -- produto que hoje entra como repasse pode, em alguns dias,
+    virar oferta verificada pela nossa propria medicao.
+    """
+    fetch = getattr(source, "fetch", None)
+    if fetch is None:
+        return []
+
+    try:
+        found = fetch(ofertas_pages())
+    except Exception as exc:  # noqa: BLE001 - HTML muda; nao derruba a rodada
+        log.warning("%s falhou na vitrine: %s", source.name, exc)
+        return []
+
+    log.info("%s: %d ofertas da vitrine", source.name, len(found))
+    return found
+
+
+def refetch_hot(source) -> list[Offer]:
+    """Nivel rapido: so os produtos colados na propria minima historica.
+
+    A carteira inteira nao cabe num ciclo de minutos -- 400 produtos a cada 15
+    min sao 38 mil chamadas por dia. Mas quase nenhum deles pode virar post na
+    proxima hora: quem esta 40% acima da propria minima nao vira oferta com
+    mais uma queda pequena. Reconsultar so a fatia quente pega a oferta
+    relampago pagando por dezenas de produtos, nao por centenas.
+    """
+    intervalo = hot_interval_minutes()
+    fetch = getattr(source, "fetch_by_ids", None)
+    if intervalo <= 0 or fetch is None:
+        return []
+    if not _due("last_hot_refetch", intervalo / 60):
+        return []
+
+    with connect() as conn:
+        quentes = hot_products(conn, source.name, hot_margin_pct(), hot_track_limit())
+
+    _stamp("last_hot_refetch")
+    if not quentes:
+        return []
+
+    try:
+        found = fetch(quentes)
+    except Exception as exc:  # noqa: BLE001 - idem: nao derruba a rodada
+        log.warning("%s falhou no ciclo rapido: %s", source.name, exc)
+        return []
+
+    log.info("%s: %d produtos quentes reconsultados", source.name, len(found))
+    return found
+
+
+def _due(chave: str, intervalo_horas: float) -> bool:
+    """Passou tempo suficiente desde a ultima vez que `chave` foi carimbada?"""
+    with connect() as conn:
+        passadas = hours_since(conn, chave)
+    return passadas is None or passadas >= intervalo_horas
+
+
+def _stamp(chave: str) -> None:
+    with connect() as conn:
+        set_meta(conn, chave, _iso_now())
+
+
+def _time_to_discover() -> bool:
+    """Descobrir agora, ou so manter o historico do que ja conhecemos?
+
+    A reconsulta roda sempre: e ela que faz a baseline existir. A descoberta e
+    que e intermitente, porque e cara e o resultado dela muda devagar.
+    """
+    intervalo = discovery_interval_hours()
+    if intervalo <= 0:
+        return True
+
+    with connect() as conn:
+        passadas = hours_since(conn, DISCOVERY_KEY)
+
+    if passadas is None:
+        return True  # primeira rodada: sem carteira, nao ha o que reconsultar
+    if passadas >= intervalo:
+        return True
+
+    log.info(
+        "Descoberta pulada (rodou ha %.1fh, intervalo %dh). So reconsulta.",
+        passadas,
+        intervalo,
+    )
+    return False
 
 
 def collect_categories(source, categories: list[Category]) -> list[Offer]:
@@ -226,20 +364,53 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             if current is None or offer.price < current.price:
                 unique[offer.product_id] = offer
 
+        # Verificadas primeiro: sao as unicas que podem afirmar que o preco
+        # caiu de verdade, e sao o motivo de alguem preferir este grupo.
         for offer in unique.values():
             scored = score(conn, offer, rules)
             if scored is not None:
                 picked.append(scored)
 
+        ja_escolhido = {s.offer.product_id for s in picked}
+        repasses: list[ScoredOffer] = []
+        for offer in unique.values():
+            if offer.source != "ml_ofertas" or offer.product_id in ja_escolhido:
+                continue
+            scored = score_campaign(conn, offer, rules)
+            if scored is not None:
+                repasses.append(scored)
+
     picked.sort(key=lambda s: s.discount_pct, reverse=True)
-    picked = picked[: rules.max_offers_per_run]
-    log.info("%d ofertas passaram no filtro", len(picked))
+    repasses.sort(key=lambda s: s.discount_pct, reverse=True)
+
+    # Contrapressao: a coleta produz mais rapido do que a entrega gotejada
+    # drena. Sem teto, a fila vira um deposito e o grupo passa a receber oferta
+    # de horas atras -- que pode nem existir mais no preco anunciado.
+    with connect() as conn:
+        na_fila = len(pending_posts(conn))
+    espaco = max(0, min(rules.max_offers_per_run, max_pending_queue() - na_fila))
+    if espaco < rules.max_offers_per_run:
+        log.info(
+            "Fila com %d post(s); aceitando so mais %d nesta rodada.", na_fila, espaco
+        )
+
+    # Repasse preenche o que sobrou da cota, nunca desloca uma verificada.
+    picked = (picked + repasses)[:espaco]
+    verificadas = sum(1 for s in picked if s.verified)
+    log.info(
+        "%d ofertas selecionadas (%d verificadas, %d repasse da vitrine)",
+        len(picked),
+        verificadas,
+        len(picked) - verificadas,
+    )
 
     if not picked:
         return []
 
     copywriter = Copywriter()
     cupom = load_coupon()
+    with connect() as conn:
+        recentes = recent_headlines(conn)
     drafts: list[tuple[ScoredOffer, str]] = []
     sem_link: list[ScoredOffer] = []
 
@@ -252,10 +423,13 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             sem_link.append(scored)
             continue
         try:
-            text = copywriter.write(scored, link, cupom)
+            text = copywriter.write(scored, link, cupom, recentes)
         except Exception as exc:  # noqa: BLE001 - sem IA ainda da pra postar
             log.warning("Gemini falhou, usando texto padrao: %s", exc)
             text = fallback_copy(scored, link, cupom)
+        # Alimenta a proxima chamada desta mesma rodada: sem isso as 5 ofertas
+        # do lote saem com a mesma formula, que e o caso mais visivel de todos.
+        recentes.append(text.strip().splitlines()[0].strip())
         drafts.append((scored, text))
 
     if sem_link:
@@ -277,6 +451,21 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     return picked
 
 
+def _drip_gap() -> float:
+    """Intervalo ate o proximo post, com variacao.
+
+    O jitter importa: intervalo exato de 150s em 150s e assinatura de robo, e
+    o numero que assina os posts e um chip pareado por cliente nao oficial.
+    Os grupos reais mandam a cada 2-3 minutos, sem regularidade nenhuma.
+    """
+    base = drip_interval_seconds()
+    return base * random.uniform(1 - DRIP_JITTER, 1 + DRIP_JITTER)
+
+
+# Variacao aplicada ao intervalo: 0.4 = de 60% a 140% do valor configurado.
+DRIP_JITTER = 0.4
+
+
 def deliver(drafts: list[tuple[ScoredOffer, str]]) -> None:
     """Enfileira os posts novos e drena a fila (incluindo o que sobrou de antes)."""
     with connect() as conn:
@@ -293,7 +482,25 @@ def deliver(drafts: list[tuple[ScoredOffer, str]]) -> None:
     flush_pending()
 
 
-def flush_pending() -> None:
+def flush_pending(
+    budget_seconds: float | None = None,
+    sleep=time.sleep,
+    monotonic=time.monotonic,
+) -> None:
+    """Drena a fila aos poucos, um post de cada vez.
+
+    Nao e enfeite. Dez mensagens seguidas no mesmo segundo tem dois problemas:
+    o grupo le como flood e silencia a conversa, e o padrao -- rajada perfeita,
+    intervalo zero -- e exatamente o que o antifraude da Meta procura num
+    numero pareado por Baileys. Os grupos que funcionam postam de 2 em 3
+    minutos, com intervalo irregular.
+
+    `budget_seconds` limita quanto tempo a drenagem segura a rodada. O que nao
+    couber fica na fila e sai na proxima -- por isso o daemon acorda a cada 15
+    minutos em vez de a cada 2 horas.
+
+    sleep/monotonic sao injetaveis pra o teste nao dormir de verdade.
+    """
     delivery = build_delivery()
 
     with connect() as conn:
@@ -303,7 +510,27 @@ def flush_pending() -> None:
         log.info("Nada pendente na fila.")
         return
 
+    if budget_seconds is None:
+        # Sobra de proposito: a drenagem nao pode invadir a proxima rodada.
+        budget_seconds = run_interval_seconds() * 0.8
+
+    inicio = monotonic()
+    enviados = 0
+
     for index, (post_id, text, image_url) in enumerate(queue):
+        if enviados and monotonic() - inicio >= budget_seconds:
+            log.info(
+                "Orcamento de %.0fs esgotado; %d post(s) ficam pra proxima rodada.",
+                budget_seconds,
+                len(queue) - index,
+            )
+            return
+
+        if enviados:
+            espera = _drip_gap()
+            log.info("Aguardando %.0fs antes do proximo post.", espera)
+            sleep(espera)
+
         try:
             delivery.send_post(text, image_url)
         except WindowClosed:
@@ -332,3 +559,4 @@ def flush_pending() -> None:
 
         with connect() as conn:
             mark_post_sent(conn, post_id)
+        enviados += 1

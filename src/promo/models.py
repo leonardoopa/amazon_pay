@@ -38,3 +38,10 @@ class ScoredOffer:
     discount_pct: float  # desconto contra a baseline, nao contra o "de" da loja
     observations: int  # dias distintos de historico usados
     lowest_ever: bool
+    # True  = a queda foi medida contra o NOSSO historico de precos.
+    # False = e repasse da vitrine do ML, e o "de" e o preco riscado da loja.
+    #
+    # A diferenca nao e tecnica, e editorial: no primeiro caso o post pode
+    # afirmar que o preco caiu de verdade, porque alguem mediu. No segundo ele
+    # so pode repetir o que a loja alega -- e a loja infla o riscado na vespera.
+    verified: bool = True

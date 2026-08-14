@@ -6,13 +6,17 @@ divulgacao de afiliado e obrigatoria pelos dois programas de afiliados.
 
 from __future__ import annotations
 
+import logging
 import re
+import time
 
 from google import genai
 from google.genai import types
 
 from .config import copy_model, gemini_api_key
 from .models import ScoredOffer
+
+log = logging.getLogger("promo")
 
 # Texto de divulgacao exigido por cada programa.
 #
@@ -52,22 +56,40 @@ eles descrevem o que escrever, nao sao o que escrever.
   8. vazia
   9. a divulgacao obrigatoria
 
-Duas linhas opcionais, que voce SO escreve quando eu mandar explicitamente:
+Tres linhas opcionais, que voce SO escreve quando eu mandar explicitamente:
 - cupom: entra logo depois do preco, como "Use o cupom: CODIGO 🎟️"
 - loja oficial: entra logo antes da URL, como "Loja oficial no ML"
+- selo de acompanhamento: entra logo depois do preco, so quando eu disser que
+  ACOMPANHAMOS o produto. Escreva com suas palavras, em 1 linha, usando os dias
+  e o preco medio que eu passar. Exemplos do tom:
+    "📊 Acompanhamos ha 12 dias: nunca vimos tao barato"
+    "📊 12 dias de olho nesse preco, e hoje e o fundo do poco"
+  Esse selo e o que diferencia o grupo: significa que alguem mediu o preco ao
+  longo do tempo em vez de repetir o desconto que a loja alega.
 
-Quando eu disser que NAO ha cupom, ou que NAO e loja oficial, a linha
-correspondente simplesmente nao existe no post. Nao invente, nao adapte, nao
+Quando eu disser que NAO ha cupom, que NAO e loja oficial, ou que NAO
+acompanhamos o produto, a linha correspondente simplesmente nao existe no post. Nao invente, nao adapte, nao
 escreva variacao ("loja verificada", "vendedor oficial"). Loja oficial e um
 selo do Mercado Livre, nao um adjetivo.
 
-Sobre a linha de chamada:
+Sobre a linha de chamada -- e a linha que decide se o post e lido:
 - CAIXA ALTA, curta, no maximo 1 emoji.
-- O melhor gancho costuma ser o preco virando piada ou espanto:
-  "37 CONTO DA POLO DA HERING", "O TRIO PERFEITO PRO SEU ROSTO".
-- Pode usar giria ("conto", "pila"). Nao invente numero: se citar preco na
-  chamada, use exatamente o preco que eu passei, podendo arredondar pra baixo
-  ao real inteiro (R$ 27,00 pode virar "27 CONTO").
+- Pode usar giria ("conto", "pila", "sai correndo", "toma"). Nao invente
+  numero: se citar preco, use exatamente o que eu passei, podendo arredondar
+  pra baixo ao real inteiro (R$ 27,00 pode virar "27 CONTO").
+
+Varie o ANGULO da chamada. Escolha o que combina com o produto, e nao repita o
+mesmo tipo duas vezes seguidas:
+- preco como espanto: "37 CONTO DA POLO DA HERING"
+- para quem serve: "O TRIO PERFEITO PRO SEU ROSTO"
+- a dor que resolve: "CHEGA DE FRITAR NO OLEO"
+- comparacao do dia a dia: "MAIS BARATO QUE O TEU IFOOD DE ONTEM"
+- a pergunta incredula: "QUEM AUTORIZOU ESSE PRECO?"
+- o caso de uso concreto: "PRO CAFE DA MANHA EM 5 MINUTOS"
+- conselho de amigo: "COMPRA LOGO QUE EU JA COMPREI"
+
+Nao comece toda chamada com o nome da categoria do produto. "AIR FRYER POR X"
+seguido de "AIR FRYER POR Y" e o erro mais comum e o mais chato de ler.
 
 Regras rigidas:
 - Use SOMENTE os numeros que eu passar. Nunca invente preco, desconto, cupom,
@@ -76,6 +98,9 @@ Regras rigidas:
   urgencia que eu nao tenha informado. Escassez inventada e mentira.
 - Nao prometa qualidade nem resultado: voce nao testou o produto.
 - Nao cite loja oficial se eu nao informar.
+- Quando eu disser que NAO acompanhamos o produto, nao escreva nada que sugira
+  medicao nossa ("acompanhamos", "monitoramos", "menor preco que ja vimos",
+  "de olho ha dias"). Nesse caso o desconto e o que a loja alega, e so.
 - A divulgacao obrigatoria vai copiada CARACTERE POR CARACTERE. Nao reescreva,
   nao traduza, nao encurte, nao adicione emoji nela.
 - Formatacao do WhatsApp: *negrito* so no preco final.
@@ -89,10 +114,56 @@ class Copywriter:
         self._client = client or genai.Client(api_key=gemini_api_key())
         self._model = copy_model()
 
-    def write(self, scored: ScoredOffer, link: str, coupon: str | None = None) -> str:
-        response = self._client.models.generate_content(
+    def write(
+        self,
+        scored: ScoredOffer,
+        link: str,
+        coupon: str | None = None,
+        avoid: list[str] | None = None,
+    ) -> str:
+        response = self._generate(_facts(scored, link, coupon, avoid))
+
+        _reject_truncated(response)
+
+        text = (response.text or "").strip()
+        if not text:
+            # Acontece quando o filtro de seguranca corta a resposta inteira.
+            raise RuntimeError("Gemini devolveu resposta vazia")
+
+        _reject_unfounded_claims(text, scored)
+        return _enforce_disclosure(text, scored.offer.source)
+
+    def _generate(self, contents: str, tentativas: int = 3):
+        """Chama o Gemini, respeitando o 429 de cota.
+
+        O free tier corta em 20 requisicoes por dia por modelo, e o erro traz
+        `retryDelay` com quantos segundos esperar. Sem esse retry, um pico de
+        rajada derruba o post pro `fallback_copy` -- que sai sem linha de
+        chamada, ou seja, exatamente o post sem graca que o grupo ignora.
+
+        Nao resolve cota esgotada: se o dia acabou, acabou. Resolve o limite
+        por minuto, que e o que aparece numa rodada com varias ofertas.
+        """
+        for tentativa in range(tentativas):
+            try:
+                return self._raw_generate(contents)
+            except Exception as exc:  # noqa: BLE001 - a lib nao expoe tipo estavel
+                espera = _retry_delay(exc)
+                if espera is None or tentativa == tentativas - 1:
+                    raise
+                log.warning(
+                    "Gemini pediu espera de %.0fs (tentativa %d/%d).",
+                    espera,
+                    tentativa + 1,
+                    tentativas,
+                )
+                time.sleep(espera)
+        raise RuntimeError("inalcancavel")
+
+    def _raw_generate(self, contents: str):
+        return self._client.models.generate_content(
             model=self._model,
-            contents=_facts(scored, link, coupon),
+            contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM,
                 max_output_tokens=MAX_OUTPUT_TOKENS,
@@ -104,15 +175,26 @@ class Copywriter:
             ),
         )
 
-        _reject_truncated(response)
 
-        text = (response.text or "").strip()
-        if not text:
-            # Acontece quando o filtro de seguranca corta a resposta inteira.
-            raise RuntimeError("Gemini devolveu resposta vazia")
+# O 429 do Gemini traz quanto esperar, em 'retryDelay': '12s'. Ler isso e melhor
+# que backoff cego: o servidor sabe quando a janela reabre.
+RETRY_DELAY = re.compile(r"'retryDelay':\s*'(\d+(?:\.\d+)?)s'")
 
-        _reject_unfounded_claims(text, scored)
-        return _enforce_disclosure(text, scored.offer.source)
+# Teto de seguranca: cota diaria estourada devolve delays enormes, e travar a
+# rodada esperando por eles seria pior que cair pro texto padrao.
+MAX_RETRY_WAIT = 30.0
+
+
+def _retry_delay(exc: Exception) -> float | None:
+    """Segundos a esperar, ou None se o erro nao for de cota."""
+    texto = str(exc)
+    if "RESOURCE_EXHAUSTED" not in texto and "429" not in texto:
+        return None
+    achado = RETRY_DELAY.search(texto)
+    if not achado:
+        return None
+    espera = float(achado.group(1)) + 1  # folga: o servidor conta o segundo em curso
+    return espera if espera <= MAX_RETRY_WAIT else None
 
 
 def _reject_truncated(response) -> None:
@@ -180,6 +262,19 @@ VAZOU_PROMPT = re.compile(
 )
 
 
+# Linguagem que so o post verificado pode usar. Repassar oferta da vitrine
+# dizendo "acompanhamos ha dias" e mentira sobre o proprio metodo -- e o metodo
+# e o unico ativo que o grupo tem contra os que so espelham campanha.
+# So primeira pessoa do plural. A versao anterior batia em "monitor" e barrava
+# todo post de monitor -- o produto -- e "acompanha" pegava "acompanha 2
+# baterias" na descricao. Guarda que rejeita post legitimo custa oferta.
+ACOMPANHAMENTO = re.compile(
+    r"acompanhamos|monitoramos|estamos de olho|venho acompanhando"
+    r"|(j[aá]|nunca) vimos|nossa m[eé]dia|de olho h[aá] \d+",
+    re.IGNORECASE,
+)
+
+
 def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
     """Barra post que afirma o que o dado nao sustenta.
 
@@ -209,6 +304,14 @@ def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
             "O texto diz 'loja oficial', mas o anuncio nao e de loja oficial."
         )
 
+    if not scored.verified:
+        achado = ACOMPANHAMENTO.search(text)
+        if achado:
+            raise RuntimeError(
+                f"O texto sugere acompanhamento ({achado.group(0)!r}), mas esta "
+                "oferta e repasse da vitrine do ML -- nao medimos nada nela."
+            )
+
     achado = VAZOU_PROMPT.search(text)
     if achado:
         raise RuntimeError(
@@ -216,7 +319,12 @@ def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
         )
 
 
-def _facts(scored: ScoredOffer, link: str, coupon: str | None = None) -> str:
+def _facts(
+    scored: ScoredOffer,
+    link: str,
+    coupon: str | None = None,
+    avoid: list[str] | None = None,
+) -> str:
     offer = scored.offer
     facts = [
         f"Produto: {offer.title}",
@@ -245,6 +353,24 @@ def _facts(scored: ScoredOffer, link: str, coupon: str | None = None) -> str:
         if offer.official_store
         else "Loja oficial: NAO. NAO escreva 'loja oficial' nem variacao disso."
     )
+    if scored.verified:
+        facts.append(
+            f"Acompanhamos: SIM, ha {scored.observations} dias. O 'De' acima e a "
+            "media que NOS medimos nesse periodo, nao o preco riscado da loja. "
+            "Escreva o selo de acompanhamento."
+        )
+    else:
+        facts.append(
+            "Acompanhamos: NAO. O 'De' acima e o preco riscado pela propria loja. "
+            "NAO escreva selo de acompanhamento nem sugira medicao nossa."
+        )
+    if avoid:
+        # O modelo nao tem memoria entre chamadas: sem isso ele reencontra a
+        # mesma piada boa toda vez, e o grupo le a mesma formula o dia inteiro.
+        facts.append(
+            "Chamadas ja usadas nos posts recentes -- NAO repita a formula nem "
+            "o angulo delas:\n" + "\n".join(f"  - {linha}" for linha in avoid)
+        )
     facts.append(f"Divulgacao obrigatoria (copie literalmente): {disclosure_for(offer.source)}")
     return "\n".join(facts)
 

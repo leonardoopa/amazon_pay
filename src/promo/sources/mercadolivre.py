@@ -28,7 +28,7 @@ from datetime import timedelta
 
 import httpx
 
-from ..config import MercadoLivreConfig
+from ..config import MercadoLivreConfig, products_per_category, products_per_keyword
 from ..db import (
     affiliate_blocked,
     affiliate_link,
@@ -198,12 +198,13 @@ class MercadoLivre:
 
     # ---------- Busca ----------
 
-    def search(self, keyword: str, limit: int = PRODUCTS_PER_KEYWORD) -> list[Offer]:
+    def search(self, keyword: str, limit: int | None = None) -> list[Offer]:
         """Descobre produtos de catalogo para um termo.
 
         Uma chamada ja traz nome e fotos de cada produto; o preco vem depois,
         um GET por produto em /products/{id}/items.
         """
+        limit = limit or products_per_keyword()
         response = self._client.get(
             f"{API_HOST}/products/search",
             params={
@@ -227,9 +228,7 @@ class MercadoLivre:
                 offers.append(offer)
         return offers
 
-    def highlights(
-        self, category_id: str, limit: int = PRODUCTS_PER_CATEGORY
-    ) -> list[Offer]:
+    def highlights(self, category_id: str, limit: int | None = None) -> list[Offer]:
         """Mais vendidos de uma categoria.
 
         Este e o mais perto que o ML chega de "me diga o que esta bombando":
@@ -239,6 +238,7 @@ class MercadoLivre:
         Cuidado com o custo: a lista traz so IDs, entao cada produto vira duas
         chamadas -- uma pro nome e foto, outra pro preco.
         """
+        limit = limit or products_per_category()
         response = self._client.get(
             f"{API_HOST}/highlights/{self.config.site_id}/category/{category_id}",
             headers={"Authorization": f"Bearer {self.access_token()}"},

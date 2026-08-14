@@ -162,6 +162,83 @@ def run_interval_seconds() -> int:
     return _int("RUN_INTERVAL_SECONDS", 7200)
 
 
+def drip_interval_seconds() -> float:
+    """Segundos entre um post e o proximo, antes do jitter.
+
+    Referencia: os grupos de oferta que funcionam postam de 2 a 3 minutos.
+    Rajada e lida como flood pelo grupo e como robo pelo antifraude da Meta.
+    """
+    return float(_optional("DRIP_INTERVAL_SECONDS", "150"))
+
+
+def max_pending_queue() -> int:
+    """Teto da fila de posts nao enviados.
+
+    Contrapressao: a coleta produz mais rapido do que a entrega gotejada
+    consegue drenar, e sem teto a fila cresce pra sempre -- o grupo passaria a
+    receber oferta de ontem como se fosse de agora.
+    """
+    return _int("MAX_PENDING_QUEUE", 30)
+
+
+def ofertas_pages() -> int:
+    """Paginas da vitrine /ofertas lidas por rodada (~45 produtos cada).
+
+    0 desliga a fonte e o grupo volta a postar so o que a nossa medicao provar.
+    """
+    return _int("OFERTAS_PAGES", 2)
+
+
+def full_refetch_interval_hours() -> float:
+    """Horas entre reconsultas da carteira INTEIRA."""
+    return float(_optional("FULL_REFETCH_INTERVAL_HOURS", "2"))
+
+
+def hot_interval_minutes() -> float:
+    """Minutos entre reconsultas da fatia quente. 0 desliga o nivel rapido."""
+    return float(_optional("HOT_INTERVAL_MINUTES", "15"))
+
+
+def hot_track_limit() -> int:
+    """Quantos produtos quentes reconsultar. E o custo por ciclo rapido."""
+    return _int("HOT_TRACK_LIMIT", 25)
+
+
+def hot_margin_pct() -> float:
+    """Folga sobre a minima historica pra um produto contar como quente."""
+    return float(_optional("HOT_MARGIN_PCT", "10"))
+
+
+def products_per_keyword() -> int:
+    """Candidatos de catalogo por termo da watchlist.
+
+    Medido: ~65% dos produtos que a busca devolve tem ZERO anuncio ativo em
+    /products/{id}/items -- sao entradas mortas do catalogo, e `status=active`
+    na busca nao filtra isso. Entao pra rastrear N produtos e preciso pedir
+    cerca de 3N. Cada candidato custa 1 chamada, morto ou vivo.
+    """
+    return _int("PRODUCTS_PER_KEYWORD", 20)
+
+
+def products_per_category() -> int:
+    """Idem para os mais vendidos. Cada um custa DUAS chamadas (nome + preco)."""
+    return _int("PRODUCTS_PER_CATEGORY", 10)
+
+
+def discovery_interval_hours() -> int:
+    """Horas entre rodadas de descoberta (busca por termo + mais vendidos).
+
+    A descoberta e cara e quase nao muda: o top-10 do catalogo por termo e o
+    ranking de mais vendidos de uma categoria sao praticamente os mesmos de uma
+    hora pra outra. Rodar ela em toda rodada de 2h gasta o orcamento de API que
+    deveria estar mantendo o historico de uma carteira grande -- e carteira
+    grande e o unico jeito de ter volume de post.
+
+    0 desliga o intervalo e volta a descobrir em toda rodada.
+    """
+    return _int("DISCOVERY_INTERVAL_HOURS", 12)
+
+
 def track_limit() -> int:
     """Teto de produtos reconsultados por rodada, por fonte.
 
