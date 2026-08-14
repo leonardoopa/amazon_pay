@@ -162,6 +162,53 @@ def run_interval_seconds() -> int:
     return _int("RUN_INTERVAL_SECONDS", 7200)
 
 
+def drip_interval_seconds() -> float:
+    """Segundos entre um post e o proximo, antes do jitter.
+
+    Referencia: os grupos de oferta que funcionam postam de 2 a 3 minutos.
+    Rajada e lida como flood pelo grupo e como robo pelo antifraude da Meta.
+    """
+    return float(_optional("DRIP_INTERVAL_SECONDS", "150"))
+
+
+def max_pending_queue() -> int:
+    """Teto da fila de posts nao enviados.
+
+    Contrapressao: a coleta produz mais rapido do que a entrega gotejada
+    consegue drenar, e sem teto a fila cresce pra sempre -- o grupo passaria a
+    receber oferta de ontem como se fosse de agora.
+    """
+    return _int("MAX_PENDING_QUEUE", 30)
+
+
+def ofertas_pages() -> int:
+    """Paginas da vitrine /ofertas lidas por rodada (~45 produtos cada).
+
+    0 desliga a fonte e o grupo volta a postar so o que a nossa medicao provar.
+    """
+    return _int("OFERTAS_PAGES", 2)
+
+
+def full_refetch_interval_hours() -> float:
+    """Horas entre reconsultas da carteira INTEIRA."""
+    return float(_optional("FULL_REFETCH_INTERVAL_HOURS", "2"))
+
+
+def hot_interval_minutes() -> float:
+    """Minutos entre reconsultas da fatia quente. 0 desliga o nivel rapido."""
+    return float(_optional("HOT_INTERVAL_MINUTES", "15"))
+
+
+def hot_track_limit() -> int:
+    """Quantos produtos quentes reconsultar. E o custo por ciclo rapido."""
+    return _int("HOT_TRACK_LIMIT", 25)
+
+
+def hot_margin_pct() -> float:
+    """Folga sobre a minima historica pra um produto contar como quente."""
+    return float(_optional("HOT_MARGIN_PCT", "10"))
+
+
 def products_per_keyword() -> int:
     """Candidatos de catalogo por termo da watchlist.
 

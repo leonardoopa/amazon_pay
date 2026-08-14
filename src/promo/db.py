@@ -228,6 +228,39 @@ def tracked_products(
     return [(row["external_id"], row["title"], row["image_url"]) for row in rows]
 
 
+def hot_products(
+    conn: sqlite3.Connection, source: str, margin_pct: float, limit: int
+) -> list[tuple[str, str, str | None]]:
+    """Produtos perto da propria minima historica: (external_id, titulo, imagem).
+
+    A carteira inteira nao cabe num polling de minutos, mas so uma fatia dela
+    pode virar post na proxima hora. Produto que hoje esta 40% acima da propria
+    minima nao vira oferta com mais uma queda pequena; produto que ja esta
+    colado na minima, sim. Sao esses que vale reconsultar com frequencia.
+
+    `margin_pct` e a folga sobre a minima: 10 significa "ate 10% acima dela".
+    """
+    rows = conn.execute(
+        """
+        SELECT p.external_id, p.title, p.image_url
+        FROM products p
+        JOIN (
+            SELECT product_id, MIN(price) AS minimo, MAX(observed_on) AS ultimo
+            FROM price_history GROUP BY product_id
+        ) h ON h.product_id = p.id
+        JOIN price_history atual
+          ON atual.product_id = p.id AND atual.observed_on = h.ultimo
+        WHERE p.source = ?
+          AND h.minimo > 0
+          AND atual.price <= h.minimo * (1 + ? / 100.0)
+        ORDER BY atual.price / h.minimo ASC
+        LIMIT ?
+        """,
+        (source, margin_pct, limit),
+    ).fetchall()
+    return [(r["external_id"], r["title"], r["image_url"]) for r in rows]
+
+
 def last_post(conn: sqlite3.Connection, product_id: str) -> sqlite3.Row | None:
     """Ultimo post do produto que ja saiu ou ainda vai sair.
 
