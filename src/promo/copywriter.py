@@ -6,13 +6,17 @@ divulgacao de afiliado e obrigatoria pelos dois programas de afiliados.
 
 from __future__ import annotations
 
+import logging
 import re
+import time
 
 from google import genai
 from google.genai import types
 
 from .config import copy_model, gemini_api_key
 from .models import ScoredOffer
+
+log = logging.getLogger("promo")
 
 # Texto de divulgacao exigido por cada programa.
 #
@@ -117,9 +121,49 @@ class Copywriter:
         coupon: str | None = None,
         avoid: list[str] | None = None,
     ) -> str:
-        response = self._client.models.generate_content(
+        response = self._generate(_facts(scored, link, coupon, avoid))
+
+        _reject_truncated(response)
+
+        text = (response.text or "").strip()
+        if not text:
+            # Acontece quando o filtro de seguranca corta a resposta inteira.
+            raise RuntimeError("Gemini devolveu resposta vazia")
+
+        _reject_unfounded_claims(text, scored)
+        return _enforce_disclosure(text, scored.offer.source)
+
+    def _generate(self, contents: str, tentativas: int = 3):
+        """Chama o Gemini, respeitando o 429 de cota.
+
+        O free tier corta em 20 requisicoes por dia por modelo, e o erro traz
+        `retryDelay` com quantos segundos esperar. Sem esse retry, um pico de
+        rajada derruba o post pro `fallback_copy` -- que sai sem linha de
+        chamada, ou seja, exatamente o post sem graca que o grupo ignora.
+
+        Nao resolve cota esgotada: se o dia acabou, acabou. Resolve o limite
+        por minuto, que e o que aparece numa rodada com varias ofertas.
+        """
+        for tentativa in range(tentativas):
+            try:
+                return self._raw_generate(contents)
+            except Exception as exc:  # noqa: BLE001 - a lib nao expoe tipo estavel
+                espera = _retry_delay(exc)
+                if espera is None or tentativa == tentativas - 1:
+                    raise
+                log.warning(
+                    "Gemini pediu espera de %.0fs (tentativa %d/%d).",
+                    espera,
+                    tentativa + 1,
+                    tentativas,
+                )
+                time.sleep(espera)
+        raise RuntimeError("inalcancavel")
+
+    def _raw_generate(self, contents: str):
+        return self._client.models.generate_content(
             model=self._model,
-            contents=_facts(scored, link, coupon, avoid),
+            contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM,
                 max_output_tokens=MAX_OUTPUT_TOKENS,
@@ -131,15 +175,26 @@ class Copywriter:
             ),
         )
 
-        _reject_truncated(response)
 
-        text = (response.text or "").strip()
-        if not text:
-            # Acontece quando o filtro de seguranca corta a resposta inteira.
-            raise RuntimeError("Gemini devolveu resposta vazia")
+# O 429 do Gemini traz quanto esperar, em 'retryDelay': '12s'. Ler isso e melhor
+# que backoff cego: o servidor sabe quando a janela reabre.
+RETRY_DELAY = re.compile(r"'retryDelay':\s*'(\d+(?:\.\d+)?)s'")
 
-        _reject_unfounded_claims(text, scored)
-        return _enforce_disclosure(text, scored.offer.source)
+# Teto de seguranca: cota diaria estourada devolve delays enormes, e travar a
+# rodada esperando por eles seria pior que cair pro texto padrao.
+MAX_RETRY_WAIT = 30.0
+
+
+def _retry_delay(exc: Exception) -> float | None:
+    """Segundos a esperar, ou None se o erro nao for de cota."""
+    texto = str(exc)
+    if "RESOURCE_EXHAUSTED" not in texto and "429" not in texto:
+        return None
+    achado = RETRY_DELAY.search(texto)
+    if not achado:
+        return None
+    espera = float(achado.group(1)) + 1  # folga: o servidor conta o segundo em curso
+    return espera if espera <= MAX_RETRY_WAIT else None
 
 
 def _reject_truncated(response) -> None:
@@ -210,9 +265,12 @@ VAZOU_PROMPT = re.compile(
 # Linguagem que so o post verificado pode usar. Repassar oferta da vitrine
 # dizendo "acompanhamos ha dias" e mentira sobre o proprio metodo -- e o metodo
 # e o unico ativo que o grupo tem contra os que so espelham campanha.
+# So primeira pessoa do plural. A versao anterior batia em "monitor" e barrava
+# todo post de monitor -- o produto -- e "acompanha" pegava "acompanha 2
+# baterias" na descricao. Guarda que rejeita post legitimo custa oferta.
 ACOMPANHAMENTO = re.compile(
-    r"acompanh|monitor|de olho|venho vendo|ja vimos|vimos esse pre[çc]o"
-    r"|ha \d+ dias|nossa m[eé]dia",
+    r"acompanhamos|monitoramos|estamos de olho|venho acompanhando"
+    r"|(j[aá]|nunca) vimos|nossa m[eé]dia|de olho h[aá] \d+",
     re.IGNORECASE,
 )
 

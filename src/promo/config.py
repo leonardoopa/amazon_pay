@@ -162,6 +162,25 @@ def run_interval_seconds() -> int:
     return _int("RUN_INTERVAL_SECONDS", 7200)
 
 
+def drip_interval_seconds() -> float:
+    """Segundos entre um post e o proximo, antes do jitter.
+
+    Referencia: os grupos de oferta que funcionam postam de 2 a 3 minutos.
+    Rajada e lida como flood pelo grupo e como robo pelo antifraude da Meta.
+    """
+    return float(_optional("DRIP_INTERVAL_SECONDS", "150"))
+
+
+def max_pending_queue() -> int:
+    """Teto da fila de posts nao enviados.
+
+    Contrapressao: a coleta produz mais rapido do que a entrega gotejada
+    consegue drenar, e sem teto a fila cresce pra sempre -- o grupo passaria a
+    receber oferta de ontem como se fosse de agora.
+    """
+    return _int("MAX_PENDING_QUEUE", 30)
+
+
 def ofertas_pages() -> int:
     """Paginas da vitrine /ofertas lidas por rodada (~45 produtos cada).
 
