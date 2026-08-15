@@ -370,9 +370,17 @@ def test_afirmacao_de_acompanhamento_ainda_e_pega():
 
 
 def loja_no_prompt(source: str) -> str:
-    offer = Offer(source=source, external_id="X", title="P", price=10.0, url="https://x")
-    scored = ScoredOffer(offer=offer, baseline=20.0, discount_pct=50.0,
-                         observations=0, lowest_ever=False, verified=False)
+    offer = Offer(
+        source=source, external_id="X", title="P", price=10.0, url="https://x"
+    )
+    scored = ScoredOffer(
+        offer=offer,
+        baseline=20.0,
+        discount_pct=50.0,
+        observations=0,
+        lowest_ever=False,
+        verified=False,
+    )
     linha = [l for l in _facts(scored, LINK).splitlines() if l.startswith("Loja:")]
     return linha[0]
 

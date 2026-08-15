@@ -160,7 +160,10 @@ class LinkBuilder:
                 # Item ecoado sem short_url e sem motivo -- soluco do backend
                 # deles. Tratar como recusa custaria 30 dias de bloqueio (e de
                 # comissao) por uma falha que passa na proxima rodada.
-                log.warning("Painel devolveu %s sem link e sem motivo; tentaremos depois.", origem)
+                log.warning(
+                    "Painel devolveu %s sem link e sem motivo; tentaremos depois.",
+                    origem,
+                )
         return LinkResult(gerados, recusados)
 
     def _post(self, urls: list[str]) -> httpx.Response:

@@ -413,7 +413,9 @@ def test_item_sem_link_e_sem_motivo_nao_e_recusa():
 def test_item_com_message_e_recusa():
     resposta = {
         "status": 200,
-        "urls": [{"origin_url": PRODUTO, "message": "URL not allowed", "error_code": 111}],
+        "urls": [
+            {"origin_url": PRODUTO, "message": "URL not allowed", "error_code": 111}
+        ],
     }
     assert build(painel_com(resposta)).create([PRODUTO]).recusados == {
         PRODUTO: "URL not allowed"
@@ -422,7 +424,9 @@ def test_item_com_message_e_recusa():
 
 def test_item_so_com_error_code_e_recusa():
     resposta = {"status": 200, "urls": [{"origin_url": PRODUTO, "error_code": 111}]}
-    assert build(painel_com(resposta)).create([PRODUTO]).recusados == {PRODUTO: "erro 111"}
+    assert build(painel_com(resposta)).create([PRODUTO]).recusados == {
+        PRODUTO: "erro 111"
+    }
 
 
 # ---------- sessao morta lembrada ----------
@@ -452,7 +456,9 @@ def test_sessao_volta_a_valer_depois_de_sucesso():
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == PAINEL:
             estado["gets"] += 1
-            return httpx.Response(200, text=PAGINA if estado["logado"] else PAGINA_LOGIN)
+            return httpx.Response(
+                200, text=PAGINA if estado["logado"] else PAGINA_LOGIN
+            )
         return httpx.Response(200, json=resposta_createLink())
 
     builder = build(handler)

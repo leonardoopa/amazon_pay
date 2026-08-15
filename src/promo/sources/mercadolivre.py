@@ -30,13 +30,9 @@ import httpx
 
 from ..config import MercadoLivreConfig, products_per_category, products_per_keyword
 from ..db import (
-    affiliate_blocked,
-    affiliate_link,
     connect,
-    mark_affiliate_blocked,
     load_token,
     now,
-    save_affiliate_link,
     save_token,
 )
 from ..models import Offer

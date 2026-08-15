@@ -263,7 +263,9 @@ class BuilderContando:
         from promo.sources.ml_linkbuilder import LinkResult
 
         self.chamadas += 1
-        return LinkResult({}, {u: "URL not allowed in affiliates program" for u in urls})
+        return LinkResult(
+            {}, {u: "URL not allowed in affiliates program" for u in urls}
+        )
 
 
 def test_recusado_nao_volta_ao_painel(tmp_path, monkeypatch):
@@ -272,8 +274,14 @@ def test_recusado_nao_volta_ao_painel(tmp_path, monkeypatch):
     from promo.sources.ml_ofertas import MLOfertas
 
     init_db()
-    offer = Offer(source="ml_ofertas", external_id="MLB1", title="P",
-                  price=10.0, url="https://x", original_price=20.0)
+    offer = Offer(
+        source="ml_ofertas",
+        external_id="MLB1",
+        title="P",
+        price=10.0,
+        url="https://x",
+        original_price=20.0,
+    )
     with connect() as conn:
         record_offer(conn, offer)
 
