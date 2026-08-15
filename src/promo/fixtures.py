@@ -23,11 +23,35 @@ DEMO_IMAGE = "https://http2.mlstatic.com/D_NQ_NP_694193-MLA115535213717_082026-O
 # Precos em BRL, proximos do real pra o texto sair plausivel.
 CATALOG = [
     # (id, titulo, preco normal, preco promocional, frete gratis)
-    ("MLB2718281", "Fone de Ouvido Bluetooth JBL Tune 520BT Sem Fio", 249.0, 179.0, True),
-    ("MLB3141592", "Smartwatch Amazfit GTS 4 Mini Tela AMOLED 1.65", 599.0, 429.0, True),
-    ("MLB1618033", "SSD NVMe 1TB Kingston NV2 PCIe 4.0 Leitura 3500MB/s", 449.0, 389.0, False),
+    (
+        "MLB2718281",
+        "Fone de Ouvido Bluetooth JBL Tune 520BT Sem Fio",
+        249.0,
+        179.0,
+        True,
+    ),
+    (
+        "MLB3141592",
+        "Smartwatch Amazfit GTS 4 Mini Tela AMOLED 1.65",
+        599.0,
+        429.0,
+        True,
+    ),
+    (
+        "MLB1618033",
+        "SSD NVMe 1TB Kingston NV2 PCIe 4.0 Leitura 3500MB/s",
+        449.0,
+        389.0,
+        False,
+    ),
     ("MLB1414213", "Air Fryer Mondial 4L Family Inox AFN-40-BI", 389.0, 359.0, True),
-    ("MLB2236067", "Monitor 27 Polegadas LG UltraGear 144Hz Full HD", 1699.0, 1199.0, True),
+    (
+        "MLB2236067",
+        "Monitor 27 Polegadas LG UltraGear 144Hz Full HD",
+        1699.0,
+        1199.0,
+        True,
+    ),
 ]
 
 

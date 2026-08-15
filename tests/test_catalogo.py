@@ -76,13 +76,19 @@ def listing(item_id: str, price: float, **extra) -> dict:
 
 def test_pega_o_menor_preco_entre_os_anuncios():
     """27 anuncios do mesmo celular variavam de R$ 1.289 a R$ 1.899 na API real."""
-    source = build({
-        "/items": FakeResponse({"results": [
-            listing("MLB700", 1899.0),
-            listing("MLB701", 1289.0),
-            listing("MLB702", 1299.0),
-        ]})
-    })
+    source = build(
+        {
+            "/items": FakeResponse(
+                {
+                    "results": [
+                        listing("MLB700", 1899.0),
+                        listing("MLB701", 1289.0),
+                        listing("MLB702", 1299.0),
+                    ]
+                }
+            )
+        }
+    )
 
     offer = source._offer_for("MLB54982411", title="Celular", image_url=None)
 
@@ -92,12 +98,18 @@ def test_pega_o_menor_preco_entre_os_anuncios():
 
 def test_ignora_anuncio_usado():
     """Anuncio usado fica fora das regras do programa de afiliados."""
-    source = build({
-        "/items": FakeResponse({"results": [
-            listing("MLB700", 500.0, condition="used"),
-            listing("MLB701", 900.0, condition="new"),
-        ]})
-    })
+    source = build(
+        {
+            "/items": FakeResponse(
+                {
+                    "results": [
+                        listing("MLB700", 500.0, condition="used"),
+                        listing("MLB701", 900.0, condition="new"),
+                    ]
+                }
+            )
+        }
+    )
 
     offer = source._offer_for("MLB1", title="Produto", image_url=None)
 
@@ -106,9 +118,13 @@ def test_ignora_anuncio_usado():
 
 
 def test_sem_anuncio_novo_nao_vira_oferta():
-    source = build({
-        "/items": FakeResponse({"results": [listing("MLB700", 500.0, condition="used")]})
-    })
+    source = build(
+        {
+            "/items": FakeResponse(
+                {"results": [listing("MLB700", 500.0, condition="used")]}
+            )
+        }
+    )
 
     assert source._offer_for("MLB1", title="Produto", image_url=None) is None
 
@@ -131,12 +147,18 @@ def test_monta_a_url_a_partir_do_id():
 
 
 def test_leva_original_price_do_anuncio_vencedor():
-    source = build({
-        "/items": FakeResponse({"results": [
-            listing("MLB700", 1599.0, original_price=1899.0),
-            listing("MLB701", 1399.0, original_price=1599.0),
-        ]})
-    })
+    source = build(
+        {
+            "/items": FakeResponse(
+                {
+                    "results": [
+                        listing("MLB700", 1599.0, original_price=1899.0),
+                        listing("MLB701", 1399.0, original_price=1599.0),
+                    ]
+                }
+            )
+        }
+    )
 
     offer = source._offer_for("MLB1", title="Produto", image_url=None)
 
@@ -145,12 +167,18 @@ def test_leva_original_price_do_anuncio_vencedor():
 
 
 def test_anuncio_sem_preco_e_descartado():
-    source = build({
-        "/items": FakeResponse({"results": [
-            listing("MLB700", 0),
-            listing("MLB701", 250.0),
-        ]})
-    })
+    source = build(
+        {
+            "/items": FakeResponse(
+                {
+                    "results": [
+                        listing("MLB700", 0),
+                        listing("MLB701", 250.0),
+                    ]
+                }
+            )
+        }
+    )
 
     offer = source._offer_for("MLB1", title="Produto", image_url=None)
 
@@ -162,13 +190,22 @@ def test_anuncio_sem_preco_e_descartado():
 
 
 def test_search_usa_o_catalogo_e_resolve_preco_por_produto():
-    source = build({
-        "/products/search": FakeResponse({"results": [
-            {"id": "MLB1", "name": "Air Fryer 4L",
-             "pictures": [{"url": "https://http2.mlstatic.com/a-F.jpg"}]},
-        ]}),
-        "/items": FakeResponse({"results": [listing("MLB700", 349.0)]}),
-    })
+    source = build(
+        {
+            "/products/search": FakeResponse(
+                {
+                    "results": [
+                        {
+                            "id": "MLB1",
+                            "name": "Air Fryer 4L",
+                            "pictures": [{"url": "https://http2.mlstatic.com/a-F.jpg"}],
+                        },
+                    ]
+                }
+            ),
+            "/items": FakeResponse({"results": [listing("MLB700", 349.0)]}),
+        }
+    )
 
     offers = source.search("air fryer")
 

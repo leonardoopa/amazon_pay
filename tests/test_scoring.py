@@ -44,7 +44,11 @@ def make_offer(price: float, **kwargs) -> Offer:
     return Offer(price=price, **{**defaults, **kwargs})
 
 
-def seed_history(conn: sqlite3.Connection, prices: list[float], product_id: str = "mercadolivre:MLB123") -> None:
+def seed_history(
+    conn: sqlite3.Connection,
+    prices: list[float],
+    product_id: str = "mercadolivre:MLB123",
+) -> None:
     """Grava um preco por dia, terminando ontem."""
     conn.execute(
         """INSERT OR IGNORE INTO products

@@ -15,7 +15,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from promo.delivery.evolution import CAPTION_LIMIT, Evolution, NotConnected  # noqa: E402
+from promo.delivery.evolution import (
+    CAPTION_LIMIT,
+    Evolution,
+    NotConnected,
+)  # noqa: E402
 
 GRUPO = "120363295648424210@g.us"
 FOTO = "https://http2.mlstatic.com/foto-F.jpg"

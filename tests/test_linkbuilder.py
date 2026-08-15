@@ -163,7 +163,9 @@ def test_url_sem_link_na_resposta_nao_vira_entrada():
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == PAINEL:
             return httpx.Response(200, text=PAGINA)
-        return httpx.Response(200, json={"status": 200, "urls": [{"origin_url": PRODUTO}]})
+        return httpx.Response(
+            200, json={"status": 200, "urls": [{"origin_url": PRODUTO}]}
+        )
 
     assert build(handler).create([PRODUTO]).links == {}
 
