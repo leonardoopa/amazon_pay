@@ -28,7 +28,9 @@ from dataclasses import dataclass
 import httpx
 
 PAINEL = "https://www.mercadolivre.com.br/afiliados/linkbuilder"
-ENDPOINT = "https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink"
+ENDPOINT = (
+    "https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink"
+)
 
 # O painel e uma pagina normal do site: sem User-Agent de navegador o ML
 # devolve outra coisa (ou nada) e o token nao aparece.

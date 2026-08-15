@@ -147,7 +147,9 @@ def test_desiste_depois_do_teto_de_tentativas():
         mark_post_failed(conn, post_id, "boom")
 
     assert pending_posts(conn) == []
-    row = conn.execute("SELECT status, attempts FROM posts WHERE id = ?", (post_id,)).fetchone()
+    row = conn.execute(
+        "SELECT status, attempts FROM posts WHERE id = ?", (post_id,)
+    ).fetchone()
     assert row["status"] == "failed"
     assert row["attempts"] == MAX_SEND_ATTEMPTS
 

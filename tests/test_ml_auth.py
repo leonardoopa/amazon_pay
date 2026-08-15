@@ -69,14 +69,18 @@ def test_recusa_entrada_vazia():
 def test_recusa_redirect_diferente_do_env():
     outro = f"https://outro.dominio.com/callback?code=TG-abc123&state={STATE}"
     with pytest.raises(RuntimeError, match="redirect_uri"):
-        parse_callback(outro, STATE, expected_redirect_uri="https://example.com/callback")
+        parse_callback(
+            outro, STATE, expected_redirect_uri="https://example.com/callback"
+        )
 
 
 def test_erro_mostra_os_dois_valores():
     """Saber que divergiu nao ajuda; saber qual e qual resolve em 10 segundos."""
     outro = f"https://outro.dominio.com/callback?code=TG-abc123&state={STATE}"
     with pytest.raises(RuntimeError) as erro:
-        parse_callback(outro, STATE, expected_redirect_uri="https://example.com/callback")
+        parse_callback(
+            outro, STATE, expected_redirect_uri="https://example.com/callback"
+        )
 
     mensagem = str(erro.value)
     assert "https://example.com/callback" in mensagem
@@ -84,14 +88,21 @@ def test_erro_mostra_os_dois_valores():
 
 
 def test_aceita_redirect_igual():
-    assert parse_callback(CALLBACK, STATE, expected_redirect_uri="https://example.com/callback") == "TG-abc123"
+    assert (
+        parse_callback(
+            CALLBACK, STATE, expected_redirect_uri="https://example.com/callback"
+        )
+        == "TG-abc123"
+    )
 
 
 def test_barra_final_nao_conta_como_divergencia():
     """O DevCenter e o .env discordam de barra final o tempo todo, e o ML
     aceita os dois -- barrar aqui seria falso positivo."""
     assert (
-        parse_callback(CALLBACK, STATE, expected_redirect_uri="https://example.com/callback/")
+        parse_callback(
+            CALLBACK, STATE, expected_redirect_uri="https://example.com/callback/"
+        )
         == "TG-abc123"
     )
 

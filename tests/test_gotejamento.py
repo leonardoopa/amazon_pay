@@ -22,7 +22,9 @@ from promo.db import SCHEMA, create_post, pending_posts  # noqa: E402
 class FakeDelivery:
     """Registra o que foi enviado, sem falar com ninguem."""
 
-    def __init__(self, falha_em: int | None = None, erro: Exception | None = None) -> None:
+    def __init__(
+        self, falha_em: int | None = None, erro: Exception | None = None
+    ) -> None:
         self.enviados: list[str] = []
         self.tentativas = 0
         self.falha_em = falha_em

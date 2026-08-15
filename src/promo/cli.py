@@ -87,7 +87,7 @@ def cmd_ml_categories(_: argparse.Namespace) -> int:
     init_db()
     for category_id, nome in MercadoLivre(MercadoLivreConfig.load()).categories():
         print(f"{category_id:<10} {nome}")
-    print('\nAcompanhe os mais vendidos colocando em watchlist.json:')
+    print("\nAcompanhe os mais vendidos colocando em watchlist.json:")
     print('  "categories": [{"id": "MLB1051", "name": "Celulares", "max_price": 3000}]')
     return 0
 
@@ -131,7 +131,9 @@ def cmd_demo(args: argparse.Namespace) -> int:
     rules = Rules.load()
 
     with connect() as conn:
-        scored = [s for s in (score(conn, o, rules) for o in fixtures.current_offers()) if s]
+        scored = [
+            s for s in (score(conn, o, rules) for o in fixtures.current_offers()) if s
+        ]
 
     print("=" * 48)
     print("DADOS SINTETICOS -- os produtos nao existem e os links nao abrem.")
@@ -163,7 +165,9 @@ def cmd_demo(args: argparse.Namespace) -> int:
                 text = fallback_copy(item, link)
         print("\n" + "-" * 48)
         aviso = "  SEM LINK DE AFILIADO -- nao renderia comissao" if sem_link else ""
-        print(f"[{item.discount_pct:.0f}% abaixo da media de R$ {item.baseline:.2f}]{aviso}")
+        print(
+            f"[{item.discount_pct:.0f}% abaixo da media de R$ {item.baseline:.2f}]{aviso}"
+        )
         print(text)
         drafts.append((item, text))
 
@@ -214,8 +218,11 @@ def cmd_daemon(args: argparse.Namespace) -> int:
         signal.signal(sig, lambda *_: stop.set())
 
     log = logging.getLogger("promo")
-    log.info("Daemon iniciado (intervalo de %ds). Modo: %s", interval,
-             "coleta apenas" if args.collect_only else "pipeline completo")
+    log.info(
+        "Daemon iniciado (intervalo de %ds). Modo: %s",
+        interval,
+        "coleta apenas" if args.collect_only else "pipeline completo",
+    )
 
     while not stop.is_set():
         try:
@@ -299,7 +306,9 @@ def cmd_wa_connect(args: argparse.Namespace) -> int:
     print(f"\nAbra o painel: {painel}")
     print("  1. Server URL: a mesma acima, sem /manager")
     print("  2. API Key: o valor de EVOLUTION_API_KEY do seu .env")
-    print(f"  3. Clique na instancia '{_evolution_sem_grupo().config.instance}' e conecte")
+    print(
+        f"  3. Clique na instancia '{_evolution_sem_grupo().config.instance}' e conecte"
+    )
     print("\nNo celular: Aparelhos conectados > Conectar aparelho.")
     print("O QR do painel se renova sozinho, entao da pra tentar quantas vezes quiser.")
     print("\nPareado? Rode `promo wa-groups --search <nome do grupo>`.")
@@ -428,7 +437,10 @@ def cmd_link(args: argparse.Namespace) -> int:
             return 2
         if len(rows) > 1:
             nomes = ", ".join(row["id"] for row in rows)
-            print(f"ID ambiguo entre fontes ({nomes}). Passe o ID completo.", file=sys.stderr)
+            print(
+                f"ID ambiguo entre fontes ({nomes}). Passe o ID completo.",
+                file=sys.stderr,
+            )
             return 2
 
         product_id = rows[0]["id"]
@@ -547,7 +559,10 @@ COMMANDS = {
     "wa-connect": (cmd_wa_connect, "Pareia o chip secundario na Evolution (QR)"),
     "wa-groups": (cmd_wa_groups, "Acha o JID do grupo (use --search)"),
     "wa-logout": (cmd_wa_logout, "Desconecta o numero pareado da Evolution"),
-    "test-whatsapp": (cmd_test_whatsapp, "Manda uma mensagem de teste pelo backend ativo"),
+    "test-whatsapp": (
+        cmd_test_whatsapp,
+        "Manda uma mensagem de teste pelo backend ativo",
+    ),
     "stats": (cmd_stats, "Mostra o estado do banco"),
 }
 

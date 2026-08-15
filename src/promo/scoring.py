@@ -15,9 +15,7 @@ from .db import last_post, price_history
 from .models import Offer, ScoredOffer
 
 
-def score(
-    conn: sqlite3.Connection, offer: Offer, rules: Rules
-) -> ScoredOffer | None:
+def score(conn: sqlite3.Connection, offer: Offer, rules: Rules) -> ScoredOffer | None:
     """Retorna a oferta pontuada, ou None se nao merece post."""
     if not offer.available or offer.price <= 0:
         return None
@@ -56,7 +54,9 @@ def _in_cooldown(
         return False
 
     sent_at = datetime.fromisoformat(previous["created_at"])
-    if datetime.now(sent_at.tzinfo) - sent_at > timedelta(days=rules.repost_cooldown_days):
+    if datetime.now(sent_at.tzinfo) - sent_at > timedelta(
+        days=rules.repost_cooldown_days
+    ):
         return False
 
     # Dentro do cooldown, so repassa se o desconto melhorou 10 p.p. ou mais.

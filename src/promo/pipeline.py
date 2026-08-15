@@ -33,7 +33,6 @@ from .db import (
     create_post,
     mark_post_failed,
     mark_post_sent,
-    get_meta,
     hot_products,
     hours_since,
     pending_posts,
@@ -157,7 +156,9 @@ def collect(
         for watch in watchlist if descobrir else []:
             try:
                 found = source.search(watch.term)
-            except Exception as exc:  # noqa: BLE001 - uma fonte quebrada nao derruba a rodada
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 - uma fonte quebrada nao derruba a rodada
                 log.warning("%s falhou em '%s': %s", source.name, watch.term, exc)
                 continue
             if watch.max_price is not None:
@@ -341,7 +342,9 @@ def refetch_tracked(source, rules: Rules) -> list[Offer]:
         )
         return []
 
-    log.info("%s: %d de %d produtos reconsultados", source.name, len(found), len(tracked))
+    log.info(
+        "%s: %d de %d produtos reconsultados", source.name, len(found), len(tracked)
+    )
     return found
 
 
@@ -504,7 +507,9 @@ def flush_pending(
     delivery = build_delivery()
 
     with connect() as conn:
-        queue = [(row["id"], row["copy"], row["image_url"]) for row in pending_posts(conn)]
+        queue = [
+            (row["id"], row["copy"], row["image_url"]) for row in pending_posts(conn)
+        ]
 
     if not queue:
         log.info("Nada pendente na fila.")
@@ -538,7 +543,9 @@ def flush_pending(
             # template: pinga voce pedindo uma resposta qualquer, o que reabre a
             # janela pra proxima rodada (ou `promo flush`) drenar o resto.
             remaining = len(queue) - index
-            log.warning("Janela de 24h fechada, %d na fila. Enviando template.", remaining)
+            log.warning(
+                "Janela de 24h fechada, %d na fila. Enviando template.", remaining
+            )
             delivery.send_ping_template(remaining)
             return
         except NotConnected as exc:

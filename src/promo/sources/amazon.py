@@ -97,11 +97,15 @@ class Amazon:
         if price is None:
             return None
         saving_basis = (listing.get("savingBasis") or {}).get("amount")
-        availability = ((listing.get("availability") or {}).get("message") or "").lower()
+        availability = (
+            (listing.get("availability") or {}).get("message") or ""
+        ).lower()
 
         info = item.get("itemInfo") or {}
         title = ((info.get("title") or {}).get("displayValue")) or item.get("asin", "")
-        image = (((item.get("images") or {}).get("primary") or {}).get("large") or {}).get("url")
+        image = (
+            ((item.get("images") or {}).get("primary") or {}).get("large") or {}
+        ).get("url")
 
         return Offer(
             source=PROVIDER,
@@ -112,7 +116,8 @@ class Amazon:
             url=item.get("detailPageURL", ""),
             currency=(listing.get("price") or {}).get("currency", "BRL"),
             image_url=image,
-            available="indisponí" not in availability and "unavailable" not in availability,
+            available="indisponí" not in availability
+            and "unavailable" not in availability,
         )
 
     def affiliate_url(self, offer: Offer) -> str:
