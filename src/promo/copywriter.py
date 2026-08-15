@@ -27,6 +27,32 @@ log = logging.getLogger("promo")
 # estiver realmente errado.
 MAX_OUTPUT_TOKENS = 800
 
+# Nome da loja como o post deve cita-la, por fonte.
+#
+# Era um ternario binario (`'Mercado Livre' if source == 'mercadolivre' else
+# 'Amazon'`), escrito quando so existiam duas fontes. Quando `ml_ofertas` e
+# `demo` entraram, os dois cairam no else: 100% dos posts da vitrine iam pro
+# Gemini com "Loja: Amazon" ao lado de um link meli.la e da divulgacao do ML.
+# Nenhuma guarda checa nome de loja, entao sairia inteiro pro grupo.
+LOJAS = {
+    "mercadolivre": "Mercado Livre",
+    "ml_ofertas": "Mercado Livre",
+    "amazon": "Amazon",
+    "demo": "Mercado Livre",
+}
+
+
+def store_name(source: str) -> str:
+    """Nome da loja. Fonte desconhecida falha alto em vez de virar Amazon."""
+    try:
+        return LOJAS[source]
+    except KeyError:
+        raise RuntimeError(
+            f"Fonte {source!r} sem nome de loja em LOJAS. Cadastre antes de postar "
+            "-- sem isso o post sairia atribuindo a oferta a loja errada."
+        ) from None
+
+
 DISCLOSURES = {
     "amazon": (
         "Como participante do Programa de Associados da Amazon, "
@@ -332,7 +358,7 @@ def _facts(
         f"De (media de {scored.observations} dias): R$ {brl(scored.baseline)}",
         f"Por (preco agora): R$ {brl(offer.price)}",
         f"Desconto contra a media: {scored.discount_pct:.0f}%",
-        f"Loja: {'Mercado Livre' if offer.source == 'mercadolivre' else 'Amazon'}",
+        f"Loja: {store_name(offer.source)}",
         f"Link: {link}",
     ]
     if scored.lowest_ever:
@@ -376,6 +402,12 @@ def _facts(
 
 
 def disclosure_for(source: str) -> str:
+    """Divulgacao obrigatoria da fonte.
+
+    O default do ML nao e chute: as fontes que caem aqui (`ml_ofertas`, `demo`)
+    sao todas do Mercado Livre. Mas o mapa LOJAS e quem valida isso -- fonte
+    desconhecida estoura la antes de chegar neste ponto.
+    """
     return DISCLOSURES.get(source, DISCLOSURES["mercadolivre"])
 
 

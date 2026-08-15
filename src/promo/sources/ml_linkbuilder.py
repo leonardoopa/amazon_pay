@@ -74,8 +74,14 @@ class LinkBuilder:
             headers={"user-agent": USER_AGENT, "cookie": cookie},
         )
         self._csrf: str | None = None
+        self._sessao_morta: str | None = None
 
     def _token(self, forcar: bool = False) -> str:
+        # A sessao morta e lembrada: sem isso, uma rodada com 5 ofertas baixava
+        # o painel de 770 KB cinco vezes pra falhar cinco vezes igual.
+        if self._sessao_morta is not None and not forcar:
+            raise SessionExpired(self._sessao_morta)
+
         """Raspa o csrf-token do painel, reaproveitando entre chamadas.
 
         Reaproveitar importa: sem cache seria uma pagina de 770 KB baixada pra
@@ -87,21 +93,24 @@ class LinkBuilder:
 
         response = self._client.get(PAINEL, headers={"accept": "text/html"})
         if response.status_code >= 400:
-            raise SessionExpired(
+            self._sessao_morta = (
                 f"O painel de afiliados respondeu {response.status_code}. "
                 "Recapture ML_AFFILIATE_COOKIE (veja o README)."
             )
+            raise SessionExpired(self._sessao_morta)
 
         achado = CSRF_META.search(response.text)
         if not achado:
-            # Deslogado o ML serve a pagina de login, que tambem e 200 -- entao
-            # a ausencia do token e o sinal confiavel, nao o status.
-            raise SessionExpired(
+            self._sessao_morta = (
                 "Nao achei o csrf-token no painel de afiliados. O cookie de "
                 "ML_AFFILIATE_COOKIE expirou (ou o ML mudou a pagina). "
                 "Recapture no navegador -- veja o README."
             )
+            # Deslogado o ML serve a pagina de login, que tambem e 200 -- entao
+            # a ausencia do token e o sinal confiavel, nao o status.
+            raise SessionExpired(self._sessao_morta)
 
+        self._sessao_morta = None
         self._csrf = achado.group(1)
         return self._csrf
 
@@ -144,8 +153,14 @@ class LinkBuilder:
             curto = item.get("short_url")
             if curto:
                 gerados[origem] = curto
+            elif item.get("message") or item.get("error_code"):
+                # Recusa de verdade: o ML disse o motivo.
+                recusados[origem] = item.get("message") or f"erro {item['error_code']}"
             else:
-                recusados[origem] = item.get("message") or "sem short_url na resposta"
+                # Item ecoado sem short_url e sem motivo -- soluco do backend
+                # deles. Tratar como recusa custaria 30 dias de bloqueio (e de
+                # comissao) por uma falha que passa na proxima rodada.
+                log.warning("Painel devolveu %s sem link e sem motivo; tentaremos depois.", origem)
         return LinkResult(gerados, recusados)
 
     def _post(self, urls: list[str]) -> httpx.Response:

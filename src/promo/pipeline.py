@@ -523,16 +523,18 @@ def flush_pending(
     enviados = 0
 
     for index, (post_id, text, image_url) in enumerate(queue):
-        if enviados and monotonic() - inicio >= budget_seconds:
-            log.info(
-                "Orcamento de %.0fs esgotado; %d post(s) ficam pra proxima rodada.",
-                budget_seconds,
-                len(queue) - index,
-            )
-            return
-
         if enviados:
+            # Decidir ANTES de dormir. Checar so o tempo ja gasto deixava a
+            # drenagem estourar o orcamento por um intervalo inteiro -- com
+            # gap de 150s isso invadia a rodada seguinte do daemon.
             espera = _drip_gap()
+            if monotonic() - inicio + espera >= budget_seconds:
+                log.info(
+                    "Orcamento de %.0fs esgotado; %d post(s) ficam pra proxima rodada.",
+                    budget_seconds,
+                    len(queue) - index,
+                )
+                return
             log.info("Aguardando %.0fs antes do proximo post.", espera)
             sleep(espera)
 

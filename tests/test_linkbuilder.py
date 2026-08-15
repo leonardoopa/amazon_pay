@@ -383,3 +383,82 @@ def test_recusa_antiga_volta_a_ser_consultada(tmp_path, monkeypatch):
 def test_endpoint_e_o_do_painel():
     """Fixar a URL: se ela mudar, o teste falha antes da producao."""
     assert ENDPOINT.endswith("/affiliate-program/api/v2/affiliates/createLink")
+
+
+# ---------- soluco do painel x recusa de verdade ----------
+#
+# O painel responde 200 mesmo recusando, e o erro vem por item. Mas item
+# ecoado SEM short_url e SEM motivo e outra coisa: soluco do backend deles.
+# Tratar os dois igual custava 30 dias de bloqueio -- e de comissao -- por uma
+# falha que passa na proxima rodada.
+
+
+def painel_com(resposta: dict):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == PAINEL:
+            return httpx.Response(200, text=PAGINA)
+        return httpx.Response(200, json=resposta)
+
+    return handler
+
+
+def test_item_sem_link_e_sem_motivo_nao_e_recusa():
+    resposta = {"status": 200, "urls": [{"origin_url": PRODUTO}]}
+    resultado = build(painel_com(resposta)).create([PRODUTO])
+
+    assert resultado.links == {}
+    assert resultado.recusados == {}  # nao bloqueia
+
+
+def test_item_com_message_e_recusa():
+    resposta = {
+        "status": 200,
+        "urls": [{"origin_url": PRODUTO, "message": "URL not allowed", "error_code": 111}],
+    }
+    assert build(painel_com(resposta)).create([PRODUTO]).recusados == {
+        PRODUTO: "URL not allowed"
+    }
+
+
+def test_item_so_com_error_code_e_recusa():
+    resposta = {"status": 200, "urls": [{"origin_url": PRODUTO, "error_code": 111}]}
+    assert build(painel_com(resposta)).create([PRODUTO]).recusados == {PRODUTO: "erro 111"}
+
+
+# ---------- sessao morta lembrada ----------
+
+
+def test_sessao_morta_nao_rebaixa_o_painel_por_oferta():
+    """Sem memorizar a falha, uma rodada com 5 ofertas baixava 5 vezes uma
+    pagina de 770 KB pra falhar 5 vezes igual."""
+    paginas = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paginas.append(1)
+        return httpx.Response(200, text=PAGINA_LOGIN)
+
+    builder = build(handler)
+    for _ in range(5):
+        with pytest.raises(SessionExpired):
+            builder.create([PRODUTO])
+
+    assert len(paginas) == 1
+
+
+def test_sessao_volta_a_valer_depois_de_sucesso():
+    """Cookie novo no .env nao pode ficar refem do cache de falha."""
+    estado = {"logado": False, "gets": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == PAINEL:
+            estado["gets"] += 1
+            return httpx.Response(200, text=PAGINA if estado["logado"] else PAGINA_LOGIN)
+        return httpx.Response(200, json=resposta_createLink())
+
+    builder = build(handler)
+    with pytest.raises(SessionExpired):
+        builder.create([PRODUTO])
+
+    estado["logado"] = True
+    builder._sessao_morta = None  # o processo reinicia com cookie novo
+    assert builder.create([PRODUTO]).links == {PRODUTO: CURTO}

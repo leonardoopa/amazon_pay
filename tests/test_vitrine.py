@@ -245,3 +245,53 @@ def test_verificada_pode_dizer_que_acompanha():
     assert "Acompanhamos" in Copywriter(client=Fake(texto)).write(
         scored, "https://meli.la/x"
     )
+
+
+# ---------- link de afiliado compartilhado ----------
+#
+# A vitrine tinha copia propria de affiliate_url. A copia GRAVAVA
+# affiliate_blocked mas nunca LIA -- entao produto que o programa recusa
+# voltava ao painel em toda rodada, pra sempre. Agora as duas fontes chamam a
+# mesma funcao.
+
+
+class BuilderContando:
+    def __init__(self):
+        self.chamadas = 0
+
+    def create(self, urls):
+        from promo.sources.ml_linkbuilder import LinkResult
+
+        self.chamadas += 1
+        return LinkResult({}, {u: "URL not allowed in affiliates program" for u in urls})
+
+
+def test_recusado_nao_volta_ao_painel(tmp_path, monkeypatch):
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "t.db"))
+    from promo.db import connect, init_db, record_offer
+    from promo.sources.ml_ofertas import MLOfertas
+
+    init_db()
+    offer = Offer(source="ml_ofertas", external_id="MLB1", title="P",
+                  price=10.0, url="https://x", original_price=20.0)
+    with connect() as conn:
+        record_offer(conn, offer)
+
+    builder = BuilderContando()
+    fonte = MLOfertas(builder)
+
+    for _ in range(5):
+        assert fonte.affiliate_url(offer) is None
+
+    assert builder.chamadas == 1
+
+
+def test_as_duas_fontes_usam_a_mesma_funcao():
+    """Duplicar essa logica ja custou dinheiro uma vez."""
+    import inspect
+
+    from promo.sources.ml_ofertas import MLOfertas
+    from promo.sources.mercadolivre import MercadoLivre
+
+    for classe in (MLOfertas, MercadoLivre):
+        assert "resolve_affiliate_link" in inspect.getsource(classe.affiliate_url)

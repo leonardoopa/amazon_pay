@@ -186,35 +186,12 @@ class MLOfertas:
     # pela coleta de catalogo se ele tambem estiver na watchlist.
 
     def affiliate_url(self, offer: Offer) -> str | None:
-        """Mesmo Link Builder da fonte de catalogo."""
-        from ..db import (
-            affiliate_link,
-            connect,
-            mark_affiliate_blocked,
-            save_affiliate_link,
-        )
+        """Mesmo Link Builder da fonte de catalogo, mesma logica.
 
-        with connect() as conn:
-            existente = affiliate_link(conn, offer.product_id)
-        if existente:
-            return existente
-        if self._builder is None:
-            return None
+        Compartilhada de proposito: quando esta funcao era uma copia, ela
+        gravava `affiliate_blocked` mas nunca lia -- entao produto recusado
+        pelo programa voltava ao painel em toda rodada, pra sempre.
+        """
+        from .affiliate import resolve_affiliate_link
 
-        try:
-            resultado = self._builder.create([offer.url])
-        except Exception as exc:  # noqa: BLE001 - painel fora do ar segura a oferta
-            log.warning("Link Builder falhou para %s: %s", offer.external_id, exc)
-            return None
-
-        motivo = resultado.recusados.get(offer.url)
-        if motivo:
-            with connect() as conn:
-                mark_affiliate_blocked(conn, offer.product_id, motivo)
-            return None
-
-        link = resultado.links.get(offer.url)
-        if link:
-            with connect() as conn:
-                save_affiliate_link(conn, offer.product_id, link)
-        return link
+        return resolve_affiliate_link(self._builder, offer)

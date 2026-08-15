@@ -353,3 +353,56 @@ def test_afirmacao_de_acompanhamento_ainda_e_pega():
         "nossa media dos ultimos dias",
     ):
         assert ACOMPANHAMENTO.search(frase), frase
+
+
+# --- Nome da loja por fonte ---
+#
+# Era um ternario binario escrito quando so existiam duas fontes. Com
+# `ml_ofertas` e `demo`, os dois cairam no else: todo post da vitrine ia pro
+# Gemini com "Loja: Amazon" ao lado de link meli.la. Nenhuma guarda checa nome
+# de loja, entao sairia inteiro pro grupo.
+
+
+def loja_no_prompt(source: str) -> str:
+    offer = Offer(source=source, external_id="X", title="P", price=10.0, url="https://x")
+    scored = ScoredOffer(offer=offer, baseline=20.0, discount_pct=50.0,
+                         observations=0, lowest_ever=False, verified=False)
+    linha = [l for l in _facts(scored, LINK).splitlines() if l.startswith("Loja:")]
+    return linha[0]
+
+
+def test_vitrine_e_mercado_livre_nao_amazon():
+    assert loja_no_prompt("ml_ofertas") == "Loja: Mercado Livre"
+
+
+def test_catalogo_e_mercado_livre():
+    assert loja_no_prompt("mercadolivre") == "Loja: Mercado Livre"
+
+
+def test_amazon_continua_amazon():
+    assert loja_no_prompt("amazon") == "Loja: Amazon"
+
+
+def test_demo_nao_vira_amazon():
+    """`promo demo` calibra o tom; com Amazon errada ela treinava errado."""
+    assert loja_no_prompt("demo") == "Loja: Mercado Livre"
+
+
+def test_fonte_desconhecida_falha_alto():
+    """Fonte nova sem cadastro tem que estourar, nao virar Amazon em silencio."""
+    from promo.copywriter import store_name
+
+    with pytest.raises(RuntimeError, match="shopee"):
+        store_name("shopee")
+
+
+def test_loja_bate_com_a_divulgacao():
+    """Post com 'Loja: Amazon' e divulgacao do ML e incoerencia entregue ao
+    modelo -- foi assim que o bug passou despercebido."""
+    from promo.copywriter import disclosure_for, store_name
+
+    for source in ("mercadolivre", "ml_ofertas", "demo"):
+        assert store_name(source) == "Mercado Livre"
+        assert disclosure_for(source) == "Link de afiliado - o preco pra voce nao muda."
+    assert store_name("amazon") == "Amazon"
+    assert "Programa de Associados" in disclosure_for("amazon")
