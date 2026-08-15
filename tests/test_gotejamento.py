@@ -134,13 +134,19 @@ def test_intervalo_fica_perto_do_configurado(banco, monkeypatch):
 
 
 def test_orcamento_corta_a_drenagem(banco, monkeypatch):
-    """O que nao couber sai na proxima rodada, nao se perde."""
+    """O que nao couber sai na proxima rodada, nao se perde.
+
+    Jitter zerado aqui de proposito: com variacao o total oscila e o teste
+    vira moeda. A irregularidade tem teste proprio.
+    """
     monkeypatch.setenv("DRIP_INTERVAL_SECONDS", "100")
+    monkeypatch.setattr(pipeline, "DRIP_JITTER", 0.0)
     enfileira(banco, 10)
     entrega, relogio = FakeDelivery(), Relogio()
     flush(monkeypatch, entrega, relogio, budget=250)
 
-    assert 2 <= len(entrega.enviados) <= 4
+    # 1o na hora, depois 100s por post: em 250s cabem 3.
+    assert len(entrega.enviados) == 3
 
     conn = sqlite3.connect(banco)
     conn.row_factory = sqlite3.Row
@@ -149,6 +155,7 @@ def test_orcamento_corta_a_drenagem(banco, monkeypatch):
 
 def test_o_que_sobra_continua_pendente(banco, monkeypatch):
     monkeypatch.setenv("DRIP_INTERVAL_SECONDS", "100")
+    monkeypatch.setattr(pipeline, "DRIP_JITTER", 0.0)
     enfileira(banco, 5)
     entrega, relogio = FakeDelivery(), Relogio()
     flush(monkeypatch, entrega, relogio, budget=150)

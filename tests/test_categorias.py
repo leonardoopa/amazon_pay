@@ -270,3 +270,36 @@ def test_url_dos_destaques_usa_o_site_configurado():
 
     fonte(handler).highlights("MLB1051")
     assert capturadas[0] == f"{API_HOST}/highlights/MLB/category/MLB1051"
+
+
+# ---------- fontes sem busca por termo ----------
+
+
+def test_fonte_sem_search_nao_gera_ruido(caplog):
+    """A vitrine e uma foto do dia, nao aceita consulta por termo. Sem guarda,
+    cada termo da watchlist virava um WARNING -- 35 por rodada, escondendo
+    falha de verdade no meio."""
+    import logging
+
+    from promo.pipeline import Watch, collect
+
+    class SoVitrine:
+        name = "ml_ofertas"
+
+        def fetch(self, pages=1):
+            return [oferta(10.0)]
+
+    with caplog.at_level(logging.WARNING):
+        collect([SoVitrine()], [Watch(term="fone"), Watch(term="tv")], Rules_stub())
+
+    assert "no attribute 'search'" not in caplog.text
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def Rules_stub():
+    from promo.config import Rules
+
+    return Rules(
+        min_discount_pct=15.0, baseline_window_days=60, min_observations=4,
+        repost_cooldown_days=14, max_offers_per_run=10,
+    )

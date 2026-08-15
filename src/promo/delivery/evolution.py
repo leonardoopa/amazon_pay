@@ -23,6 +23,10 @@ import httpx
 # nos dois caminhos, entao o limite nao e da API oficial -- e do app.
 CAPTION_LIMIT = 1024
 
+# Listar grupos e a chamada mais lenta da API: ela espera a sincronizacao do
+# Baileys com o celular. Numa conta com ~170 grupos passa de 30s.
+GROUPS_TIMEOUT = 120.0
+
 
 class NotConnected(RuntimeError):
     """A instancia existe mas nao esta pareada com nenhum numero."""
@@ -90,11 +94,25 @@ class Evolution:
 
         getParticipants=false porque a lista de membros nao interessa e deixa a
         resposta enorme em grupo grande.
+
+        Timeout proprio, bem maior que o padrao: logo depois de parear o
+        Baileys ainda esta sincronizando a lista com o celular, e numa conta
+        com centenas de grupos essa chamada passa facil de 30s. Cair no timeout
+        padrao aqui devolvia um traceback de httpx que nao dizia nada sobre a
+        causa real -- e a causa e "espere a sincronizacao terminar".
         """
-        response = self._client.get(
-            f"/group/fetchAllGroups/{self.config.instance}",
-            params={"getParticipants": "false"},
-        )
+        try:
+            response = self._client.get(
+                f"/group/fetchAllGroups/{self.config.instance}",
+                params={"getParticipants": "false"},
+                timeout=GROUPS_TIMEOUT,
+            )
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(
+                f"A Evolution nao devolveu os grupos em {GROUPS_TIMEOUT:.0f}s. "
+                "Logo apos parear ela ainda sincroniza a lista com o celular; "
+                "espere um minuto e rode de novo."
+            ) from exc
         response.raise_for_status()
         body = response.json()
         # A versao muda entre devolver a lista crua e embrulhar em {"groups": []}.

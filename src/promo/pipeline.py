@@ -153,9 +153,14 @@ def collect(
     descobrir = _time_to_discover()
     offers: list[Offer] = []
     for source in sources:
-        for watch in watchlist if descobrir else []:
+        # Nem toda fonte busca por termo: a vitrine e uma foto do que o ML
+        # esta promovendo hoje, sem consulta. Sem esta guarda, cada termo da
+        # watchlist virava um WARNING por rodada -- 35 linhas de ruido que
+        # escondiam qualquer falha de verdade no meio.
+        buscar = getattr(source, "search", None)
+        for watch in watchlist if (descobrir and buscar) else []:
             try:
-                found = source.search(watch.term)
+                found = buscar(watch.term)
             except (
                 Exception
             ) as exc:  # noqa: BLE001 - uma fonte quebrada nao derruba a rodada
@@ -523,16 +528,18 @@ def flush_pending(
     enviados = 0
 
     for index, (post_id, text, image_url) in enumerate(queue):
-        if enviados and monotonic() - inicio >= budget_seconds:
-            log.info(
-                "Orcamento de %.0fs esgotado; %d post(s) ficam pra proxima rodada.",
-                budget_seconds,
-                len(queue) - index,
-            )
-            return
-
         if enviados:
+            # Decidir ANTES de dormir. Checar so o tempo ja gasto deixava a
+            # drenagem estourar o orcamento por um intervalo inteiro -- com
+            # gap de 150s isso invadia a rodada seguinte do daemon.
             espera = _drip_gap()
+            if monotonic() - inicio + espera >= budget_seconds:
+                log.info(
+                    "Orcamento de %.0fs esgotado; %d post(s) ficam pra proxima rodada.",
+                    budget_seconds,
+                    len(queue) - index,
+                )
+                return
             log.info("Aguardando %.0fs antes do proximo post.", espera)
             sleep(espera)
 
