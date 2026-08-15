@@ -9,11 +9,12 @@ from __future__ import annotations
 import logging
 import re
 import time
+import unicodedata
 
 from google import genai
 from google.genai import types
 
-from .config import copy_model, gemini_api_key
+from .config import copy_model, gemini_api_key, gemini_min_interval_seconds
 from .models import ScoredOffer
 
 log = logging.getLogger("promo")
@@ -26,6 +27,32 @@ log = logging.getLogger("promo")
 # Folga sobre as ~6 linhas do post, pra truncamento so acontecer se algo
 # estiver realmente errado.
 MAX_OUTPUT_TOKENS = 800
+
+# Nome da loja como o post deve cita-la, por fonte.
+#
+# Era um ternario binario (`'Mercado Livre' if source == 'mercadolivre' else
+# 'Amazon'`), escrito quando so existiam duas fontes. Quando `ml_ofertas` e
+# `demo` entraram, os dois cairam no else: 100% dos posts da vitrine iam pro
+# Gemini com "Loja: Amazon" ao lado de um link meli.la e da divulgacao do ML.
+# Nenhuma guarda checa nome de loja, entao sairia inteiro pro grupo.
+LOJAS = {
+    "mercadolivre": "Mercado Livre",
+    "ml_ofertas": "Mercado Livre",
+    "amazon": "Amazon",
+    "demo": "Mercado Livre",
+}
+
+
+def store_name(source: str) -> str:
+    """Nome da loja. Fonte desconhecida falha alto em vez de virar Amazon."""
+    try:
+        return LOJAS[source]
+    except KeyError:
+        raise RuntimeError(
+            f"Fonte {source!r} sem nome de loja em LOJAS. Cadastre antes de postar "
+            "-- sem isso o post sairia atribuindo a oferta a loja errada."
+        ) from None
+
 
 DISCLOSURES = {
     "amazon": (
@@ -48,7 +75,7 @@ eles descrevem o que escrever, nao sao o que escrever.
 
   1. chamada em CAIXA ALTA
   2. vazia
-  3. nome do produto
+  3. nome do produto, EXATAMENTE como eu passar
   4. vazia
   5. o preco, no formato: De R$ <media> por *R$ <preco>*
   6. vazia
@@ -78,18 +105,30 @@ Sobre a linha de chamada -- e a linha que decide se o post e lido:
   numero: se citar preco, use exatamente o que eu passei, podendo arredondar
   pra baixo ao real inteiro (R$ 27,00 pode virar "27 CONTO").
 
-Varie o ANGULO da chamada. Escolha o que combina com o produto, e nao repita o
-mesmo tipo duas vezes seguidas:
-- preco como espanto: "37 CONTO DA POLO DA HERING"
-- para quem serve: "O TRIO PERFEITO PRO SEU ROSTO"
-- a dor que resolve: "CHEGA DE FRITAR NO OLEO"
-- comparacao do dia a dia: "MAIS BARATO QUE O TEU IFOOD DE ONTEM"
-- a pergunta incredula: "QUEM AUTORIZOU ESSE PRECO?"
-- o caso de uso concreto: "PRO CAFE DA MANHA EM 5 MINUTOS"
-- conselho de amigo: "COMPRA LOGO QUE EU JA COMPREI"
+Varie o ANGULO da chamada. Escolha o que combina com o produto:
+- o preco como espanto
+- para quem o produto serve
+- a dor que ele resolve
+- comparacao com um gasto do dia a dia
+- a pergunta incredula
+- o caso de uso concreto
+- conselho de amigo
+
+Os exemplos abaixo mostram o TOM. Sao PROIBIDOS no texto final -- escreva os
+seus, sobre ESTE produto:
+  "37 CONTO DA POLO DA HERING" / "O TRIO PERFEITO PRO SEU ROSTO"
+  "CHEGA DE FRITAR NO OLEO" / "MAIS BARATO QUE O TEU IFOOD DE ONTEM"
+  "QUEM AUTORIZOU ESSE PRECO?" / "COMPRA LOGO QUE EU JA COMPREI"
 
 Nao comece toda chamada com o nome da categoria do produto. "AIR FRYER POR X"
 seguido de "AIR FRYER POR Y" e o erro mais comum e o mais chato de ler.
+
+Sobre o nome do produto: copie o titulo que eu passar, INTEIRO e sem mexer.
+Nao encurte, nao resuma, nao troque palavra, nao reordene, nao corrija
+maiuscula. Titulo de marketplace e comprido mesmo ("Smartphone Motorola Moto
+G17 4g - 128gb 4gb Ram + 8gb Ram Boost, Camera 50mp Sony Lytia 600, Tela Fhd+
+60hz, Bateria 5200 Mah - Roxo") e e assim que ele deve sair: e por esse nome
+que a pessoa confere se o produto e o mesmo ao abrir o link.
 
 Regras rigidas:
 - Use SOMENTE os numeros que eu passar. Nunca invente preco, desconto, cupom,
@@ -97,6 +136,7 @@ Regras rigidas:
 - Nao escreva "ultimas unidades", "so hoje", "corre que acaba" nem qualquer
   urgencia que eu nao tenha informado. Escassez inventada e mentira.
 - Nao prometa qualidade nem resultado: voce nao testou o produto.
+- O nome do produto sai identico ao que eu passei. Encurtar e proibido.
 - Nao cite loja oficial se eu nao informar.
 - Quando eu disser que NAO acompanhamos o produto, nao escreva nada que sugira
   medicao nossa ("acompanhamos", "monitoramos", "menor preco que ja vimos",
@@ -113,6 +153,11 @@ class Copywriter:
     def __init__(self, client: genai.Client | None = None) -> None:
         self._client = client or genai.Client(api_key=gemini_api_key())
         self._model = copy_model()
+        # None, nao 0.0: monotonic() pode devolver 0.0 e um float falsy
+        # desligaria o limitador em silencio na segunda chamada.
+        self._ultima_chamada: float | None = None
+        # Descoberto na primeira chamada: alguns modelos recusam thinking_config.
+        self._sem_thinking = False
 
     def write(
         self,
@@ -131,6 +176,7 @@ class Copywriter:
             raise RuntimeError("Gemini devolveu resposta vazia")
 
         _reject_unfounded_claims(text, scored)
+        text = _enforce_title(text, scored.offer.title)
         return _enforce_disclosure(text, scored.offer.source)
 
     def _generate(self, contents: str, tentativas: int = 3):
@@ -146,6 +192,7 @@ class Copywriter:
         """
         for tentativa in range(tentativas):
             try:
+                self._respeita_rpm()
                 return self._raw_generate(contents)
             except Exception as exc:  # noqa: BLE001 - a lib nao expoe tipo estavel
                 espera = _retry_delay(exc)
@@ -160,20 +207,55 @@ class Copywriter:
                 time.sleep(espera)
         raise RuntimeError("inalcancavel")
 
+    def _respeita_rpm(self) -> None:
+        """Espaca as chamadas pra nao estourar o limite por minuto.
+
+        Uma rodada escreve ate MAX_OFFERS_PER_RUN posts, e sem isso as chamadas
+        saem todas no mesmo segundo. O 429 por minuto tem retry (`_generate`),
+        mas retry gasta tentativa e atrasa a rodada; espacar na origem e mais
+        barato que se recuperar depois.
+
+        Nao contorna cota diaria -- essa nao tem contorno tecnico.
+        """
+        intervalo = gemini_min_interval_seconds()
+        if intervalo <= 0:
+            return
+
+        if self._ultima_chamada is not None:
+            desde = time.monotonic() - self._ultima_chamada
+            if desde < intervalo:
+                time.sleep(intervalo - desde)
+        self._ultima_chamada = time.monotonic()
+
     def _raw_generate(self, contents: str):
-        return self._client.models.generate_content(
-            model=self._model,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM,
-                max_output_tokens=MAX_OUTPUT_TOKENS,
-                temperature=0.8,
-                # Os modelos "thinking" gastam o orcamento de saida raciocinando
-                # antes de escrever, e o post sai cortado no meio. Escrever 5
-                # linhas de oferta nao precisa disso.
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
-            ),
+        try:
+            return self._client.models.generate_content(
+                model=self._model, contents=contents, config=self._config(pensar=False)
+            )
+        except Exception as exc:  # noqa: BLE001 - a lib nao expoe tipo estavel
+            if "INVALID_ARGUMENT" not in str(exc):
+                raise
+            # gemini-3.5-flash-lite e gemini-flash-lite-latest recusam
+            # thinking_config com 400 INVALID_ARGUMENT. Sao justamente os
+            # modelos sem o teto diario de 20 do 2.5-flash, entao vale o
+            # segundo caminho em vez de excluir eles da escolha.
+            self._sem_thinking = True
+            return self._client.models.generate_content(
+                model=self._model, contents=contents, config=self._config(pensar=True)
+            )
+
+    def _config(self, pensar: bool):
+        opcoes = dict(
+            system_instruction=SYSTEM,
+            max_output_tokens=MAX_OUTPUT_TOKENS,
+            temperature=0.8,
         )
+        if not (pensar or self._sem_thinking):
+            # Os modelos "thinking" gastam o orcamento de saida raciocinando
+            # antes de escrever, e o post sai cortado no meio. Escrever 5
+            # linhas de oferta nao precisa disso.
+            opcoes["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        return types.GenerateContentConfig(**opcoes)
 
 
 # O 429 do Gemini traz quanto esperar, em 'retryDelay': '12s'. Ler isso e melhor
@@ -275,6 +357,19 @@ ACOMPANHAMENTO = re.compile(
 )
 
 
+# As chamadas de exemplo do SYSTEM. Medido: 5 de 9 posts saiam com uma delas
+# literal -- o modelo trata a lista como cardapio, e a instrucao de nao repetir
+# perde pra ela. Rejeitar e o unico jeito que funciona.
+EXEMPLOS_CHAMADA = (
+    "37 conto da polo da hering",
+    "o trio perfeito pro seu rosto",
+    "chega de fritar no oleo",
+    "mais barato que o teu ifood de ontem",
+    "quem autorizou esse preco",
+    "compra logo que eu ja comprei",
+)
+
+
 def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
     """Barra post que afirma o que o dado nao sustenta.
 
@@ -316,6 +411,13 @@ def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
     if achado:
         raise RuntimeError(f"Instrucao do prompt vazou pro post ({achado.group(0)!r}).")
 
+    chamada = _normaliza(text.strip().splitlines()[0]).rstrip("!?.")
+    if chamada in EXEMPLOS_CHAMADA:
+        raise RuntimeError(
+            f"A chamada {chamada!r} e um exemplo do prompt, nao um texto sobre "
+            "este produto."
+        )
+
 
 def _facts(
     scored: ScoredOffer,
@@ -332,7 +434,7 @@ def _facts(
         f"De (media de {scored.observations} dias): R$ {brl(scored.baseline)}",
         f"Por (preco agora): R$ {brl(offer.price)}",
         f"Desconto contra a media: {scored.discount_pct:.0f}%",
-        f"Loja: {'Mercado Livre' if offer.source == 'mercadolivre' else 'Amazon'}",
+        f"Loja: {store_name(offer.source)}",
         f"Link: {link}",
     ]
     if scored.lowest_ever:
@@ -376,19 +478,79 @@ def _facts(
 
 
 def disclosure_for(source: str) -> str:
+    """Divulgacao obrigatoria da fonte.
+
+    O default do ML nao e chute: as fontes que caem aqui (`ml_ofertas`, `demo`)
+    sao todas do Mercado Livre. Mas o mapa LOJAS e quem valida isso -- fonte
+    desconhecida estoura la antes de chegar neste ponto.
+    """
     return DISCLOSURES.get(source, DISCLOSURES["mercadolivre"])
 
 
-def _enforce_disclosure(text: str, source: str) -> str:
-    """Garante a linha de divulgacao mesmo se o modelo tiver reescrito ela.
+def _enforce_title(text: str, titulo: str) -> str:
+    """Garante o titulo do anuncio inteiro, como o ML publica.
 
-    Pedir no prompt nao basta: um LLM pode parafrasear, e no caso da Amazon a
-    frase e contratualmente literal. Aqui a conformidade fica deterministica.
+    Reparo em vez de rejeicao: a chamada em CAIXA ALTA e a parte cara de
+    produzir, e descartar o post inteiro por causa do titulo jogaria fora um
+    gancho bom pra cair no texto padrao.
+
+    Importa porque o titulo e como a pessoa confere que o produto e o mesmo ao
+    abrir o link. "Motorola Moto G17 128GB" e um resumo do modelo; se o anuncio
+    for de outra variante de cor ou memoria, ninguem percebe.
+    """
+    if titulo in text:
+        return text
+
+    linhas = text.splitlines()
+    # Estrutura fixa: chamada, vazia, titulo. Se o modelo mexeu nisso, o
+    # VAZOU_PROMPT ou o proprio formato ja teriam denunciado antes.
+    for indice, linha in enumerate(linhas[1:], start=1):
+        if not linha.strip():
+            continue
+        if linha.lstrip().startswith(("De R$", "http", "*")):
+            break  # passou do titulo sem achar: nao inventa lugar pra ele
+        log.info("Titulo encurtado pelo modelo; restaurando o do anuncio.")
+        linhas[indice] = titulo
+        return "\n".join(linhas)
+    return text
+
+
+def _normaliza(texto: str) -> str:
+    """Sem acento, minusculo, espacos colapsados. Só pra comparar."""
+    sem_acento = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    return " ".join(sem_acento.lower().split())
+
+
+def _enforce_disclosure(text: str, source: str) -> str:
+    """Garante a linha de divulgacao, exatamente uma vez.
+
+    Pedir no prompt nao basta: um LLM parafraseia, e no caso da Amazon a frase
+    e contratualmente literal.
+
+    A comparacao ignora acento e caixa de proposito. Observado com
+    gemini-3.5-flash: ele escreveu "o preço pra voce" (com acento) e a
+    comparacao literal nao achou -- entao a linha canonica foi ANEXADA e o post
+    saiu com a divulgacao duplicada, uma acentuada e outra nao. Detectar a
+    variante e troca-la pela canonica corrige as duas coisas de uma vez.
     """
     disclosure = disclosure_for(source)
-    if disclosure in text:
-        return text
-    return f"{text}\n{disclosure}"
+    alvo = _normaliza(disclosure)
+
+    linhas = text.splitlines()
+    achou = False
+    saida = []
+    for linha in linhas:
+        if _normaliza(linha) == alvo:
+            if achou:
+                continue  # duplicata: descarta
+            achou = True
+            saida.append(disclosure)  # normaliza pra forma canonica
+        else:
+            saida.append(linha)
+
+    if not achou:
+        saida.append(disclosure)
+    return "\n".join(saida)
 
 
 def fallback_copy(scored: ScoredOffer, link: str, coupon: str | None = None) -> str:

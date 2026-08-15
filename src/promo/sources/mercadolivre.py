@@ -30,13 +30,9 @@ import httpx
 
 from ..config import MercadoLivreConfig, products_per_category, products_per_keyword
 from ..db import (
-    affiliate_blocked,
-    affiliate_link,
     connect,
-    mark_affiliate_blocked,
     load_token,
     now,
-    save_affiliate_link,
     save_token,
 )
 from ..models import Offer
@@ -373,7 +369,7 @@ class MercadoLivre:
         return self._builder
 
     def affiliate_url(self, offer: Offer) -> str | None:
-        """Link de afiliado do produto: do banco, ou gerado na hora.
+        """Link de afiliado do produto: do banco, ou gerado pelo painel.
 
         Nao da pra montar esse link. Um link real do programa aponta pra
         `mercadolivre.com.br/social/<nickname>?...&ref=<blob>`, onde o blob
@@ -381,50 +377,10 @@ class MercadoLivre:
         na URL. Concatenar matt_word/matt_tool na URL do produto -- que e o
         que varios projetos por ai fazem -- produz um endereco diferente do
         que o programa emite.
-
-        O banco vem primeiro e nao e so cache: e o que mantem os links dos
-        produtos ja postados quando o cookie do painel expira.
         """
-        with connect() as conn:
-            existente = affiliate_link(conn, offer.product_id)
-            if existente:
-                return existente
-            recusado = affiliate_blocked(conn, offer.product_id)
+        from .affiliate import resolve_affiliate_link
 
-        if recusado:
-            # Ja sabemos que o programa nao aceita este anuncio. Perguntar de
-            # novo a cada rodada nao mudaria a resposta.
-            log.debug(
-                "%s fora do programa de afiliados: %s", offer.external_id, recusado
-            )
-            return None
-
-        builder = self._link_builder()
-        if builder is None:
-            return None  # sem sessao: cai no fluxo manual do `promo link`
-
-        try:
-            resultado = builder.create([offer.url])
-        except Exception as exc:  # noqa: BLE001 - painel fora do ar segura a
-            # oferta, nao derruba a rodada. Sem link o post nao renderia nada.
-            log.warning("Link Builder falhou para %s: %s", offer.external_id, exc)
-            return None
-
-        motivo = resultado.recusados.get(offer.url)
-        if motivo:
-            log.info("%s fora do programa de afiliados: %s", offer.external_id, motivo)
-            with connect() as conn:
-                mark_affiliate_blocked(conn, offer.product_id, motivo)
-            return None
-
-        link = resultado.links.get(offer.url)
-        if not link:
-            log.warning("Link Builder nao devolveu link para %s", offer.external_id)
-            return None
-
-        with connect() as conn:
-            save_affiliate_link(conn, offer.product_id, link)
-        return link
+        return resolve_affiliate_link(self._link_builder(), offer)
 
 
 def probe(config: MercadoLivreConfig) -> list[tuple[str, int, str]]:

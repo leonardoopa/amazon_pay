@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -11,7 +12,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from promo.copywriter import SYSTEM, Copywriter, _facts, fallback_copy  # noqa: E402
+from promo.copywriter import (  # noqa: E402
+    SYSTEM,
+    Copywriter,
+    _enforce_disclosure,
+    _facts,
+    fallback_copy,
+)
 from promo.models import Offer, ScoredOffer  # noqa: E402
 
 LINK = "https://produto.mercadolivre.com.br/MLB-123?matt_tool=1"
@@ -82,10 +89,12 @@ def test_facts_omitem_flags_quando_falsas():
 
 
 def test_write_envia_system_instruction_e_devolve_texto():
-    client = FakeClient("  Achei um bom preco\nFone XYZ  ")
+    # O titulo do fake bate com o da oferta: assim o teste mede o envio do
+    # system_instruction, nao o reparo de titulo (que tem teste proprio).
+    client = FakeClient("  Achei um bom preco\nFone Bluetooth XYZ  ")
     copy = Copywriter(client=client).write(make_scored(), LINK)
 
-    assert copy.startswith("Achei um bom preco\nFone XYZ")
+    assert copy.startswith("Achei um bom preco\nFone Bluetooth XYZ")
     call = client.models.calls[0]
     assert call["config"].system_instruction == SYSTEM
     assert LINK in call["contents"]
@@ -353,3 +362,297 @@ def test_afirmacao_de_acompanhamento_ainda_e_pega():
         "nossa media dos ultimos dias",
     ):
         assert ACOMPANHAMENTO.search(frase), frase
+
+
+# --- Nome da loja por fonte ---
+#
+# Era um ternario binario escrito quando so existiam duas fontes. Com
+# `ml_ofertas` e `demo`, os dois cairam no else: todo post da vitrine ia pro
+# Gemini com "Loja: Amazon" ao lado de link meli.la. Nenhuma guarda checa nome
+# de loja, entao sairia inteiro pro grupo.
+
+
+def loja_no_prompt(source: str) -> str:
+    offer = Offer(
+        source=source, external_id="X", title="P", price=10.0, url="https://x"
+    )
+    scored = ScoredOffer(
+        offer=offer,
+        baseline=20.0,
+        discount_pct=50.0,
+        observations=0,
+        lowest_ever=False,
+        verified=False,
+    )
+    linha = [l for l in _facts(scored, LINK).splitlines() if l.startswith("Loja:")]
+    return linha[0]
+
+
+def test_vitrine_e_mercado_livre_nao_amazon():
+    assert loja_no_prompt("ml_ofertas") == "Loja: Mercado Livre"
+
+
+def test_catalogo_e_mercado_livre():
+    assert loja_no_prompt("mercadolivre") == "Loja: Mercado Livre"
+
+
+def test_amazon_continua_amazon():
+    assert loja_no_prompt("amazon") == "Loja: Amazon"
+
+
+def test_demo_nao_vira_amazon():
+    """`promo demo` calibra o tom; com Amazon errada ela treinava errado."""
+    assert loja_no_prompt("demo") == "Loja: Mercado Livre"
+
+
+def test_fonte_desconhecida_falha_alto():
+    """Fonte nova sem cadastro tem que estourar, nao virar Amazon em silencio."""
+    from promo.copywriter import store_name
+
+    with pytest.raises(RuntimeError, match="shopee"):
+        store_name("shopee")
+
+
+def test_loja_bate_com_a_divulgacao():
+    """Post com 'Loja: Amazon' e divulgacao do ML e incoerencia entregue ao
+    modelo -- foi assim que o bug passou despercebido."""
+    from promo.copywriter import disclosure_for, store_name
+
+    for source in ("mercadolivre", "ml_ofertas", "demo"):
+        assert store_name(source) == "Mercado Livre"
+        assert disclosure_for(source) == "Link de afiliado - o preco pra voce nao muda."
+    assert store_name("amazon") == "Amazon"
+    assert "Programa de Associados" in disclosure_for("amazon")
+
+
+# --- Rate limit por minuto ---
+#
+# Uma rodada escreve ate MAX_OFFERS_PER_RUN posts. Sem espacamento, as chamadas
+# saem no mesmo segundo e tomam 429 de RPM. O retry existe, mas gasta tentativa
+# e atrasa a rodada -- espacar na origem e mais barato.
+
+
+def test_espaca_chamadas_consecutivas(monkeypatch):
+    monkeypatch.setenv("GEMINI_MIN_INTERVAL_SECONDS", "5")
+    dormidas = []
+    monkeypatch.setattr("promo.copywriter.time.sleep", dormidas.append)
+
+    # 1a chamada: so carimba (0.0). 2a: le 1.0 (passou 1s) e carimba de novo.
+    relogio = iter([0.0, 1.0, 5.0])
+    monkeypatch.setattr("promo.copywriter.time.monotonic", lambda: next(relogio))
+
+    copywriter = Copywriter(client=FakeClient("PRECO BOM\n\nP\n\nlink"))
+    copywriter.write(make_scored(), LINK)
+    copywriter.write(make_scored(), LINK)
+
+    assert dormidas == [4.0]  # 5s de intervalo, 1s ja passado
+
+
+def test_primeira_chamada_nao_espera(monkeypatch):
+    monkeypatch.setenv("GEMINI_MIN_INTERVAL_SECONDS", "5")
+    dormidas = []
+    monkeypatch.setattr("promo.copywriter.time.sleep", dormidas.append)
+    monkeypatch.setattr("promo.copywriter.time.monotonic", lambda: 0.0)
+
+    Copywriter(client=FakeClient("PRECO BOM\n\nP\n\nlink")).write(make_scored(), LINK)
+
+    assert dormidas == []
+
+
+def test_monotonic_zero_nao_desliga_o_limitador(monkeypatch):
+    """0.0 e falsy: com o guard antigo (`if self._ultima_chamada`), um relogio
+    que comeca em zero desligava o espacamento em silencio."""
+    monkeypatch.setenv("GEMINI_MIN_INTERVAL_SECONDS", "5")
+    dormidas = []
+    monkeypatch.setattr("promo.copywriter.time.sleep", dormidas.append)
+    monkeypatch.setattr("promo.copywriter.time.monotonic", lambda: 0.0)
+
+    copywriter = Copywriter(client=FakeClient("PRECO BOM\n\nP\n\nlink"))
+    copywriter.write(make_scored(), LINK)
+    copywriter.write(make_scored(), LINK)
+
+    assert dormidas == [5.0]
+
+
+def test_intervalo_zero_desliga_o_espacamento(monkeypatch):
+    """Com faturamento ativo o teto sobe muito e o espacamento so atrasa."""
+    monkeypatch.setenv("GEMINI_MIN_INTERVAL_SECONDS", "0")
+    dormidas = []
+    monkeypatch.setattr("promo.copywriter.time.sleep", dormidas.append)
+
+    copywriter = Copywriter(client=FakeClient("PRECO BOM\n\nP\n\nlink"))
+    copywriter.write(make_scored(), LINK)
+    copywriter.write(make_scored(), LINK)
+
+    assert dormidas == []
+
+
+# --- Divulgacao: exatamente uma vez, na forma canonica ---
+#
+# Observado com gemini-3.5-flash: escreveu "o preço pra voce" com acento; a
+# comparacao literal nao achou e ANEXOU a canonica. Post saiu com a divulgacao
+# duplicada, uma acentuada e outra nao -- e foi pro grupo assim.
+
+DISCLOSURE_ML = "Link de afiliado - o preco pra voce nao muda."
+
+
+def test_variante_acentuada_nao_duplica():
+    texto = "POST\nlink\nLink de afiliado - o preço pra voce nao muda."
+    resultado = _enforce_disclosure(texto, "mercadolivre")
+
+    assert resultado.count("Link de afiliado") == 1
+    assert resultado.endswith(DISCLOSURE_ML)
+
+
+def test_variante_em_caixa_alta_nao_duplica():
+    texto = "POST\nlink\nLINK DE AFILIADO - O PREÇO PRA VOCÊ NÃO MUDA."
+    resultado = _enforce_disclosure(texto, "mercadolivre")
+
+    assert resultado.count("Link de afiliado") == 1
+
+
+def test_variante_e_trocada_pela_canonica():
+    """Nao basta nao duplicar: a Amazon exige a frase caractere por caractere,
+    entao a variante tem que virar a forma exata."""
+    texto = "POST\nlink\nLink de afiliado - o preço pra voce nao muda."
+    assert DISCLOSURE_ML in _enforce_disclosure(texto, "mercadolivre")
+
+
+def test_duplicata_literal_e_reduzida_a_uma():
+    texto = f"POST\nlink\n{DISCLOSURE_ML}\n{DISCLOSURE_ML}"
+    assert _enforce_disclosure(texto, "mercadolivre").count("Link de afiliado") == 1
+
+
+def test_ausente_e_acrescentada():
+    assert _enforce_disclosure("POST\nlink", "mercadolivre").endswith(DISCLOSURE_ML)
+
+
+def test_ja_canonica_passa_intacta():
+    texto = f"POST\nlink\n{DISCLOSURE_ML}"
+    assert _enforce_disclosure(texto, "mercadolivre") == texto
+
+
+def test_amazon_mantem_a_frase_do_contrato():
+    from promo.copywriter import DISCLOSURES
+
+    exata = DISCLOSURES["amazon"]
+    texto = "POST\nlink\nComo participante do Programa de Associados da Amazon, sou remunerado pelas compras qualificadas efetuadas"
+    resultado = _enforce_disclosure(texto, "amazon")
+
+    assert resultado.count("Programa de Associados") == 1
+    assert exata in resultado
+
+
+def test_nao_come_linha_parecida_do_post():
+    """Linha do corpo que so lembra a divulgacao nao pode sumir."""
+    texto = f"POST\nlink de afiliado abaixo\nlink\n{DISCLOSURE_ML}"
+    resultado = _enforce_disclosure(texto, "mercadolivre")
+
+    assert "link de afiliado abaixo" in resultado
+
+
+# --- Chamada nao pode ser exemplo do prompt ---
+#
+# Medido em producao: 5 de 9 posts sairam com uma das chamadas de exemplo,
+# literal. "MAIS BARATO QUE O TEU IFOOD DE ONTEM" 3x, "QUEM AUTORIZOU ESSE
+# PRECO?" 2x. O modelo trata a lista de exemplos como cardapio, e a lista
+# `avoid` de chamadas recentes perde pra ela.
+
+
+def post_com_chamada(chamada: str) -> str:
+    return f"{chamada}\n\nProduto\n\nDe R$ 200,00 por *R$ 150,00*\n\nlink"
+
+
+def test_recusa_exemplo_do_prompt_literal():
+    copywriter = Copywriter(client=FakeClient(post_com_chamada("MAIS BARATO QUE O TEU IFOOD DE ONTEM")))
+
+    with pytest.raises(RuntimeError, match="exemplo do prompt"):
+        copywriter.write(make_scored(), LINK)
+
+
+def test_recusa_exemplo_com_pontuacao_diferente():
+    copywriter = Copywriter(client=FakeClient(post_com_chamada("QUEM AUTORIZOU ESSE PREÇO?!")))
+
+    with pytest.raises(RuntimeError, match="exemplo do prompt"):
+        copywriter.write(make_scored(), LINK)
+
+
+def test_aceita_chamada_original():
+    texto = post_com_chamada("300 HERTZ POR ESSE VALOR E COVARDIA")
+    assert "300 HERTZ" in Copywriter(client=FakeClient(texto)).write(make_scored(), LINK)
+
+
+def test_chamada_parecida_mas_diferente_passa():
+    """Barrar so o literal: 'mais barato que o almoco' e texto novo."""
+    texto = post_com_chamada("MAIS BARATO QUE O ALMOCO DE DOMINGO")
+    assert Copywriter(client=FakeClient(texto)).write(make_scored(), LINK)
+
+
+def test_todos_os_exemplos_do_system_estao_na_guarda():
+    """Se alguem acrescentar exemplo no SYSTEM sem por na guarda, ele volta a
+    aparecer literal nos posts."""
+    from promo.copywriter import EXEMPLOS_CHAMADA, SYSTEM, _normaliza
+
+    bloco = SYSTEM.split("mostram o TOM")[1].split("Nao comece")[0]
+    citados = re.findall(r'"([^"]+)"', bloco)
+    assert citados, "bloco de exemplos sumiu do SYSTEM"
+    for exemplo in citados:
+        assert _normaliza(exemplo).rstrip("!?.") in EXEMPLOS_CHAMADA, exemplo
+
+
+# --- Titulo do anuncio, inteiro ---
+#
+# O titulo e como a pessoa confere que o produto e o mesmo ao abrir o link.
+# "Motorola Moto G17 128GB" e resumo do modelo: se o anuncio for de outra cor
+# ou memoria, ninguem percebe. Reparo em vez de rejeicao -- a chamada em CAIXA
+# ALTA e a parte cara, e nao vale joga-la fora por causa do titulo.
+
+TITULO = "Smartphone Motorola Moto G17 4g - 128gb 4gb Ram, Camera 50mp - Roxo"
+
+
+def test_titulo_encurtado_e_restaurado():
+    from promo.copywriter import _enforce_title
+
+    texto = "CHAMADA BOA\n\nMotorola Moto G17\n\nDe R$ 1.746,00 por *R$ 778,00*\n\nlink"
+    assert TITULO in _enforce_title(texto, TITULO)
+
+
+def test_chamada_e_preservada_no_reparo():
+    from promo.copywriter import _enforce_title
+
+    texto = "CHAMADA BOA\n\nMotorola Moto G17\n\nDe R$ 1.746,00 por *R$ 778,00*\n\nlink"
+    assert _enforce_title(texto, TITULO).splitlines()[0] == "CHAMADA BOA"
+
+
+def test_titulo_correto_passa_intacto():
+    from promo.copywriter import _enforce_title
+
+    texto = f"CHAMADA\n\n{TITULO}\n\nDe R$ 1,00 por *R$ 2,00*"
+    assert _enforce_title(texto, TITULO) == texto
+
+
+def test_nao_sobrescreve_a_linha_de_preco():
+    """Post sem linha de titulo nao pode virar post sem preco."""
+    from promo.copywriter import _enforce_title
+
+    texto = "CHAMADA\n\nDe R$ 1.746,00 por *R$ 778,00*\n\nlink"
+    assert _enforce_title(texto, TITULO) == texto
+
+
+def test_nao_sobrescreve_o_link():
+    from promo.copywriter import _enforce_title
+
+    texto = "CHAMADA\n\nhttps://meli.la/X"
+    assert _enforce_title(texto, TITULO) == texto
+
+
+def test_write_restaura_o_titulo_de_ponta_a_ponta():
+    texto = "PRECO ABSURDO\n\nMoto G17\n\nDe R$ 200,00 por *R$ 150,00*\n\nlink"
+    offer = Offer(source="mercadolivre", external_id="MLB1", title=TITULO,
+                  price=150.0, url="https://x")
+    scored = ScoredOffer(offer=offer, baseline=200.0, discount_pct=25.0,
+                         observations=5, lowest_ever=False)
+
+    resultado = Copywriter(client=FakeClient(texto)).write(scored, LINK)
+    assert TITULO in resultado
+    assert resultado.startswith("PRECO ABSURDO")
