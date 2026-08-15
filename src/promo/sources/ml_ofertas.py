@@ -169,7 +169,12 @@ class MLOfertas:
                 )
 
             da_pagina = [o for item in items if (o := _offer(item.get("card") or {}))]
-            log.info("ofertas: %d de %d cards na pagina %d", len(da_pagina), len(items), pagina)
+            log.info(
+                "ofertas: %d de %d cards na pagina %d",
+                len(da_pagina),
+                len(items),
+                pagina,
+            )
             offers.extend(da_pagina)
 
             if not da_pagina:
@@ -182,7 +187,12 @@ class MLOfertas:
 
     def affiliate_url(self, offer: Offer) -> str | None:
         """Mesmo Link Builder da fonte de catalogo."""
-        from ..db import affiliate_link, connect, mark_affiliate_blocked, save_affiliate_link
+        from ..db import (
+            affiliate_link,
+            connect,
+            mark_affiliate_blocked,
+            save_affiliate_link,
+        )
 
         with connect() as conn:
             existente = affiliate_link(conn, offer.product_id)

@@ -44,16 +44,24 @@ PRODUTO = {
 
 ANUNCIOS = {
     "results": [
-        {"price": 999.0, "condition": "new", "currency_id": "BRL",
-         "shipping": {"free_shipping": True}, "category_id": "MLB1051"}
+        {
+            "price": 999.0,
+            "condition": "new",
+            "currency_id": "BRL",
+            "shipping": {"free_shipping": True},
+            "category_id": "MLB1051",
+        }
     ]
 }
 
 
 def fonte(handler, **extra) -> MercadoLivre:
     config = MercadoLivreConfig(
-        client_id="1", client_secret="2",
-        redirect_uri="https://example.com/callback", site_id="MLB", **extra
+        client_id="1",
+        client_secret="2",
+        redirect_uri="https://example.com/callback",
+        site_id="MLB",
+        **extra,
     )
     ml = MercadoLivre(config)
     ml._client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -204,9 +212,7 @@ def test_sem_categorias_nao_consulta():
 def test_categoria_quebrada_nao_derruba_as_outras():
     """Uma categoria fora do ar nao pode custar a rodada inteira."""
     fonte = FonteComDestaques([], falha=True)
-    offers = collect_categories(
-        fonte, [Category(id="MLB1051"), Category(id="MLB1276")]
-    )
+    offers = collect_categories(fonte, [Category(id="MLB1051"), Category(id="MLB1276")])
 
     assert offers == []
     assert fonte.pedidas == ["MLB1051", "MLB1276"]  # seguiu depois da falha

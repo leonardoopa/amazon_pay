@@ -32,7 +32,9 @@ def make_scored(**kwargs) -> ScoredOffer:
         url="https://produto.mercadolivre.com.br/MLB-123",
         free_shipping=kwargs.pop("free_shipping", False),
     )
-    defaults = dict(baseline=200.0, discount_pct=25.0, observations=10, lowest_ever=False)
+    defaults = dict(
+        baseline=200.0, discount_pct=25.0, observations=10, lowest_ever=False
+    )
     return ScoredOffer(offer=offer, **{**defaults, **kwargs})
 
 
@@ -175,14 +177,18 @@ def test_facts_mandam_a_divulgacao_da_loja_certa():
 
 def test_disclosure_e_reposta_se_o_modelo_parafrasear():
     """LLM nao e confiavel para reproduzir texto legal -- o codigo garante."""
-    client = FakeClient("Achei um bom preco\nRelogio Seiko\nsou remunerado pelas compras")
+    client = FakeClient(
+        "Achei um bom preco\nRelogio Seiko\nsou remunerado pelas compras"
+    )
     copy = Copywriter(client=client).write(make_scored(source="amazon"), LINK)
 
     assert copy.endswith(AMAZON_DISCLOSURE)
 
 
 def test_disclosure_nao_e_duplicada_quando_o_modelo_acerta():
-    client = FakeClient(f"Achei um bom preco\nRelogio Seiko\n{LINK}\n{AMAZON_DISCLOSURE}")
+    client = FakeClient(
+        f"Achei um bom preco\nRelogio Seiko\n{LINK}\n{AMAZON_DISCLOSURE}"
+    )
     copy = Copywriter(client=client).write(make_scored(source="amazon"), LINK)
 
     assert copy.count(AMAZON_DISCLOSURE) == 1
@@ -211,7 +217,6 @@ def test_separador_de_milhar_em_valor_alto():
 
 def test_nenhum_ponto_decimal_chega_ao_post():
     """A regressao concreta: o primeiro post real saiu com 'R$ 27.00'."""
-    from promo.copywriter import brl
 
     scored = make_scored()
     facts = _facts(scored, LINK)
@@ -237,7 +242,9 @@ def test_recusa_menor_preco_inventado():
 
     scored = make_scored(lowest_ever=False)
     with pytest.raises(RuntimeError, match="menor preco"):
-        _reject_unfounded_claims("Que achado! *R$ 48,00*, menor preço já registrado!", scored)
+        _reject_unfounded_claims(
+            "Que achado! *R$ 48,00*, menor preço já registrado!", scored
+        )
 
 
 def test_aceita_menor_preco_quando_e_verdade():

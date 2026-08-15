@@ -8,7 +8,6 @@ e o que o texto pode afirmar.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -119,8 +118,12 @@ def rules(min_discount=15.0) -> Rules:
 
 def vitrine_offer(price=100.0, original=200.0) -> Offer:
     return Offer(
-        source="ml_ofertas", external_id="MLB1", title="P",
-        price=price, url="https://x", original_price=original,
+        source="ml_ofertas",
+        external_id="MLB1",
+        title="P",
+        price=price,
+        url="https://x",
+        original_price=original,
     )
 
 
@@ -179,14 +182,24 @@ def test_repasse_nao_pode_dizer_que_acompanha(monkeypatch):
     )
 
     class Fake:
-        def __init__(self, t): self._t = t
+        def __init__(self, t):
+            self._t = t
+
         @property
-        def models(self): return self
+        def models(self):
+            return self
+
         def generate_content(self, **kw):
             return SimpleNamespace(text=self._t, candidates=[])
 
-    scored = ScoredOffer(offer=vitrine_offer(), baseline=200.0, discount_pct=50.0,
-                         observations=0, lowest_ever=False, verified=False)
+    scored = ScoredOffer(
+        offer=vitrine_offer(),
+        baseline=200.0,
+        discount_pct=50.0,
+        observations=0,
+        lowest_ever=False,
+        verified=False,
+    )
 
     with pytest.raises(RuntimeError, match="acompanhamento"):
         Copywriter(client=Fake(texto)).write(scored, "https://meli.la/x")
@@ -203,15 +216,32 @@ def test_verificada_pode_dizer_que_acompanha():
     )
 
     class Fake:
-        def __init__(self, t): self._t = t
+        def __init__(self, t):
+            self._t = t
+
         @property
-        def models(self): return self
+        def models(self):
+            return self
+
         def generate_content(self, **kw):
             return SimpleNamespace(text=self._t, candidates=[])
 
-    offer = Offer(source="mercadolivre", external_id="MLB1", title="P",
-                  price=100.0, url="https://x")
-    scored = ScoredOffer(offer=offer, baseline=200.0, discount_pct=50.0,
-                         observations=12, lowest_ever=True, verified=True)
+    offer = Offer(
+        source="mercadolivre",
+        external_id="MLB1",
+        title="P",
+        price=100.0,
+        url="https://x",
+    )
+    scored = ScoredOffer(
+        offer=offer,
+        baseline=200.0,
+        discount_pct=50.0,
+        observations=12,
+        lowest_ever=True,
+        verified=True,
+    )
 
-    assert "Acompanhamos" in Copywriter(client=Fake(texto)).write(scored, "https://meli.la/x")
+    assert "Acompanhamos" in Copywriter(client=Fake(texto)).write(
+        scored, "https://meli.la/x"
+    )

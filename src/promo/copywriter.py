@@ -314,9 +314,7 @@ def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
 
     achado = VAZOU_PROMPT.search(text)
     if achado:
-        raise RuntimeError(
-            f"Instrucao do prompt vazou pro post ({achado.group(0)!r})."
-        )
+        raise RuntimeError(f"Instrucao do prompt vazou pro post ({achado.group(0)!r}).")
 
 
 def _facts(
@@ -371,7 +369,9 @@ def _facts(
             "Chamadas ja usadas nos posts recentes -- NAO repita a formula nem "
             "o angulo delas:\n" + "\n".join(f"  - {linha}" for linha in avoid)
         )
-    facts.append(f"Divulgacao obrigatoria (copie literalmente): {disclosure_for(offer.source)}")
+    facts.append(
+        f"Divulgacao obrigatoria (copie literalmente): {disclosure_for(offer.source)}"
+    )
     return "\n".join(facts)
 
 
@@ -391,9 +391,7 @@ def _enforce_disclosure(text: str, source: str) -> str:
     return f"{text}\n{disclosure}"
 
 
-def fallback_copy(
-    scored: ScoredOffer, link: str, coupon: str | None = None
-) -> str:
+def fallback_copy(scored: ScoredOffer, link: str, coupon: str | None = None) -> str:
     """Texto sem IA, usado quando o Gemini falha ou inventa.
 
     Segue o mesmo formato do prompt, menos a linha de chamada -- que e

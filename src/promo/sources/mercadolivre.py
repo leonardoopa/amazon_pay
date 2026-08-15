@@ -190,7 +190,9 @@ class MercadoLivre:
             return row["access_token"]
 
         if not row["refresh_token"]:
-            raise RuntimeError("Token do ML expirou e nao ha refresh_token. Rode ml-auth de novo.")
+            raise RuntimeError(
+                "Token do ML expirou e nao ha refresh_token. Rode ml-auth de novo."
+            )
 
         self._refresh(row["refresh_token"])
         with connect() as conn:
@@ -343,7 +345,9 @@ class MercadoLivre:
             title=title,
             price=float(melhor["price"]),
             original_price=(
-                float(melhor["original_price"]) if melhor.get("original_price") else None
+                float(melhor["original_price"])
+                if melhor.get("original_price")
+                else None
             ),
             url=f"{SITE_HOST}/p/{product_id}",
             currency=melhor.get("currency_id", "BRL"),
@@ -390,7 +394,9 @@ class MercadoLivre:
         if recusado:
             # Ja sabemos que o programa nao aceita este anuncio. Perguntar de
             # novo a cada rodada nao mudaria a resposta.
-            log.debug("%s fora do programa de afiliados: %s", offer.external_id, recusado)
+            log.debug(
+                "%s fora do programa de afiliados: %s", offer.external_id, recusado
+            )
             return None
 
         builder = self._link_builder()
@@ -470,13 +476,17 @@ def probe(config: MercadoLivreConfig) -> list[tuple[str, int, str]]:
     for rotulo, url, params in alvos:
         if rotulo == ANUNCIOS:
             if primeiro_produto is None:
-                resultados.append((rotulo, 0, "pulado: a busca de catalogo nao devolveu produto"))
+                resultados.append(
+                    (rotulo, 0, "pulado: a busca de catalogo nao devolveu produto")
+                )
                 continue
             url = f"{API_HOST}/products/{primeiro_produto}/items"
 
         try:
             response = client._client.get(url, params=params, headers=headers)
-        except Exception as exc:  # noqa: BLE001 - rede fora nao pode matar o diagnostico
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - rede fora nao pode matar o diagnostico
             resultados.append((rotulo, 0, f"erro de rede: {exc}"))
             continue
 
@@ -563,7 +573,9 @@ def parse_callback(
 
     code = (params.get("code") or [None])[0]
     if not code:
-        raise RuntimeError(f"Nao achei o parametro `code` na URL colada: {pasted[:120]}")
+        raise RuntimeError(
+            f"Nao achei o parametro `code` na URL colada: {pasted[:120]}"
+        )
     return code
 
 

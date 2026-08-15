@@ -100,7 +100,11 @@ AFFILIATE_RECHECK_DAYS = 30
 
 MIGRATIONS = [
     ("posts", "image_url", "ALTER TABLE posts ADD COLUMN image_url TEXT"),
-    ("posts", "attempts", "ALTER TABLE posts ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"),
+    (
+        "posts",
+        "attempts",
+        "ALTER TABLE posts ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0",
+    ),
 ]
 
 
@@ -128,7 +132,9 @@ def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
         for table, column, statement in MIGRATIONS:
-            existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+            existing = {
+                row["name"] for row in conn.execute(f"PRAGMA table_info({table})")
+            }
             if column not in existing:
                 conn.execute(statement)
 
@@ -176,7 +182,13 @@ def record_offer(conn: sqlite3.Connection, offer: Offer) -> None:
             original_price = excluded.original_price,
             available      = excluded.available
         """,
-        (offer.product_id, today, offer.price, offer.original_price, int(offer.available)),
+        (
+            offer.product_id,
+            today,
+            offer.price,
+            offer.original_price,
+            int(offer.available),
+        ),
     )
 
 
@@ -296,7 +308,9 @@ def save_affiliate_link(conn: sqlite3.Connection, product_id: str, url: str) -> 
     )
 
 
-def products_missing_link(conn: sqlite3.Connection, limit: int = 50) -> list[sqlite3.Row]:
+def products_missing_link(
+    conn: sqlite3.Connection, limit: int = 50
+) -> list[sqlite3.Row]:
     """Produtos rastreados que ainda nao tem link de afiliado.
 
     Ordenados pelos que mais se aproximam de virar post (mais dias de
@@ -387,7 +401,9 @@ def recent_headlines(conn: sqlite3.Connection, limit: int = 12) -> list[str]:
         """,
         (limit,),
     ).fetchall()
-    return [linha for row in rows if (linha := row["copy"].strip().splitlines()[0].strip())]
+    return [
+        linha for row in rows if (linha := row["copy"].strip().splitlines()[0].strip())
+    ]
 
 
 def pending_posts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -405,7 +421,10 @@ def mark_post_sent(conn: sqlite3.Connection, post_id: int) -> None:
 
 
 def mark_post_failed(
-    conn: sqlite3.Connection, post_id: int, error: str, max_attempts: int = MAX_SEND_ATTEMPTS
+    conn: sqlite3.Connection,
+    post_id: int,
+    error: str,
+    max_attempts: int = MAX_SEND_ATTEMPTS,
 ) -> None:
     """Conta a tentativa e so desiste depois de `max_attempts`.
 

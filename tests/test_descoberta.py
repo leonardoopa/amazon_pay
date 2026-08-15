@@ -14,7 +14,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from promo.db import SCHEMA, create_post, hours_since, recent_headlines, set_meta  # noqa: E402
+from promo.db import (
+    SCHEMA,
+    create_post,
+    hours_since,
+    recent_headlines,
+    set_meta,
+)  # noqa: E402
 
 
 def make_conn() -> sqlite3.Connection:
@@ -116,12 +122,22 @@ def test_banco_sem_post_devolve_vazio():
 # propria minima historica.
 
 
-def add_history(conn: sqlite3.Connection, external_id: str, precos: list[float]) -> None:
+def add_history(
+    conn: sqlite3.Connection, external_id: str, precos: list[float]
+) -> None:
     """Cria produto com uma serie de precos, o ultimo sendo o de hoje."""
     conn.execute(
         "INSERT OR IGNORE INTO products (id, source, external_id, title, url,"
         " first_seen_at, last_seen_at) VALUES (?,?,?,?,?,?,?)",
-        (f"mercadolivre:{external_id}", "mercadolivre", external_id, "P", "u", "x", "x"),
+        (
+            f"mercadolivre:{external_id}",
+            "mercadolivre",
+            external_id,
+            "P",
+            "u",
+            "x",
+            "x",
+        ),
     )
     for dia, preco in enumerate(precos):
         conn.execute(
@@ -167,7 +183,7 @@ def test_ordena_do_mais_colado_na_minima():
 
     conn = make_conn()
     add_history(conn, "MLB_perto", [100.0, 100.0, 101.0])  # 1% acima
-    add_history(conn, "MLB_meio", [100.0, 100.0, 108.0])   # 8% acima
+    add_history(conn, "MLB_meio", [100.0, 100.0, 108.0])  # 8% acima
 
     assert [p[0] for p in hot_products(conn, "mercadolivre", 10, 25)] == [
         "MLB_perto",
