@@ -149,6 +149,16 @@ def db_path() -> Path:
     return path
 
 
+def gemini_min_interval_seconds() -> float:
+    """Intervalo minimo entre duas chamadas ao Gemini.
+
+    O free tier limita por minuto alem do limite diario. 5s da 12 chamadas por
+    minuto, folgado sob os 15 RPM tipicos do flash. Com faturamento ativo o
+    teto sobe muito e isso pode ir a 0.
+    """
+    return float(_optional("GEMINI_MIN_INTERVAL_SECONDS", "5"))
+
+
 def copy_model() -> str:
     return _optional("GEMINI_MODEL", "gemini-3.5-flash-lite")
 

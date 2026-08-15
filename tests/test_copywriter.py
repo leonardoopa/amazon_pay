@@ -11,7 +11,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from promo.copywriter import SYSTEM, Copywriter, _facts, fallback_copy  # noqa: E402
+from promo.copywriter import (  # noqa: E402
+    SYSTEM,
+    Copywriter,
+    _enforce_disclosure,
+    _facts,
+    fallback_copy,
+)
 from promo.models import Offer, ScoredOffer  # noqa: E402
 
 LINK = "https://produto.mercadolivre.com.br/MLB-123?matt_tool=1"
@@ -406,3 +412,129 @@ def test_loja_bate_com_a_divulgacao():
         assert disclosure_for(source) == "Link de afiliado - o preco pra voce nao muda."
     assert store_name("amazon") == "Amazon"
     assert "Programa de Associados" in disclosure_for("amazon")
+
+
+# --- Rate limit por minuto ---
+#
+# Uma rodada escreve ate MAX_OFFERS_PER_RUN posts. Sem espacamento, as chamadas
+# saem no mesmo segundo e tomam 429 de RPM. O retry existe, mas gasta tentativa
+# e atrasa a rodada -- espacar na origem e mais barato.
+
+
+def test_espaca_chamadas_consecutivas(monkeypatch):
+    monkeypatch.setenv("GEMINI_MIN_INTERVAL_SECONDS", "5")
+    dormidas = []
+    monkeypatch.setattr("promo.copywriter.time.sleep", dormidas.append)
+
+    # 1a chamada: so carimba (0.0). 2a: le 1.0 (passou 1s) e carimba de novo.
+    relogio = iter([0.0, 1.0, 5.0])
+    monkeypatch.setattr("promo.copywriter.time.monotonic", lambda: next(relogio))
+
+    copywriter = Copywriter(client=FakeClient("PRECO BOM\n\nP\n\nlink"))
+    copywriter.write(make_scored(), LINK)
+    copywriter.write(make_scored(), LINK)
+
+    assert dormidas == [4.0]  # 5s de intervalo, 1s ja passado
+
+
+def test_primeira_chamada_nao_espera(monkeypatch):
+    monkeypatch.setenv("GEMINI_MIN_INTERVAL_SECONDS", "5")
+    dormidas = []
+    monkeypatch.setattr("promo.copywriter.time.sleep", dormidas.append)
+    monkeypatch.setattr("promo.copywriter.time.monotonic", lambda: 0.0)
+
+    Copywriter(client=FakeClient("PRECO BOM\n\nP\n\nlink")).write(make_scored(), LINK)
+
+    assert dormidas == []
+
+
+def test_monotonic_zero_nao_desliga_o_limitador(monkeypatch):
+    """0.0 e falsy: com o guard antigo (`if self._ultima_chamada`), um relogio
+    que comeca em zero desligava o espacamento em silencio."""
+    monkeypatch.setenv("GEMINI_MIN_INTERVAL_SECONDS", "5")
+    dormidas = []
+    monkeypatch.setattr("promo.copywriter.time.sleep", dormidas.append)
+    monkeypatch.setattr("promo.copywriter.time.monotonic", lambda: 0.0)
+
+    copywriter = Copywriter(client=FakeClient("PRECO BOM\n\nP\n\nlink"))
+    copywriter.write(make_scored(), LINK)
+    copywriter.write(make_scored(), LINK)
+
+    assert dormidas == [5.0]
+
+
+def test_intervalo_zero_desliga_o_espacamento(monkeypatch):
+    """Com faturamento ativo o teto sobe muito e o espacamento so atrasa."""
+    monkeypatch.setenv("GEMINI_MIN_INTERVAL_SECONDS", "0")
+    dormidas = []
+    monkeypatch.setattr("promo.copywriter.time.sleep", dormidas.append)
+
+    copywriter = Copywriter(client=FakeClient("PRECO BOM\n\nP\n\nlink"))
+    copywriter.write(make_scored(), LINK)
+    copywriter.write(make_scored(), LINK)
+
+    assert dormidas == []
+
+
+# --- Divulgacao: exatamente uma vez, na forma canonica ---
+#
+# Observado com gemini-3.5-flash: escreveu "o preço pra voce" com acento; a
+# comparacao literal nao achou e ANEXOU a canonica. Post saiu com a divulgacao
+# duplicada, uma acentuada e outra nao -- e foi pro grupo assim.
+
+DISCLOSURE_ML = "Link de afiliado - o preco pra voce nao muda."
+
+
+def test_variante_acentuada_nao_duplica():
+    texto = "POST\nlink\nLink de afiliado - o preço pra voce nao muda."
+    resultado = _enforce_disclosure(texto, "mercadolivre")
+
+    assert resultado.count("Link de afiliado") == 1
+    assert resultado.endswith(DISCLOSURE_ML)
+
+
+def test_variante_em_caixa_alta_nao_duplica():
+    texto = "POST\nlink\nLINK DE AFILIADO - O PREÇO PRA VOCÊ NÃO MUDA."
+    resultado = _enforce_disclosure(texto, "mercadolivre")
+
+    assert resultado.count("Link de afiliado") == 1
+
+
+def test_variante_e_trocada_pela_canonica():
+    """Nao basta nao duplicar: a Amazon exige a frase caractere por caractere,
+    entao a variante tem que virar a forma exata."""
+    texto = "POST\nlink\nLink de afiliado - o preço pra voce nao muda."
+    assert DISCLOSURE_ML in _enforce_disclosure(texto, "mercadolivre")
+
+
+def test_duplicata_literal_e_reduzida_a_uma():
+    texto = f"POST\nlink\n{DISCLOSURE_ML}\n{DISCLOSURE_ML}"
+    assert _enforce_disclosure(texto, "mercadolivre").count("Link de afiliado") == 1
+
+
+def test_ausente_e_acrescentada():
+    assert _enforce_disclosure("POST\nlink", "mercadolivre").endswith(DISCLOSURE_ML)
+
+
+def test_ja_canonica_passa_intacta():
+    texto = f"POST\nlink\n{DISCLOSURE_ML}"
+    assert _enforce_disclosure(texto, "mercadolivre") == texto
+
+
+def test_amazon_mantem_a_frase_do_contrato():
+    from promo.copywriter import DISCLOSURES
+
+    exata = DISCLOSURES["amazon"]
+    texto = "POST\nlink\nComo participante do Programa de Associados da Amazon, sou remunerado pelas compras qualificadas efetuadas"
+    resultado = _enforce_disclosure(texto, "amazon")
+
+    assert resultado.count("Programa de Associados") == 1
+    assert exata in resultado
+
+
+def test_nao_come_linha_parecida_do_post():
+    """Linha do corpo que so lembra a divulgacao nao pode sumir."""
+    texto = f"POST\nlink de afiliado abaixo\nlink\n{DISCLOSURE_ML}"
+    resultado = _enforce_disclosure(texto, "mercadolivre")
+
+    assert "link de afiliado abaixo" in resultado

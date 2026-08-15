@@ -9,11 +9,12 @@ from __future__ import annotations
 import logging
 import re
 import time
+import unicodedata
 
 from google import genai
 from google.genai import types
 
-from .config import copy_model, gemini_api_key
+from .config import copy_model, gemini_api_key, gemini_min_interval_seconds
 from .models import ScoredOffer
 
 log = logging.getLogger("promo")
@@ -139,6 +140,11 @@ class Copywriter:
     def __init__(self, client: genai.Client | None = None) -> None:
         self._client = client or genai.Client(api_key=gemini_api_key())
         self._model = copy_model()
+        # None, nao 0.0: monotonic() pode devolver 0.0 e um float falsy
+        # desligaria o limitador em silencio na segunda chamada.
+        self._ultima_chamada: float | None = None
+        # Descoberto na primeira chamada: alguns modelos recusam thinking_config.
+        self._sem_thinking = False
 
     def write(
         self,
@@ -172,6 +178,7 @@ class Copywriter:
         """
         for tentativa in range(tentativas):
             try:
+                self._respeita_rpm()
                 return self._raw_generate(contents)
             except Exception as exc:  # noqa: BLE001 - a lib nao expoe tipo estavel
                 espera = _retry_delay(exc)
@@ -186,20 +193,55 @@ class Copywriter:
                 time.sleep(espera)
         raise RuntimeError("inalcancavel")
 
+    def _respeita_rpm(self) -> None:
+        """Espaca as chamadas pra nao estourar o limite por minuto.
+
+        Uma rodada escreve ate MAX_OFFERS_PER_RUN posts, e sem isso as chamadas
+        saem todas no mesmo segundo. O 429 por minuto tem retry (`_generate`),
+        mas retry gasta tentativa e atrasa a rodada; espacar na origem e mais
+        barato que se recuperar depois.
+
+        Nao contorna cota diaria -- essa nao tem contorno tecnico.
+        """
+        intervalo = gemini_min_interval_seconds()
+        if intervalo <= 0:
+            return
+
+        if self._ultima_chamada is not None:
+            desde = time.monotonic() - self._ultima_chamada
+            if desde < intervalo:
+                time.sleep(intervalo - desde)
+        self._ultima_chamada = time.monotonic()
+
     def _raw_generate(self, contents: str):
-        return self._client.models.generate_content(
-            model=self._model,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM,
-                max_output_tokens=MAX_OUTPUT_TOKENS,
-                temperature=0.8,
-                # Os modelos "thinking" gastam o orcamento de saida raciocinando
-                # antes de escrever, e o post sai cortado no meio. Escrever 5
-                # linhas de oferta nao precisa disso.
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
-            ),
+        try:
+            return self._client.models.generate_content(
+                model=self._model, contents=contents, config=self._config(pensar=False)
+            )
+        except Exception as exc:  # noqa: BLE001 - a lib nao expoe tipo estavel
+            if "INVALID_ARGUMENT" not in str(exc):
+                raise
+            # gemini-3.5-flash-lite e gemini-flash-lite-latest recusam
+            # thinking_config com 400 INVALID_ARGUMENT. Sao justamente os
+            # modelos sem o teto diario de 20 do 2.5-flash, entao vale o
+            # segundo caminho em vez de excluir eles da escolha.
+            self._sem_thinking = True
+            return self._client.models.generate_content(
+                model=self._model, contents=contents, config=self._config(pensar=True)
+            )
+
+    def _config(self, pensar: bool):
+        opcoes = dict(
+            system_instruction=SYSTEM,
+            max_output_tokens=MAX_OUTPUT_TOKENS,
+            temperature=0.8,
         )
+        if not (pensar or self._sem_thinking):
+            # Os modelos "thinking" gastam o orcamento de saida raciocinando
+            # antes de escrever, e o post sai cortado no meio. Escrever 5
+            # linhas de oferta nao precisa disso.
+            opcoes["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        return types.GenerateContentConfig(**opcoes)
 
 
 # O 429 do Gemini traz quanto esperar, em 'retryDelay': '12s'. Ler isso e melhor
@@ -411,16 +453,42 @@ def disclosure_for(source: str) -> str:
     return DISCLOSURES.get(source, DISCLOSURES["mercadolivre"])
 
 
-def _enforce_disclosure(text: str, source: str) -> str:
-    """Garante a linha de divulgacao mesmo se o modelo tiver reescrito ela.
+def _normaliza(texto: str) -> str:
+    """Sem acento, minusculo, espacos colapsados. Só pra comparar."""
+    sem_acento = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    return " ".join(sem_acento.lower().split())
 
-    Pedir no prompt nao basta: um LLM pode parafrasear, e no caso da Amazon a
-    frase e contratualmente literal. Aqui a conformidade fica deterministica.
+
+def _enforce_disclosure(text: str, source: str) -> str:
+    """Garante a linha de divulgacao, exatamente uma vez.
+
+    Pedir no prompt nao basta: um LLM parafraseia, e no caso da Amazon a frase
+    e contratualmente literal.
+
+    A comparacao ignora acento e caixa de proposito. Observado com
+    gemini-3.5-flash: ele escreveu "o preço pra voce" (com acento) e a
+    comparacao literal nao achou -- entao a linha canonica foi ANEXADA e o post
+    saiu com a divulgacao duplicada, uma acentuada e outra nao. Detectar a
+    variante e troca-la pela canonica corrige as duas coisas de uma vez.
     """
     disclosure = disclosure_for(source)
-    if disclosure in text:
-        return text
-    return f"{text}\n{disclosure}"
+    alvo = _normaliza(disclosure)
+
+    linhas = text.splitlines()
+    achou = False
+    saida = []
+    for linha in linhas:
+        if _normaliza(linha) == alvo:
+            if achou:
+                continue  # duplicata: descarta
+            achou = True
+            saida.append(disclosure)  # normaliza pra forma canonica
+        else:
+            saida.append(linha)
+
+    if not achou:
+        saida.append(disclosure)
+    return "\n".join(saida)
 
 
 def fallback_copy(scored: ScoredOffer, link: str, coupon: str | None = None) -> str:
