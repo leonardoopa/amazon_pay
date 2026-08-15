@@ -153,9 +153,14 @@ def collect(
     descobrir = _time_to_discover()
     offers: list[Offer] = []
     for source in sources:
-        for watch in watchlist if descobrir else []:
+        # Nem toda fonte busca por termo: a vitrine e uma foto do que o ML
+        # esta promovendo hoje, sem consulta. Sem esta guarda, cada termo da
+        # watchlist virava um WARNING por rodada -- 35 linhas de ruido que
+        # escondiam qualquer falha de verdade no meio.
+        buscar = getattr(source, "search", None)
+        for watch in watchlist if (descobrir and buscar) else []:
             try:
-                found = source.search(watch.term)
+                found = buscar(watch.term)
             except (
                 Exception
             ) as exc:  # noqa: BLE001 - uma fonte quebrada nao derruba a rodada
