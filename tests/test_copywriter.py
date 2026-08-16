@@ -564,14 +564,18 @@ def post_com_chamada(chamada: str) -> str:
 
 
 def test_recusa_exemplo_do_prompt_literal():
-    copywriter = Copywriter(client=FakeClient(post_com_chamada("MAIS BARATO QUE O TEU IFOOD DE ONTEM")))
+    copywriter = Copywriter(
+        client=FakeClient(post_com_chamada("MAIS BARATO QUE O TEU IFOOD DE ONTEM"))
+    )
 
     with pytest.raises(RuntimeError, match="exemplo do prompt"):
         copywriter.write(make_scored(), LINK)
 
 
 def test_recusa_exemplo_com_pontuacao_diferente():
-    copywriter = Copywriter(client=FakeClient(post_com_chamada("QUEM AUTORIZOU ESSE PREÇO?!")))
+    copywriter = Copywriter(
+        client=FakeClient(post_com_chamada("QUEM AUTORIZOU ESSE PREÇO?!"))
+    )
 
     with pytest.raises(RuntimeError, match="exemplo do prompt"):
         copywriter.write(make_scored(), LINK)
@@ -579,7 +583,9 @@ def test_recusa_exemplo_com_pontuacao_diferente():
 
 def test_aceita_chamada_original():
     texto = post_com_chamada("300 HERTZ POR ESSE VALOR E COVARDIA")
-    assert "300 HERTZ" in Copywriter(client=FakeClient(texto)).write(make_scored(), LINK)
+    assert "300 HERTZ" in Copywriter(client=FakeClient(texto)).write(
+        make_scored(), LINK
+    )
 
 
 def test_chamada_parecida_mas_diferente_passa():
@@ -648,10 +654,20 @@ def test_nao_sobrescreve_o_link():
 
 def test_write_restaura_o_titulo_de_ponta_a_ponta():
     texto = "PRECO ABSURDO\n\nMoto G17\n\nDe R$ 200,00 por *R$ 150,00*\n\nlink"
-    offer = Offer(source="mercadolivre", external_id="MLB1", title=TITULO,
-                  price=150.0, url="https://x")
-    scored = ScoredOffer(offer=offer, baseline=200.0, discount_pct=25.0,
-                         observations=5, lowest_ever=False)
+    offer = Offer(
+        source="mercadolivre",
+        external_id="MLB1",
+        title=TITULO,
+        price=150.0,
+        url="https://x",
+    )
+    scored = ScoredOffer(
+        offer=offer,
+        baseline=200.0,
+        discount_pct=25.0,
+        observations=5,
+        lowest_ever=False,
+    )
 
     resultado = Copywriter(client=FakeClient(texto)).write(scored, LINK)
     assert TITULO in resultado

@@ -1,9 +1,19 @@
+# Rodando 24/7 o driver json-file cresce sem teto e enche o disco em alguns
+# meses -- e disco cheio trava os tres containers de uma vez. 30MB por servico
+# e suficiente pra investigar um incidente recente.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   amazon_pay:
     build: .
     image: amazon_pay:latest
     container_name: amazon_pay_container
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
       DB_PATH: /app/data/promos.db
@@ -13,14 +23,24 @@ services:
       - ./data:/app/data
       # Editar a watchlist sem rebuildar a imagem.
       - ./watchlist.json:/app/watchlist.json:ro
-    # Sem ports: o `ml-auth` e por colagem manual da URL, nada escuta.
-    command: ["daemon"]
+    ports:
+      # So no loopback: /run dispara rodada e gasta cota do Gemini, e /stats
+      # expoe o estado do banco. De fora, use tunel SSH -- igual a Evolution.
+      - "127.0.0.1:8000:8000"
+    command: ["serve"]
     depends_on:
       - evolution
     healthcheck:
-      test: ["CMD", "amazon_pay", "stats"]
-      interval: 5m
-      timeout: 30s
+      # A imagem e slim e nao tem curl. O urlopen levanta em 503 (o /health
+      # responde isso quando o banco cai ou o worker morre), e excecao vira
+      # exit code 1 -- que e exatamente o que o healthcheck precisa ver.
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=10)
+      interval: 1m
+      timeout: 15s
       retries: 3
       start_period: 30s
 
@@ -30,6 +50,7 @@ services:
     image: evoapicloud/evolution-api:latest
     container_name: evolution_api
     restart: unless-stopped
+    logging: *logging
     environment:
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
       # A v2 exige Postgres -- ela roda Prisma e sai em loop de "Database
@@ -60,6 +81,7 @@ services:
     image: postgres:16-alpine
     container_name: evolution_postgres
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: evolution
       POSTGRES_PASSWORD: evolution

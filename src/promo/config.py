@@ -172,6 +172,43 @@ def run_interval_seconds() -> int:
     return _int("RUN_INTERVAL_SECONDS", 7200)
 
 
+def api_host() -> str:
+    """Interface onde a API escuta.
+
+    Padrao loopback de proposito. Dentro do container precisa ser 0.0.0.0 pra
+    a porta publicada funcionar -- o Dockerfile define isso. Fora dele, ligar
+    em 0.0.0.0 sem querer exporia o /run pra rede local.
+    """
+    return _optional("API_HOST", "127.0.0.1")
+
+
+def api_port() -> int:
+    return _int("API_PORT", 8000)
+
+
+def api_worker() -> bool:
+    """Se o processo da API tambem roda o loop de coleta.
+
+    Desligar so faz sentido pra subir uma instancia que apenas responde HTTP,
+    ao lado de um `daemon` separado. Com SQLite, nunca ligue os dois ao mesmo
+    tempo apontando pro mesmo arquivo.
+    """
+    return _optional("API_WORKER", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+
+
+def api_secret() -> str:
+    """Segredo do header X-API-Key, exigido pelos endpoints que nao sao /health.
+
+    Vazio nao libera: os endpoints protegidos respondem 503. Falha fechada,
+    porque `/run` gasta cota do Gemini e dispara post no grupo.
+    """
+    return _optional("API_SECRET")
+
+
 def drip_interval_seconds() -> float:
     """Segundos entre um post e o proximo, antes do jitter.
 

@@ -300,6 +300,9 @@ def Rules_stub():
     from promo.config import Rules
 
     return Rules(
-        min_discount_pct=15.0, baseline_window_days=60, min_observations=4,
-        repost_cooldown_days=14, max_offers_per_run=10,
+        min_discount_pct=15.0,
+        baseline_window_days=60,
+        min_observations=4,
+        repost_cooldown_days=14,
+        max_offers_per_run=10,
     )

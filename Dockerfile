@@ -24,7 +24,14 @@ RUN mkdir -p /app/data
 RUN useradd --create-home --uid 1000 promo && chown -R promo:promo /app
 USER promo
 
-ENV DB_PATH=/app/data/promos.db
+# API_HOST=0.0.0.0 e obrigatorio dentro do container: o padrao do app e
+# loopback, e ligado em 127.0.0.1 aqui dentro a porta publicada nao alcanca
+# nada. Quem restringe o acesso e o bind do compose, no host.
+ENV DB_PATH=/app/data/promos.db \
+    API_HOST=0.0.0.0 \
+    API_PORT=8000
+
+EXPOSE 8000
 
 ENTRYPOINT ["amazon_pay"]
-CMD ["daemon"]
+CMD ["serve"]

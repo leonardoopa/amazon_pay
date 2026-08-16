@@ -149,18 +149,56 @@ docker compose up -d
 docker compose logs -f
 ```
 
-O `daemon` é um loop simples (roda → dorme → repete), não cron dentro da
-imagem: um processo só, logs no stdout e `docker stop` encerra na hora em vez
-de esperar o sleep terminar. Intervalo em `RUN_INTERVAL_SECONDS` (padrão 2h).
+O container sobe com `serve`: a API HTTP e o loop de coleta no mesmo processo.
+O loop é simples (roda → dorme → repete), não cron dentro da imagem — logs no
+stdout e `docker stop` encerra na hora em vez de esperar o sleep terminar.
+Intervalo em `RUN_INTERVAL_SECONDS` (padrão 2h).
 
-Dois detalhes do compose: o `restart: unless-stopped` faz o container reiniciar
-em loop se o `.env` estiver incompleto — o log diz qual variável falta. E a
-porta 8123 só é usada pelo `ml-auth`; o daemon não escuta nada.
+Um processo só, e não dois, porque dois escrevendo no mesmo SQLite dariam
+`database is locked` na primeira coincidência. Quem não quer porta aberta pode
+usar `command: ["daemon"]`, que roda o mesmo loop sem HTTP.
+
+Detalhe do compose: o `restart: unless-stopped` faz o container reiniciar em
+loop se o `.env` estiver incompleto — o log diz qual variável falta.
+
+## A API
+
+Escuta em `127.0.0.1:8000`, nunca exposta para fora.
+
+| Endpoint | Auth | O quê |
+|---|---|---|
+| `GET /health` | aberto | Estado do banco, do worker e da última rodada |
+| `GET /stats` | `X-API-Key` | Mesmas contagens do `promo stats`, em JSON |
+| `POST /run` | `X-API-Key` | Adianta uma rodada fora do intervalo |
+| `GET /docs` | aberto | Swagger UI |
+
+```bash
+curl -s localhost:8000/health
+```
+
+O `/health` responde **503** quando o banco não abre ou quando o worker
+deveria estar vivo e não está — é o alvo do healthcheck do compose e serve
+direto para um monitor externo. É aberto de propósito e não devolve segredo.
+
+Os outros dois exigem o header `X-API-Key` com o valor de `API_SECRET`. Se essa
+variável estiver vazia eles respondem **503**, não abrem: `/run` gasta cota do
+Gemini e dispara post no grupo, então a falha é fechada.
+
+Para acessar de um servidor remoto, túnel SSH — nunca publique a porta:
+
+```bash
+ssh -L 8000:127.0.0.1:8000 usuario@servidor
+```
+
+## Produção
+
+Ver [DEPLOY.md](DEPLOY.md): roteiro de VPS, pareamento por túnel SSH, backup e
+custo das opções de hospedagem (incluindo as gratuitas).
 
 ## Sem Docker
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev,api]"
 ```
 
 Os mesmos comandos, via `.venv/bin/amazon_pay` (ou o alias `promo`):
@@ -177,6 +215,12 @@ Aqui dá pra usar cron em vez do daemon:
 
 ```bash
 0 */2 * * * cd /caminho/do/projeto && .venv/bin/amazon_pay run >> data/cron.log 2>&1
+```
+
+Ou subir a API local, que já traz o loop junto:
+
+```bash
+.venv/bin/amazon_pay serve
 ```
 
 Outros comandos: `stats` (estado do banco), `flush` (reenvia a fila).
