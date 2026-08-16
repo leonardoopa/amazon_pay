@@ -11,9 +11,12 @@ import threading
 from .config import (
     MercadoLivreConfig,
     MissingConfig,
+    api_host,
+    api_port,
+    api_secret,
     run_interval_seconds,
 )
-from .db import connect, init_db
+from .db import connect, init_db, stats
 from .pipeline import (
     build_sources,
     collect,
@@ -205,11 +208,16 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
 
 def cmd_daemon(args: argparse.Namespace) -> int:
-    """Loop infinito para o container: roda, dorme, repete.
+    """Loop infinito sem HTTP: roda, dorme, repete.
 
     Prefiro isso a cron dentro da imagem -- um processo so, logs no stdout e
     SIGTERM do `docker stop` encerra na hora em vez de esperar o sleep.
+
+    O container padrao hoje sobe pelo `serve`, que roda este mesmo loop e ainda
+    responde /health. Este comando fica pra quem nao quer porta aberta.
     """
+    from .worker import loop
+
     init_db()
     interval = args.interval or run_interval_seconds()
     stop = threading.Event()
@@ -224,21 +232,39 @@ def cmd_daemon(args: argparse.Namespace) -> int:
         "coleta apenas" if args.collect_only else "pipeline completo",
     )
 
-    while not stop.is_set():
-        try:
-            if args.collect_only:
-                cmd_collect(args)
-            else:
-                run()
-        except MissingConfig as exc:
-            log.error("Configuracao faltando: %s", exc)
-            return 2
-        except Exception as exc:  # noqa: BLE001 - o daemon nao pode morrer por 1 erro
-            log.exception("Rodada falhou: %s", exc)
-
-        stop.wait(interval)
+    tarefa = (lambda: cmd_collect(args)) if args.collect_only else run
+    codigo = loop(stop, interval, tarefa)
 
     log.info("Daemon encerrado.")
+    return codigo
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Sobe a API (health check + /run) com o loop de coleta na mesma thread pool.
+
+    E o comando do container. O uvicorn trata SIGTERM e o lifespan da API para
+    o loop, entao `docker stop` continua encerrando na hora.
+    """
+    try:
+        import uvicorn
+    except ModuleNotFoundError:
+        print(
+            "uvicorn nao instalado. Rode: pip install -e '.[api]'",
+            file=sys.stderr,
+        )
+        return 2
+
+    host = args.host or api_host()
+    port = args.port or api_port()
+
+    if not api_secret():
+        print(
+            "Aviso: API_SECRET vazio -- /run e /stats vao responder 503. "
+            "Defina no .env pra habilitar.",
+            file=sys.stderr,
+        )
+
+    uvicorn.run("promo.api:app", host=host, port=port, log_config=None)
     return 0
 
 
@@ -382,28 +408,14 @@ def cmd_wa_groups(args: argparse.Namespace) -> int:
 def cmd_stats(_: argparse.Namespace) -> int:
     init_db()
     with connect() as conn:
-        products = conn.execute("SELECT COUNT(*) c FROM products").fetchone()["c"]
-        points = conn.execute("SELECT COUNT(*) c FROM price_history").fetchone()["c"]
-        ready = conn.execute(
-            """
-            SELECT COUNT(*) c FROM (
-                SELECT product_id FROM price_history
-                GROUP BY product_id HAVING COUNT(*) >= 7
-            )
-            """
-        ).fetchone()["c"]
-        sent = conn.execute(
-            "SELECT COUNT(*) c FROM posts WHERE status = 'sent'"
-        ).fetchone()["c"]
-        pending = conn.execute(
-            "SELECT COUNT(*) c FROM posts WHERE status = 'pending'"
-        ).fetchone()["c"]
+        s = stats(conn)
 
-    print(f"Produtos monitorados : {products}")
-    print(f"Pontos de preco      : {points}")
-    print(f"Com baseline pronta  : {ready}  (>= 7 dias de historico)")
-    print(f"Posts enviados       : {sent}")
-    print(f"Posts na fila        : {pending}")
+    print(f"Produtos monitorados : {s['products']}")
+    print(f"Pontos de preco      : {s['price_points']}")
+    print(f"Com baseline pronta  : {s['with_baseline']}  (>= 7 dias de historico)")
+    print(f"Posts enviados       : {s['posts_sent']}")
+    print(f"Posts na fila        : {s['posts_pending']}")
+    print(f"Posts com falha      : {s['posts_failed']}")
     return 0
 
 
@@ -551,7 +563,8 @@ COMMANDS = {
     "run": (cmd_run, "Coleta, filtra, escreve e envia no WhatsApp"),
     "seed": (cmd_seed, "Cria historico sintetico pra testar sem a API do ML"),
     "demo": (cmd_demo, "Gera os posts a partir do historico sintetico"),
-    "daemon": (cmd_daemon, "Roda em loop (usado pelo container)"),
+    "daemon": (cmd_daemon, "Roda em loop, sem HTTP"),
+    "serve": (cmd_serve, "Sobe a API (health check + /run) com o loop junto"),
     "flush": (cmd_flush, "Reenvia os posts que ficaram na fila"),
     "link": (cmd_link, "Salva o link de afiliado de um produto (manual)"),
     "link-all": (cmd_link_all, "Gera pelo painel os links que faltam, em lote"),
@@ -633,6 +646,13 @@ def main(argv: list[str] | None = None) -> int:
                 "--collect-only",
                 action="store_true",
                 help="So coleta preco, nao posta -- use nos primeiros 7-10 dias",
+            )
+        if name == "serve":
+            sub.add_argument(
+                "--host", default=None, help="Interface (padrao: API_HOST)"
+            )
+            sub.add_argument(
+                "--port", type=int, default=None, help="Porta (padrao: API_PORT)"
             )
 
     args = parser.parse_args(argv)

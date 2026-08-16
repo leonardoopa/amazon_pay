@@ -495,3 +495,32 @@ def load_token(conn: sqlite3.Connection, provider: str) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT * FROM oauth_tokens WHERE provider = ?", (provider,)
     ).fetchone()
+
+
+def stats(conn: sqlite3.Connection, min_observations: int = 7) -> dict[str, int]:
+    """Contagens do estado do banco, para o `promo stats` e para o /stats.
+
+    Mora aqui, e nao no cli.py, porque agora tem dois consumidores -- e o SQL
+    de `ready` (o que ja tem baseline) e sutil demais pra existir em duas
+    copias que podem divergir.
+    """
+
+    def conta(sql: str, args: tuple = ()) -> int:
+        return conn.execute(sql, args).fetchone()["c"]
+
+    return {
+        "products": conta("SELECT COUNT(*) c FROM products"),
+        "price_points": conta("SELECT COUNT(*) c FROM price_history"),
+        "with_baseline": conta(
+            """
+            SELECT COUNT(*) c FROM (
+                SELECT product_id FROM price_history
+                GROUP BY product_id HAVING COUNT(*) >= ?
+            )
+            """,
+            (min_observations,),
+        ),
+        "posts_sent": conta("SELECT COUNT(*) c FROM posts WHERE status = 'sent'"),
+        "posts_pending": conta("SELECT COUNT(*) c FROM posts WHERE status = 'pending'"),
+        "posts_failed": conta("SELECT COUNT(*) c FROM posts WHERE status = 'failed'"),
+    }
