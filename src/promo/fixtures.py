@@ -15,42 +15,57 @@ from .models import Offer
 
 SOURCE = "demo"
 
-# Imagem real da CDN do ML: o ponto de `demo --send` e exercitar o caminho de
-# imagem de verdade, incluindo a Meta baixando de mlstatic.com. Um placeholder
-# de outro dominio validaria menos.
-DEMO_IMAGE = "https://http2.mlstatic.com/D_NQ_NP_694193-MLA115535213717_082026-O.jpg"
-
-# Precos em BRL, proximos do real pra o texto sair plausivel.
+# Produtos reais do catalogo do ML, com foto real da CDN. Nao e capricho: o
+# `demo` existe pra avaliar layout e tom de texto, e os dois mentem quando a
+# foto e generica ou repetida. Os IDs sao de catalogo (rota /p/), as fotos
+# saem do og:image da propria pagina do produto.
+#
+# Os precos abaixo sao INVENTADOS -- servem so pra produzir uma baseline
+# previsivel e conferir se o desconto calculado bate com o texto gerado.
+#
+# Sufixo -O na CDN: ~45 KB. O -F tem a mesma imagem com ate 500 KB, peso que
+# nao se justifica numa grade com varios cards.
 CATALOG = [
-    # (id, titulo, preco normal, preco promocional, frete gratis)
+    # (id, titulo, preco normal, preco promocional, frete gratis, imagem)
     (
-        "MLB2718281",
-        "Fone de Ouvido Bluetooth JBL Tune 520BT Sem Fio",
+        "MLB46196451",
+        "Monitor Gamer Samsung Odyssey G5 32\" QHD 165Hz 1ms HDMI DisplayPort",
+        1899.0,
+        1349.0,
+        True,
+        "https://http2.mlstatic.com/D_NQ_NP_987462-MLA99509630578_112025-O.jpg",
+    ),
+    (
+        "MLB46470846",
+        "Notebook Vaio FE16 AMD Ryzen 7-5825U 16GB RAM 512GB SSD Wi-Fi 6",
+        3299.0,
+        2599.0,
+        True,
+        "https://http2.mlstatic.com/D_NQ_NP_954850-MLA99514927694_112025-O.jpg",
+    ),
+    (
+        "MLB52052995",
+        "Air Fryer Philco 6,5L Visor Glass Redstone 1700W PAF65A",
+        469.0,
+        359.0,
+        True,
+        "https://http2.mlstatic.com/D_NQ_NP_761173-MLA99475995202_112025-O.jpg",
+    ),
+    (
+        "MLB46211942",
+        "Smartwatch Huawei Band 10 Analise de Sono e Oximetro",
+        349.0,
         249.0,
-        179.0,
         True,
+        "https://http2.mlstatic.com/D_NQ_NP_806194-MLA105593417435_012026-O.jpg",
     ),
     (
-        "MLB3141592",
-        "Smartwatch Amazfit GTS 4 Mini Tela AMOLED 1.65",
-        599.0,
-        429.0,
-        True,
-    ),
-    (
-        "MLB1618033",
-        "SSD NVMe 1TB Kingston NV2 PCIe 4.0 Leitura 3500MB/s",
-        449.0,
-        389.0,
-        False,
-    ),
-    ("MLB1414213", "Air Fryer Mondial 4L Family Inox AFN-40-BI", 389.0, 359.0, True),
-    (
-        "MLB2236067",
-        "Monitor 27 Polegadas LG UltraGear 144Hz Full HD",
+        "MLB59090080",
+        "Smart TV 43\" AOC LED Roku Full HD Wi-Fi 60Hz HDMI USB",
         1699.0,
-        1199.0,
-        True,
+        1399.0,
+        False,
+        "https://http2.mlstatic.com/D_NQ_NP_935991-MLA99489146286_112025-O.jpg",
     ),
 ]
 
@@ -65,9 +80,10 @@ def seed(conn: sqlite3.Connection, days: int = 60) -> int:
     today = now().date()
     created = 0
 
-    for external_id, title, normal, promo, free_shipping in CATALOG:
+    for external_id, title, normal, promo, free_shipping, image_url in CATALOG:
         product_id = f"{SOURCE}:{external_id}"
-        url = f"https://produto.mercadolivre.com.br/{external_id}"
+        # Rota /p/: sao IDs de produto de catalogo, nao de anuncio.
+        url = f"https://www.mercadolivre.com.br/p/{external_id}"
         ts = now().isoformat()
 
         conn.execute(
@@ -75,9 +91,13 @@ def seed(conn: sqlite3.Connection, days: int = 60) -> int:
             INSERT INTO products (id, source, external_id, title, url, image_url,
                                   category, first_seen_at, last_seen_at)
             VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at
+            ON CONFLICT(id) DO UPDATE SET
+                title        = excluded.title,
+                url          = excluded.url,
+                image_url    = excluded.image_url,
+                last_seen_at = excluded.last_seen_at
             """,
-            (product_id, SOURCE, external_id, title, url, DEMO_IMAGE, ts, ts),
+            (product_id, SOURCE, external_id, title, url, image_url, ts, ts),
         )
 
         for offset in range(1, days + 1):
@@ -124,9 +144,9 @@ def current_offers() -> list[Offer]:
             title=title,
             price=promo,
             original_price=normal,
-            url=f"https://produto.mercadolivre.com.br/{external_id}",
-            image_url=DEMO_IMAGE,
+            url=f"https://www.mercadolivre.com.br/p/{external_id}",
+            image_url=image_url,
             free_shipping=free_shipping,
         )
-        for external_id, title, normal, promo, free_shipping in CATALOG
+        for external_id, title, normal, promo, free_shipping, image_url in CATALOG
     ]
