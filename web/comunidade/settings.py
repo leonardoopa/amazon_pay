@@ -59,6 +59,13 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # WhiteNoise entra logo depois do security e ANTES de todo o resto.
+    # Motivo concreto: o servidor de estáticos do runserver responde 200 com
+    # o arquivo inteiro e ignora `Range`. Sem resposta 206 o navegador não
+    # consegue saltar dentro do vídeo, `currentTime` não anda, e o Scroll
+    # Cinema congela no primeiro quadro. WhiteNoise fala Range, e é também
+    # o que vai servir os estáticos em produção.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -144,6 +151,13 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Em DEBUG o WhiteNoise precisa dos finders para achar os arquivos sem
+# um `collectstatic` prévio.
+WHITENOISE_USE_FINDERS = True
+# O vídeo do hero é grande e imutável; sem isso o navegador rebaixa o
+# arquivo inteiro a cada visita.
+WHITENOISE_MAX_AGE = 31536000 if not DEBUG else 0
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

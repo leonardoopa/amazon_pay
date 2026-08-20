@@ -135,22 +135,68 @@
 
   /* ---------- 4. vitrine fixada ---------- */
 
+  /* Antes trocava o produto por classe: aparecia de repente, sumia de
+     repente. Ficava estático entre uma troca e outra — o oposto do vídeo
+     do topo, onde cada pixel obedece o dedo.
+
+     Agora é o mesmo princípio do Scroll Cinema: um progresso contínuo de
+     0 a 1 sobre a seção inteira, convertido em índice fracionário. O
+     produto 1,4 significa "40% do caminho entre o primeiro e o segundo",
+     e os dois existem ao mesmo tempo, um entrando e o outro saindo. */
+
   const vitrine = document.querySelector("[data-vitrine]");
   if (vitrine && !menosMovimento) {
     const itens = [...vitrine.querySelectorAll("[data-vitrine-item]")];
     const pontos = [...vitrine.querySelectorAll("[data-ponto]")];
-    const marcas = [...vitrine.querySelectorAll("[data-marca]")];
 
-    // A classe entra dentro do primeiro `aplicar`, não antes dele. É ela
-    // que autoriza o CSS a fixar o quadro e esconder os produtos, e só faz
-    // sentido depois que existe, comprovadamente, quem os traga de volta.
-    // Se a sequência nunca rodar, a seção permanece empilhada e legível em
-    // vez de virar um produto seguido de telas vazias.
-    ligarSequencia(marcas, (i) => {
+    if (itens.length) {
       document.documentElement.classList.add("js-vitrine");
-      itens.forEach((el, n) => el.classList.toggle("ativa", n === i));
-      pontos.forEach((el, n) => el.classList.toggle("ativo", n === i));
-    });
+
+      let agendado = false;
+
+      const desenhar = (posicao) => {
+        itens.forEach((el, i) => {
+          const distancia = posicao - i;
+          const bruta = Math.abs(distancia);
+          // Fora da vizinhança imediata o item não participa: mantê-lo
+          // pintado custa composição e não aparece na tela.
+          if (bruta >= 1) {
+            el.style.opacity = "0";
+            el.style.visibility = "hidden";
+            return;
+          }
+          el.style.visibility = "visible";
+          el.style.opacity = String(1 - bruta);
+          el.style.transform =
+            `translate3d(0, ${distancia * -46}px, 0) scale(${1 - bruta * 0.07})`;
+        });
+
+        const perto = Math.round(posicao);
+        pontos.forEach((el, i) => el.classList.toggle("ativo", i === perto));
+      };
+
+      const medir = () => {
+        agendado = false;
+        const caixa = vitrine.getBoundingClientRect();
+        const curso = vitrine.offsetHeight - innerHeight;
+        const bruto = curso > 0 ? -caixa.top / curso : 0;
+        const p = Math.min(1, Math.max(0, bruto));
+        desenhar(p * (itens.length - 1));
+      };
+
+      const aoRolar = () => {
+        // Aba oculta não entrega requestAnimationFrame; aplica direto.
+        if (document.hidden) medir();
+        else if (!agendado) {
+          agendado = true;
+          requestAnimationFrame(medir);
+        }
+      };
+
+      addEventListener("scroll", aoRolar, { passive: true });
+      addEventListener("resize", aoRolar);
+      medir();
+    }
   }
 
   /* ---------- 5. barra de progresso ---------- */

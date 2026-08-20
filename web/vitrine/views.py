@@ -117,6 +117,26 @@ def _com_curva(ofertas: list[dict], quantas: int) -> list[dict]:
     return escolhidas
 
 
+def _cinema() -> dict:
+    """Localiza o vídeo do Scroll Cinema, se ele já existir.
+
+    A seção só entra quando o arquivo está lá. Meia tela preta com um
+    spinner eterno seria pior do que não ter o efeito, e o hero normal
+    continua funcionando sozinho.
+    """
+    from django.contrib.staticfiles import finders
+    from django.templatetags.static import static as url_estatica
+
+    if finders.find("vitrine/video/hero.mp4") is None:
+        return {"cinema_video": None, "cinema_poster": None}
+
+    poster = finders.find("vitrine/video/poster.jpg")
+    return {
+        "cinema_video": url_estatica("vitrine/video/hero.mp4"),
+        "cinema_poster": url_estatica("vitrine/video/poster.jpg") if poster else None,
+    }
+
+
 def home(request):
     grupos = list(Grupo.objects.filter(ativo=True))
     ofertas = _ofertas()
@@ -134,6 +154,7 @@ def home(request):
             "numeros": _numeros(),
             "form": InscricaoForm(),
             "janela_dias": JANELA_DIAS,
+            **_cinema(),
         },
     )
 

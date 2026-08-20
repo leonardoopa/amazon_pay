@@ -743,14 +743,17 @@ a { color: inherit; }
     position: relative; display: block; height: 100%; justify-self: center;
   }
 
+  /* Sem `transition` aqui: o script escreve opacity e transform a cada
+     quadro da rolagem. Deixar uma transição junto criaria duas fontes de
+     verdade brigando, e o resultado é atraso e borracha em vez de resposta
+     imediata ao dedo. `will-change` avisa o compositor antes. */
   .js-vitrine .vitrine-item {
-    position: absolute; inset: 0; opacity: 0; pointer-events: none;
-    transform: scale(.94) translateY(18px);
-    transition: opacity .5s ease, transform .6s cubic-bezier(.2, .7, .3, 1);
+    position: absolute; inset: 0; opacity: 0; visibility: hidden;
+    will-change: opacity, transform;
   }
-  .js-vitrine .vitrine-item.ativa {
-    position: relative; opacity: 1; pointer-events: auto; transform: none;
-  }
+  /* O primeiro item nasce visível: se o script demorar um quadro, a seção
+     não pisca vazia. */
+  .js-vitrine .vitrine-item:first-child { opacity: 1; visibility: visible; }
 
   /* A composição ocupa a altura do quadro e a foto puxa a altura: é ela
      que tira o vazio de cima e de baixo. Sem isto sobrava meia tela preta
@@ -864,4 +867,181 @@ a { color: inherit; }
   .botao { min-height: 46px; }
   .pergunta summary { min-height: 46px; }
   .topo-nav a { padding-block: 6px; }
+}
+
+/* ===============================================================
+   SCROLL CINEMA
+   A seção é alta de propósito: a altura dela É o curso da animação.
+   Dentro, um contêiner grudado de uma tela segura o vídeo parado
+   enquanto o resto rola. O progresso de 0 a 1 sai dessa razão.
+   =============================================================== */
+
+.sc-hero { position: relative; height: 500vh; }
+/* Cena contida (não é o hero) pede curso menor. */
+.sc-hero.sc-contida { height: 340vh; }
+
+.sc-grude {
+  position: sticky; top: 0; height: 100svh;
+  overflow: hidden; background: #08080a;
+}
+
+.sc-video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; opacity: 0; transition: opacity .8s ease;
+}
+.sc-video.pronto { opacity: 1; }
+
+/* Escurece o pé para o texto ter contraste sobre qualquer quadro. */
+.sc-veu {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(8,8,10,.72) 0%, transparent 26%, transparent 52%, rgba(8,8,10,.88) 100%);
+}
+
+.sc-carregando {
+  position: absolute; inset: 0; z-index: 5; display: grid; place-items: center;
+  gap: 16px; background: #08080a; transition: opacity .6s ease;
+}
+.sc-carregando.saiu { opacity: 0; pointer-events: none; }
+.sc-carregando p { margin: 0; color: var(--texto-3); font-size: 14px; letter-spacing: .04em; }
+.sc-girando {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid var(--borda-clara); border-top-color: var(--verde);
+  animation: girar 900ms linear infinite;
+}
+@keyframes girar { to { rotate: 360deg; } }
+
+/* ---------- texto por cima ---------- */
+
+.sc-conteudo {
+  position: absolute; inset: 0; z-index: 2;
+  display: grid; align-content: space-between;
+  width: min(100% - 40px, var(--largura)); margin-inline: auto;
+  padding: 96px 0 44px; pointer-events: none;
+}
+.sc-conteudo a, .sc-conteudo button { pointer-events: auto; }
+
+.sc-legendas { position: relative; min-height: 4.6em; }
+.sc-legenda {
+  position: absolute; inset: 0; opacity: 0; transform: translateY(14px);
+  transition: opacity .45s ease, transform .55s cubic-bezier(.2,.7,.3,1);
+}
+.sc-legenda.ativa { opacity: 1; transform: none; }
+.sc-legenda h2 {
+  font-size: clamp(1.9rem, 5vw, 3.4rem); max-width: 16em;
+  text-shadow: 0 2px 30px rgba(0,0,0,.55);
+}
+.sc-legenda p {
+  margin: 14px 0 0; max-width: 34em; color: #d7dce6; font-size: 1.05rem;
+  text-shadow: 0 1px 18px rgba(0,0,0,.6);
+}
+
+.sc-pe { display: flex; align-items: end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+
+.sc-medidor { display: grid; gap: 10px; min-width: 210px; }
+.sc-medidor-topo { display: flex; align-items: baseline; gap: 8px; }
+.sc-medidor-valor {
+  font-family: Sora, sans-serif; font-weight: 800; font-size: 2rem;
+  letter-spacing: -.035em; color: var(--verde-claro);
+}
+.sc-medidor-rotulo { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--texto-3); }
+.sc-trilha { height: 4px; border-radius: 99px; background: rgba(255,255,255,.14); overflow: hidden; }
+.sc-barra {
+  height: 100%; border-radius: 99px; transform-origin: 0 50%; transform: scaleX(0);
+  background: linear-gradient(90deg, var(--violeta), var(--verde-claro));
+}
+
+/* ---------- movimento reduzido ---------- */
+
+/* A altura NÃO colapsa aqui de propósito. Zerar o curso faria o
+   progresso travar em 0 e a página inteira parecer quebrada. Some só o
+   que se move sozinho. */
+@media (prefers-reduced-motion: reduce) {
+  .sc-legenda { transition: none; }
+  .sc-girando { animation: none; }
+}
+
+/* ---------- telas pequenas ---------- */
+
+@media (max-width: 640px) {
+  .sc-hero { height: 380vh; }
+  .sc-hero.sc-contida { height: 280vh; }
+  .sc-conteudo { padding: 84px 0 32px; }
+  .sc-legenda h2 { font-size: clamp(1.5rem, 8vw, 2.1rem); }
+  .sc-legenda p { font-size: .96rem; }
+  .sc-legendas { min-height: 6.4em; }
+  .sc-pe { gap: 16px; }
+  .sc-medidor-valor { font-size: 1.6rem; }
+}
+
+/* ===============================================================
+   MOVIMENTO CONTÍNUO NAS SEÇÕES DE BAIXO
+   Cartão que só aparece e para volta a ficar estático. Aqui cada um
+   segue a própria linha do tempo de rolagem, então nada congela: a
+   página inteira responde ao dedo, igual ao vídeo do topo.
+   =============================================================== */
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+
+    /* Cartões de oferta: sobem e assentam no percurso pela janela. */
+    .oferta {
+      animation: cartao-entra linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 34%;
+    }
+    /* A coluna do meio entra um pouco depois, o que quebra a leitura em
+       bloco e faz a grade parecer respirar em vez de piscar de uma vez. */
+    .ofertas-grid .oferta:nth-child(3n + 2) { animation-range: entry 0% cover 42%; }
+
+    /* A foto do produto anda mais devagar que o cartão: paralaxe curta,
+       só o suficiente para o olho perceber profundidade. */
+    .oferta-foto img {
+      animation: foto-paralaxe linear both;
+      animation-timeline: view();
+      animation-range: cover 0% cover 100%;
+    }
+
+    /* Grupos e perguntas entram com o mesmo vocabulário. */
+    .grupo, .pergunta {
+      animation: cartao-entra linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 32%;
+    }
+
+    /* O produto do hero flutua com a rolagem em vez de ficar preso. */
+    .hero-produto .palco-produto {
+      animation: heroi-sobe linear both;
+      animation-timeline: view();
+      animation-range: cover 0% cover 100%;
+    }
+
+    /* Os números deslizam de baixo enquanto a faixa cruza a tela. */
+    .numero {
+      animation: cartao-entra linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 30%;
+    }
+  }
+}
+
+@keyframes cartao-entra {
+  from { opacity: 0; transform: translate3d(0, 46px, 0) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes foto-paralaxe {
+  from { transform: translate3d(0, 16px, 0) scale(1.04); }
+  to   { transform: translate3d(0, -16px, 0) scale(1.04); }
+}
+
+@keyframes heroi-sobe {
+  from { transform: translate3d(0, 34px, 0); }
+  to   { transform: translate3d(0, -34px, 0); }
+}
+
+/* A paralaxe da foto substitui o zoom de hover; manter os dois faria um
+   sobrescrever o outro no meio do movimento. */
+@supports (animation-timeline: view()) {
+  .oferta:hover .oferta-foto img { transform: translate3d(0, 0, 0) scale(1.08); }
 }

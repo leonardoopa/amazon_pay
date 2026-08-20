@@ -3,6 +3,10 @@
 
 {% block conteudo %}
 
+{% if cinema_video %}
+  {% include "vitrine/_scroll_cinema.html" %}
+{% endif %}
+
 <section class="hero">
   <div class="container hero-grid">
     <div>
