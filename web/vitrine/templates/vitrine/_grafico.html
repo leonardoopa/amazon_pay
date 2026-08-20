@@ -1,0 +1,29 @@
+{% comment %}
+Curva de preço em SVG puro. Sem biblioteca: o dado é pequeno, a página é
+estática e assim o gráfico existe no primeiro paint.
+{% endcomment %}
+<svg class="grafico" viewBox="0 0 {{ curva.largura }} {{ curva.altura }}" role="img"
+     aria-label="Preço dos últimos {{ dias }} dias. Mediana R$ {{ curva.mediana|floatformat:2 }}, preço atual R$ {{ curva.atual|floatformat:2 }}.">
+  <defs>
+    <linearGradient id="gradLinha" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#22c55e"/>
+    </linearGradient>
+    <linearGradient id="gradArea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22c55e" stop-opacity=".26"/>
+      <stop offset="100%" stop-color="#22c55e" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <path class="grafico-area" d="{{ curva.area }}"/>
+  <path class="grafico-linha" d="{{ curva.caminho }}"/>
+
+  <line class="grafico-mediana"
+        x1="{{ curva.x_inicio }}" y1="{{ curva.y_mediana }}"
+        x2="{{ curva.x_fim }}" y2="{{ curva.y_mediana }}"/>
+  <text class="grafico-texto" x="{{ curva.x_inicio }}" y="{{ curva.y_rotulo_mediana }}">
+    mediana R$ {{ curva.mediana|floatformat:2 }}
+  </text>
+
+  <circle class="grafico-marca" cx="{{ curva.x_atual }}" cy="{{ curva.y_atual }}" r="6"/>
+</svg>
