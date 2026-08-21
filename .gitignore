@@ -57,6 +57,9 @@ coverage.xml
 *.log
 local_settings.py
 db.sqlite3
+# Saida do collectstatic: gerada no build da imagem, e sao 60+ MB por causa
+# dos videos -- versionar isso incharia o repositorio a cada deploy.
+web/staticfiles/
 
 # Flask stuff:
 instance/

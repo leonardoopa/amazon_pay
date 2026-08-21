@@ -11,9 +11,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+from .seguranca import chave_secreta, hosts_permitidos
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -22,26 +25,51 @@ PROJECT_ROOT = BASE_DIR.parent
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-# Em produção defina DJANGO_SECRET_KEY. O default só existe para o `runserver`
-# local não exigir configuração antes da primeira execução.
-SECRET_KEY = os.getenv(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-^h=s(5sm(#w1_a^n6u7(!2+eyq_j&*f@b7g0eq)eo=s1vcq(o^",
-)
+# O padrão é produção. Esquecer de definir a variável no servidor precisa
+# resultar em site seguro e quebrado, nunca em site aberto e funcionando: com
+# DEBUG ligado qualquer visitante vê traceback com settings e trecho de banco.
+# Na sua máquina, ponha DJANGO_DEBUG=1 no .env.
+DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
 
-DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
+# `manage.py test` importa este arquivo, e exigir credencial de produção só
+# para rodar o suite atrapalharia sem proteger nada — o teste não serve
+# tráfego. As duas exigências abaixo continuam valendo para qualquer processo
+# que atenda requisição.
+RODANDO_TESTE = "test" in sys.argv
+LOCAL = DEBUG or RODANDO_TESTE
 
-ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
-    if host.strip()
-]
+SECRET_KEY = chave_secreta(os.getenv("DJANGO_SECRET_KEY", ""), LOCAL)
 
+ALLOWED_HOSTS = hosts_permitidos(os.getenv("DJANGO_ALLOWED_HOSTS", ""), LOCAL)
+
+# Precisa incluir o esquema: `https://ofertas.seudominio.com.br`. Sem isso o
+# POST do formulário de e-mail leva 403 atrás de HTTPS, e o único caminho de
+# conversão de quem chega com os grupos lotados morre calado.
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
     if origin.strip()
 ]
+
+# ---------- HTTPS ----------
+
+# O proxy (Caddy) termina o TLS e fala HTTP com o Django. Sem ler o cabeçalho,
+# `request.is_secure()` dá False, o redirect de HTTPS entra em laço infinito e
+# as URLs absolutas do preview de link saem com http://.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Ligue (DJANGO_HTTPS=1) somente quando já existir certificado na frente.
+# Redirecionar para HTTPS sem TLS deixa o site inalcançável.
+HTTPS = os.getenv("DJANGO_HTTPS", "0") == "1"
+SECURE_SSL_REDIRECT = HTTPS
+SESSION_COOKIE_SECURE = HTTPS
+CSRF_COOKIE_SECURE = HTTPS
+
+# HSTS começa curto de propósito. O navegador guarda o prazo que recebeu e
+# não há como encurtá-lo depois: se o certificado falhar com um ano gravado,
+# o domínio fica inacessível por um ano. Suba para 31536000 depois de uma
+# semana de TLS estável.
+SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_HSTS_SECONDS", "3600" if HTTPS else "0"))
 
 
 # Application definition
@@ -86,6 +114,8 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                # URL canônica e imagem de preview de link em toda página.
+                "vitrine.context.meta",
             ],
         },
     },
@@ -98,9 +128,12 @@ WSGI_APPLICATION = "comunidade.wsgi.application"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
+    # Banco do site (grupos e inscritos). Mora no mesmo volume do histórico de
+    # preço porque dentro da imagem Docker `web/db.sqlite3` é apagado a cada
+    # `up --build` — e levaria os grupos cadastrados e os e-mails junto.
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": PROJECT_ROOT / os.getenv("DJANGO_DB_PATH", "data/site.db"),
     },
     # Banco do bot, montado somente para leitura. O caminho acompanha o
     # DB_PATH que o coletor usa, então os dois falam do mesmo arquivo.
@@ -152,9 +185,27 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Em DEBUG o WhiteNoise precisa dos finders para achar os arquivos sem
-# um `collectstatic` prévio.
-WHITENOISE_USE_FINDERS = True
+# Em produção o nome do arquivo leva o hash do conteúdo, então cache de um ano
+# é seguro e um deploy novo nunca serve CSS velho. Em DEBUG o armazenamento
+# simples evita depender de `collectstatic` para cada alteração.
+# O manifesto só existe depois de um `collectstatic`, e o suite não roda um —
+# com ele ligado, todo `{% static %}` do teste estouraria
+# "Missing staticfiles manifest entry" e a falha não diria nada sobre o site.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": (
+            "django.contrib.staticfiles.storage.StaticFilesStorage"
+            if LOCAL
+            else "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        )
+    },
+}
+
+# Localmente o WhiteNoise precisa dos finders para achar os arquivos sem
+# um `collectstatic` prévio. Em produção ele serve o STATIC_ROOT, que é o
+# único lugar onde os nomes com hash existem.
+WHITENOISE_USE_FINDERS = LOCAL
 # O vídeo do hero é grande e imutável; sem isso o navegador rebaixa o
 # arquivo inteiro a cada visita.
 WHITENOISE_MAX_AGE = 31536000 if not DEBUG else 0

@@ -1,0 +1,27 @@
+# Endereco do site, vindo do .env (SITE_ADDRESS).
+#
+#   :80                       -> serve por IP, sem TLS. Só para testar.
+#   ofertas.seudominio.com.br -> emite e renova certificado sozinho.
+#
+# Com dominio, aponte o A record para o IP do servidor ANTES de subir: o
+# Let's Encrypt valida pelo proprio dominio, e tentativa falha entra no
+# limite semanal dele.
+{$SITE_ADDRESS} {
+	# Video nao entra na compressao. O Scroll Cinema salta dentro do arquivo
+	# com `currentTime`, e isso depende de resposta 206 a um `Range` -- que
+	# nao existe em corpo comprimido. Comprimir aqui congelaria a animacao no
+	# primeiro quadro. Imagem e video ja vem comprimidos de qualquer forma.
+	@comprimivel {
+		not path *.mp4 *.webm *.jpg *.jpeg *.png *.webp *.avif *.woff2
+	}
+	encode @comprimivel zstd gzip
+
+	reverse_proxy web:8001
+
+	# Log de acesso no stdout, que e onde o `docker compose logs` le. A
+	# rotacao dele e a do driver json-file, ja configurada no compose.
+	log {
+		output stdout
+		format console
+	}
+}

@@ -44,6 +44,66 @@ services:
       retries: 3
       start_period: 30s
 
+  # Landing + vitrine. Mesma imagem do bot, comando diferente.
+  web:
+    build: .
+    image: amazon_pay:latest
+    container_name: comunidade_web
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env
+    environment:
+      # Le o historico de preco do mesmo arquivo que o coletor escreve.
+      DB_PATH: /app/data/promos.db
+      # Grupos e inscritos ficam no volume, nao na imagem: `up --build`
+      # recria o container e apagaria o banco junto.
+      DJANGO_DB_PATH: data/site.db
+    volumes:
+      - ./data:/app/data
+    # Migra antes de servir. Um deploy pode trazer migracao nova, e sem isso
+    # a primeira visita levaria "no such table" em vez de pagina.
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        python web/manage.py migrate --noinput &&
+        exec gunicorn comunidade.wsgi:application
+        --chdir web --bind 0.0.0.0:8001 --workers 3
+        --access-logfile - --error-logfile -
+    expose:
+      - "8001"
+    # Sem `ports`: quem publica na internet e o Caddy, com TLS.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8001/saude/", timeout=10)
+      interval: 1m
+      timeout: 15s
+      retries: 3
+      start_period: 20s
+
+  # Unico servico exposto a internet. Termina o TLS e repassa para o gunicorn.
+  # Com um dominio em SITE_ADDRESS ele emite e renova o certificado sozinho.
+  caddy:
+    image: caddy:2-alpine
+    container_name: comunidade_caddy
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # O certificado emitido vive aqui. Sem volume, cada restart pediria um
+      # novo -- e o Let's Encrypt tem limite semanal por dominio.
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - web
+
   # Gateway nao oficial (Baileys) -- e o que alcanca grupo comum do WhatsApp.
   # O numero pareado aqui pode ser banido pela Meta: use um chip secundario.
   evolution:
@@ -98,3 +158,5 @@ services:
 volumes:
   evolution_instances:
   evolution_postgres:
+  caddy_data:
+  caddy_config:
