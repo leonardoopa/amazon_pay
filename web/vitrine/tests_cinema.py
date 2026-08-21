@@ -183,9 +183,11 @@ class VitrineFixadaTests(TestCase):
 
     def test_a_altura_do_marcador_e_a_duracao_da_cena(self):
         """80svh vinham de quando a vitrine era foto parada; com filme no
-        lugar, o clipe inteiro cabia num passar de dedo."""
+        lugar, o clipe inteiro cabia num passar de dedo. 350svh resolveu isso
+        e criou outro problema: 11 telas presas na mesma seção. 175svh é o
+        meio — cena inteira visível, sem rolagem morta dentro do produto."""
         inicio = CSS.index(".js-vitrine .vitrine-marca")
-        self.assertIn("350svh", CSS[inicio : inicio + 80])
+        self.assertIn("175svh", CSS[inicio : inicio + 80])
 
     def test_o_palco_do_filme_e_quadrado_pela_largura(self):
         """`height: 100%` e `max-width: 100%` juntos anulavam o
