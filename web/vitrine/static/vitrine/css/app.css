@@ -792,16 +792,20 @@ a { color: inherit; }
     position: absolute; right: 0; top: 50%; translate: 0 -50%; z-index: 3;
     display: grid; gap: 10px;
   }
-  /* 80svh era a medida de quando a vitrine mostrava foto parada: passar
-     rápido não custava nada, porque não havia nada acontecendo. Com filme
-     no lugar da foto, esse curso fazia o clipe inteiro caber em pouco mais
-     de uma tela de rolagem — um passar de dedo queimava a cena.
+  /* A altura do marcador é a duração da cena. Já passou por três medidas:
 
-     A conta que importa é px de rolagem por segundo de vídeo, e o alvo é o
-     mesmo do vídeo do topo: ~720. Abaixo disso o filme corre na frente do
-     dedo. O preço é a vitrine ocupar ~11 telas — é a seção mais longa da
-     página, e é de propósito: é ela que carrega o argumento. */
-  .js-vitrine .vitrine-marca { display: block; height: 350svh; }
+     - 80svh, de quando a vitrine era foto parada. Com filme no lugar, o
+       clipe inteiro cabia num passar de dedo.
+     - 350svh, que dava ~580px de rolagem por segundo de vídeo — o filme
+       obedecia o dedo com folga, mas a seção ocupava 11 telas e quase
+       metade da página. Ficar 2500px preso no mesmo produto lê como página
+       travada, não como cena.
+     - 175svh, o valor atual: metade do curso, tudo no dobro da velocidade.
+       Trocar de produto custa ~1900px em vez de ~3800px, e a seção cai para
+       ~6 telas. O filme passa a correr a ~290px por segundo, então um giro
+       de roda avança mais cena que antes — é o preço aceito por não deixar
+       o visitante rolando dentro do mesmo produto. */
+  .js-vitrine .vitrine-marca { display: block; height: 175svh; }
 }
 
 .vitrine-ponto {
