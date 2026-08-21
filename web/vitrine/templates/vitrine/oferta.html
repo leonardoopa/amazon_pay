@@ -1,0 +1,111 @@
+{% extends "vitrine/base.html" %}
+{% load humanize %}
+
+{% block title %}{{ produto.title }} — Comunidade do Desconto{% endblock %}
+{% block description %}Curva de preço real dos últimos {{ dias }} dias deste produto, coletada dia a dia.{% endblock %}
+{% block og_title %}{{ produto.title }}{% endblock %}
+{% block og_description %}{% if post %}R$ {{ post.price|floatformat:2 }} — {{ post.discount_pct|floatformat:0 }}% abaixo da mediana histórica.{% else %}Histórico de preço aberto.{% endif %}{% endblock %}
+{% block og_extra %}{% if produto.image_url %}<meta property="og:image" content="{{ produto.image_url }}">{% endif %}{% endblock %}
+
+{% block conteudo %}
+<div class="container">
+  <div class="oferta-detalhe">
+    <div class="detalhe-foto">
+      {% if produto.image_url %}
+        <img src="{{ produto.image_url }}" alt="{{ produto.title }}">
+      {% else %}
+        <span class="oferta-vazia">sem foto</span>
+      {% endif %}
+    </div>
+
+    <div class="detalhe">
+      <h1>{{ produto.title }}</h1>
+
+      {% if post %}
+        <div class="detalhe-preco">
+          <span class="detalhe-valor">R$ {{ post.price|floatformat:2 }}</span>
+          <span class="oferta-media">mediana <s>R$ {{ post.baseline|floatformat:2 }}</s></span>
+          <span class="etiqueta-desconto" style="position:static">-{{ post.discount_pct|floatformat:0 }}%</span>
+        </div>
+      {% endif %}
+
+      <ul class="detalhe-lista">
+        <li>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+          <span>{{ dias }} dia{{ dias|pluralize }} de preço coletado por nós, um registro por dia.</span>
+        </li>
+        {% if curva %}
+          <li>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+            <span>Menor preço da série: <strong>R$ {{ curva.minimo|floatformat:2 }}</strong>. Maior: R$ {{ curva.maximo|floatformat:2 }}.</span>
+          </li>
+          {% if curva.menor_da_serie %}
+            <li>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+              <span><strong>É o menor preço desde que começamos a monitorar.</strong></span>
+            </li>
+          {% endif %}
+        {% endif %}
+        {% if primeiro_dia %}
+          <li>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+            <span>Monitorando desde {{ primeiro_dia|date:"d/m/Y" }}.</span>
+          </li>
+        {% endif %}
+      </ul>
+
+      <div class="hero-acoes">
+        <a class="botao" href="{{ produto.url }}" target="_blank" rel="noopener nofollow sponsored">
+          Ver na loja
+        </a>
+        {% if grupo_aberto %}
+          <a class="botao botao-fantasma" href="{{ grupo_aberto.convite }}" target="_blank" rel="noopener">
+            Receber as próximas
+          </a>
+        {% endif %}
+      </div>
+      <p class="hero-nota">
+        Link de afiliado: ganhamos comissão da loja e o preço para você não muda.
+        Confirme o preço na página do produto antes de comprar.
+      </p>
+    </div>
+  </div>
+
+  {% if curva %}
+    <div class="painel" style="margin-top:28px">
+      <div class="painel-topo">
+        <span class="painel-rotulo">Curva de preço — {{ dias }} dias</span>
+        <span class="painel-rotulo">coletado por nós</span>
+      </div>
+      {% include "vitrine/_grafico.html" %}
+      <div class="grafico-legenda">
+        <div class="legenda-item">
+          <span class="legenda-rotulo">Hoje</span>
+          <span class="legenda-valor verde">R$ {{ curva.atual|floatformat:2 }}</span>
+        </div>
+        <div class="legenda-item">
+          <span class="legenda-rotulo">Mediana</span>
+          <span class="legenda-valor risco">R$ {{ curva.mediana|floatformat:2 }}</span>
+        </div>
+        <div class="legenda-item">
+          <span class="legenda-rotulo">Mínimo</span>
+          <span class="legenda-valor">R$ {{ curva.minimo|floatformat:2 }}</span>
+        </div>
+        <div class="legenda-item">
+          <span class="legenda-rotulo">Máximo</span>
+          <span class="legenda-valor">R$ {{ curva.maximo|floatformat:2 }}</span>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <div class="painel" style="margin-top:28px">
+      <p class="painel-produto" style="margin:0">
+        Ainda não há dias suficientes de coleta para desenhar a curva deste
+        produto. Uma linha com um ponto só sugeriria tendência que não existe.
+      </p>
+    </div>
+  {% endif %}
+
+  <a class="voltar" href="{% url 'vitrine:home' %}">&larr; ver todas as ofertas</a>
+</div>
+{% endblock %}

@@ -1,0 +1,465 @@
+{% extends "vitrine/base.html" %}
+{% load humanize %}
+
+{% block conteudo %}
+
+{% if cinema_video %}
+  {% include "vitrine/_scroll_cinema.html" %}
+{% endif %}
+
+<section class="hero">
+  <div class="container hero-grid">
+    <div>
+      <span class="selo">
+        <span class="pulso" aria-hidden="true"></span>
+        {% if numeros.produtos %}
+          <b>{{ numeros.produtos|intcomma }} produtos</b> sob monitoramento agora
+        {% else %}
+          Comunidade nova &mdash; <b>entrando no ar</b>
+        {% endif %}
+      </span>
+
+      <h1>Desconto de verdade,<br><em>não desconto inventado</em>.</h1>
+
+      <p class="hero-texto">
+        Toda loja sabe subir o preço na véspera para anunciar “50% OFF”. Nós
+        guardamos o preço de cada produto <strong>todo dia</strong> e só
+        avisamos quando ele cai contra a mediana dos últimos
+        {{ janela_dias }} dias. Se a promoção é encenada, você nem fica sabendo.
+      </p>
+
+      <div class="hero-acoes">
+        {% if grupo_aberto %}
+          <a class="botao" href="{{ grupo_aberto.convite }}" target="_blank" rel="noopener">
+            Entrar no grupo grátis
+          </a>
+        {% else %}
+          <a class="botao" href="#vaga">Avise-me quando abrir vaga</a>
+        {% endif %}
+        <a class="botao botao-fantasma" href="#como">Como a gente comprova</a>
+      </div>
+
+      <p class="hero-nota">
+        Sem cadastro, sem pagar nada. Você sai quando quiser.
+      </p>
+    </div>
+
+    {% if destaque %}
+      <div class="hero-produto">
+        <span class="selo-queda">-{{ destaque.curva.desconto_pct|floatformat:0 }}%</span>
+
+        <div class="palco-produto">
+          {% if destaque.produto.image_url %}
+            <img src="{{ destaque.produto.image_url }}" alt="{{ destaque.produto.title }}"
+                 fetchpriority="high" width="600" height="600">
+          {% endif %}
+        </div>
+
+        <div class="selo-preco">
+          <span class="selo-preco-rotulo">Agora</span>
+          <span class="selo-preco-valor">R$ {{ destaque.curva.atual|floatformat:2 }}</span>
+          <span class="selo-preco-antes">mediana de {{ destaque.dias }} dias:
+            <s>R$ {{ destaque.curva.mediana|floatformat:2 }}</s></span>
+        </div>
+      </div>
+    {% else %}
+      <div class="painel">
+        <div class="painel-topo">
+          <span class="painel-rotulo">Coleta em andamento</span>
+        </div>
+        <p class="painel-produto">O gráfico aparece aqui</p>
+        <p class="hero-texto" style="margin:14px 0 0;font-size:15px">
+          Cada produto precisa de pelo menos 7 dias de preço coletado antes de
+          entrar no ar. Nada é publicado com base em palpite — nem aqui no
+          site, nem no grupo.
+        </p>
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+{% if ofertas %}
+<section class="esteira" aria-label="Ofertas recentes em movimento">
+  <div class="esteira-trilha">
+    {% comment %}
+      Duas cópias da lista: a animação anda -50% e emenda sem salto.
+      A segunda some para leitor de tela, senão anuncia tudo duplicado.
+    {% endcomment %}
+    {% for volta in "12" %}
+      {% for item in ofertas %}
+        <a class="pilula" href="{% url 'vitrine:oferta' item.external_id %}"
+           {% if volta == "2" %}aria-hidden="true" tabindex="-1"{% endif %}>
+          {% if item.produto.image_url %}
+            <img class="pilula-foto" src="{{ item.produto.image_url }}" alt="" loading="lazy">
+          {% endif %}
+          <span class="pilula-info">
+            <span class="pilula-nome">{{ item.produto.title }}</span>
+            <span class="pilula-precos">
+              <span class="pilula-preco">R$ {{ item.post.price|floatformat:2 }}</span>
+              <s class="pilula-corte">R$ {{ item.post.baseline|floatformat:2 }}</s>
+            </span>
+          </span>
+          <span class="pilula-tag">-{{ item.post.discount_pct|floatformat:0 }}%</span>
+        </a>
+      {% endfor %}
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="numeros">
+  <div class="container">
+    <div class="numeros-grid" data-revelar>
+      <div class="numero">
+        <div class="numero-valor" data-contar="{{ numeros.produtos }}">{{ numeros.produtos|intcomma }}</div>
+        <div class="numero-rotulo">produtos monitorados</div>
+      </div>
+      <div class="numero">
+        <div class="numero-valor" data-contar="{{ numeros.observacoes }}">{{ numeros.observacoes|intcomma }}</div>
+        <div class="numero-rotulo">preços registrados</div>
+      </div>
+      <div class="numero">
+        <div class="numero-valor" data-contar="{{ numeros.ofertas_enviadas }}">{{ numeros.ofertas_enviadas|intcomma }}</div>
+        <div class="numero-rotulo">ofertas aprovadas no filtro</div>
+      </div>
+      <div class="numero">
+        <div class="numero-valor" data-contar="{{ numeros.economia_total|floatformat:0 }}" data-prefixo="R$ ">R$ {{ numeros.economia_total|floatformat:0|intcomma }}</div>
+        <div class="numero-rotulo">abaixo da mediana, somado</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if vitrine %}
+<section class="vitrine" id="prova" data-vitrine>
+  {% comment %}
+    O quadro fica preso enquanto os marcadores empurram a rolagem. Cada
+    marcador vale uma tela, e o observador troca o produto em cena.
+  {% endcomment %}
+  <div class="vitrine-quadro">
+    <div class="vitrine-palco">
+      <div class="vitrine-pontos" aria-hidden="true">
+        {% for item in vitrine %}<span class="vitrine-ponto" data-ponto></span>{% endfor %}
+      </div>
+
+      {% for item in vitrine %}
+        <article class="vitrine-item" data-vitrine-item>
+          {% comment %}
+            Quando existe filme do produto, a foto vira o pôster dele: fica
+            embaixo, aparece na hora, e o vídeo entra por cima só depois de
+            carregado. Assim nunca há retângulo vazio esperando a rede, e
+            sem JavaScript o visitante continua vendo o produto.
+          {% endcomment %}
+          <div class="palco-produto{% if item.video %} palco-com-filme{% endif %}">
+            {% if item.produto.image_url %}
+              <img src="{{ item.produto.image_url }}" alt="{{ item.produto.title }}" loading="lazy">
+            {% endif %}
+            {% if item.video %}
+              <video class="palco-filme" data-vitrine-video
+                     data-fonte="{{ item.video }}"
+                     muted playsinline preload="none" aria-hidden="true"></video>
+            {% endif %}
+          </div>
+
+          <div class="vitrine-texto">
+            <span class="secao-etiqueta">Prova em {{ item.dias }} dias de preço</span>
+            <h3>{{ item.produto.title }}</h3>
+            <div class="vitrine-precos">
+              <span class="vitrine-preco">R$ {{ item.curva.atual|floatformat:2 }}</span>
+              <span class="vitrine-antes">
+                mediana <s>R$ {{ item.curva.mediana|floatformat:2 }}</s>
+                &nbsp;·&nbsp; <strong>-{{ item.curva.desconto_pct|floatformat:0 }}%</strong>
+              </span>
+            </div>
+            <div class="vitrine-mini">
+              {% with curva=item.curva dias=item.dias %}
+                {% include "vitrine/_grafico.html" %}
+              {% endwith %}
+            </div>
+            <a class="botao botao-fantasma" style="margin-top:22px"
+               href="{% url 'vitrine:oferta' item.external_id %}">Ver a curva inteira</a>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="vitrine-trilho" aria-hidden="true">
+    {% for item in vitrine %}<div class="vitrine-marca" data-marca></div>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="secao" id="como">
+  <div class="container">
+    <div class="secao-cabeca" data-revelar>
+      <span class="secao-etiqueta">Como a gente comprova</span>
+      <h2>Três regras que a maioria dos grupos não tem.</h2>
+      <p class="secao-texto">
+        Grupo de oferta costuma repassar tudo que a loja marca como promoção.
+        Aqui a loja não decide o que é desconto — o histórico decide.
+      </p>
+    </div>
+
+    <div class="palco" data-palco>
+      <div class="palco-passos">
+        <div class="palco-passo" data-passo>
+          <span class="palco-marca">Passo 1</span>
+          <h3>Preço todo dia, por produto</h3>
+          <p>
+            Guardamos o menor preço de cada dia. Um produto só entra no radar
+            depois de <strong>7 dias distintos</strong> de coleta — sem
+            histórico, não dá para afirmar que algo baixou.
+          </p>
+        </div>
+        <div class="palco-passo" data-passo>
+          <span class="palco-marca">Passo 2</span>
+          <h3>Mediana, não o “de/por”</h3>
+          <p>
+            Comparamos com a mediana de {{ janela_dias }} dias, não com o preço
+            riscado do anúncio. Mediana aguenta um pico isolado sem distorcer —
+            média, não.
+          </p>
+        </div>
+        <div class="palco-passo" data-passo>
+          <span class="palco-marca">Passo 3</span>
+          <h3>Poucas mensagens</h3>
+          <p>
+            Só passa queda relevante contra essa mediana, e o mesmo produto não
+            se repete por semanas. Grupo que posta o dia inteiro vira grupo
+            silenciado.
+          </p>
+        </div>
+      </div>
+
+      <div class="palco-visual" aria-hidden="true">
+        <div class="painel">
+          <div class="cena" data-cena>
+            <div class="painel-topo">
+              <span class="painel-rotulo">Coleta diária</span>
+              <span class="painel-rotulo">{{ janela_dias }} dias</span>
+            </div>
+            <p class="painel-produto">Um registro por dia, por produto</p>
+            <div class="calendario">
+              {% for dia in "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" %}
+                <span class="dia tem"></span>
+              {% endfor %}
+              <span class="dia hoje"></span>
+            </div>
+          </div>
+
+          <div class="cena" data-cena>
+            <div class="painel-topo">
+              <span class="painel-rotulo">Contra o quê comparar</span>
+            </div>
+            <p class="painel-produto">O mesmo produto, duas réguas</p>
+            <div class="comparacao">
+              <div class="barra-linha">
+                <span class="barra-nome">“de/por” da loja</span>
+                <span class="barra-cano"><span class="barra-fita falsa" style="width:96%"></span></span>
+                <span class="barra-valor">R$ 1.899</span>
+              </div>
+              <div class="barra-linha">
+                <span class="barra-nome">mediana real</span>
+                <span class="barra-cano"><span class="barra-fita real" style="width:68%"></span></span>
+                <span class="barra-valor">R$ 1.349</span>
+              </div>
+              <div class="barra-linha">
+                <span class="barra-nome">preço de hoje</span>
+                <span class="barra-cano"><span class="barra-fita real" style="width:60%"></span></span>
+                <span class="barra-valor">R$ 1.189</span>
+              </div>
+            </div>
+            <p class="hero-nota" style="margin-top:16px">
+              Contra o “de/por”: 37% OFF. Contra o preço que o produto
+              realmente teve: 12%. Só o segundo é verdade.
+            </p>
+          </div>
+
+          <div class="cena" data-cena>
+            <div class="painel-topo">
+              <span class="painel-rotulo">No seu WhatsApp</span>
+            </div>
+            <p class="painel-produto">Poucas, e só as que passaram</p>
+            <div class="zap">
+              <div class="balao">
+                Caiu de verdade 👀<br>
+                Monitor 27" 144Hz<br>
+                <b>R$ 1.199</b> — 29% abaixo da média de R$ 1.699
+                <span class="balao-hora">09:12</span>
+              </div>
+              <div class="zap-silencio">— nada até amanhã —</div>
+              <div class="balao">
+                SSD NVMe 1TB<br>
+                <b>R$ 389</b> — menor preço já registrado
+                <span class="balao-hora">14:40</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if ofertas %}
+<section class="secao" id="ofertas">
+  <div class="container">
+    <div class="secao-cabeca" data-revelar>
+      <span class="secao-etiqueta">Já foi para o grupo</span>
+      <h2>As últimas que passaram no filtro.</h2>
+      <p class="secao-texto">
+        Cada uma tem a curva de preço aberta. Clique e confira você mesmo.
+      </p>
+    </div>
+
+    <div class="ofertas-grid" data-revelar>
+      {% for item in ofertas %}
+        <a class="oferta" href="{% url 'vitrine:oferta' item.external_id %}">
+          <div class="oferta-foto">
+            {% if item.produto.image_url %}
+              <img src="{{ item.produto.image_url }}" alt="{{ item.produto.title }}" loading="lazy">
+            {% else %}
+              <span class="oferta-vazia">sem foto</span>
+            {% endif %}
+            <span class="etiqueta-desconto">-{{ item.post.discount_pct|floatformat:0 }}%</span>
+          </div>
+          <div class="oferta-corpo">
+            <p class="oferta-titulo">{{ item.produto.title }}</p>
+            <div class="oferta-precos">
+              <span class="oferta-preco">R$ {{ item.post.price|floatformat:2 }}</span>
+              <span class="oferta-media">média <s>R$ {{ item.post.baseline|floatformat:2 }}</s></span>
+            </div>
+            <div class="oferta-rodape">
+              <span>economia de R$ {{ item.post.economia|floatformat:2 }}</span>
+              <span class="oferta-ver">ver curva</span>
+            </div>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<section class="secao" id="grupos">
+  <div class="container">
+    <div class="secao-cabeca" data-revelar>
+      <span class="secao-etiqueta">Entrar</span>
+      <h2>Escolha um grupo com vaga.</h2>
+      <p class="secao-texto">
+        O WhatsApp limita membros por grupo. Quando um enche, abrimos outro —
+        o conteúdo é o mesmo em todos.
+      </p>
+    </div>
+
+    {% if grupos %}
+      <div class="grupos-grid" data-revelar>
+        {% for grupo in grupos %}
+          <div class="grupo{% if grupo.lotado %} grupo-lotado{% endif %}">
+            <div class="grupo-topo">
+              <h3>{{ grupo.nome }}</h3>
+              {% if grupo.categoria %}<span class="grupo-tag">{{ grupo.categoria }}</span>{% endif %}
+            </div>
+            <div class="grupo-barra">
+              <div class="grupo-preenchido{% if grupo.lotado %} cheio{% endif %}"
+                   style="width: {{ grupo.ocupacao_pct }}%"></div>
+            </div>
+            <p class="grupo-vagas">
+              {% if grupo.lotado %}
+                Lotado &mdash; {{ grupo.membros|intcomma }} membros
+              {% else %}
+                <b>{{ grupo.vagas|intcomma }} vagas</b> de {{ grupo.capacidade|intcomma }}
+              {% endif %}
+            </p>
+            {% if grupo.lotado %}
+              <span class="botao botao-desativado">Grupo lotado</span>
+            {% else %}
+              <a class="botao" href="{{ grupo.convite }}" target="_blank" rel="noopener">Entrar agora</a>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="secao-texto">
+        Os links dos grupos entram no ar em instantes. Deixe seu e-mail abaixo
+        que avisamos primeiro.
+      </p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="secao" id="vaga">
+  <div class="container">
+    <div class="captura" data-revelar>
+      <div>
+        <h2>Todos lotados? Guarde seu lugar.</h2>
+        <p>
+          Avisamos assim que abrir o próximo grupo. Um e-mail quando houver
+          vaga — nada além disso.
+        </p>
+      </div>
+      <form class="captura-form" method="post" action="{% url 'vitrine:inscrever' %}">
+        {% csrf_token %}
+        {{ form.email }}
+        <button class="botao" type="submit">Avise-me</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<section class="secao" id="duvidas">
+  <div class="container">
+    <div class="secao-cabeca" data-revelar>
+      <span class="secao-etiqueta">Antes de entrar</span>
+      <h2>O que costumam perguntar.</h2>
+    </div>
+
+    <div class="perguntas" data-revelar>
+      <details class="pergunta">
+        <summary>É grátis mesmo? Onde está a pegadinha?</summary>
+        <p>
+          É grátis. Usamos links de afiliado: quando você compra pelo nosso
+          link, a loja nos paga uma comissão e <strong>o preço para você é
+          exatamente o mesmo</strong>. É assim que a comunidade se sustenta sem
+          cobrar nada nem vender seus dados.
+        </p>
+      </details>
+      <details class="pergunta">
+        <summary>Vão encher meu WhatsApp de mensagem?</summary>
+        <p>
+          Não. O filtro derruba a maior parte do que as lojas chamam de
+          promoção, e o mesmo produto não se repete por semanas. São poucas
+          mensagens por dia, e só de quedas que sobreviveram à comparação com
+          o histórico.
+        </p>
+      </details>
+      <details class="pergunta">
+        <summary>Posso escrever no grupo?</summary>
+        <p>
+          Os grupos são só de avisos, sem conversa paralela — é o que mantém a
+          leitura rápida e evita que alguém use o espaço para aplicar golpe em
+          outro membro.
+        </p>
+      </details>
+      <details class="pergunta">
+        <summary>Como sei que o desconto não é inventado?</summary>
+        <p>
+          Cada oferta tem a página com a curva de preço dos últimos
+          {{ janela_dias }} dias, coletada por nós, dia a dia. Você vê a linha
+          inteira e decide sozinho se a queda vale. Nenhum concorrente abre
+          esse dado.
+        </p>
+      </details>
+      <details class="pergunta">
+        <summary>Vocês são o Mercado Livre?</summary>
+        <p>
+          Não. Somos independentes e não temos vínculo com nenhuma loja. A
+          compra acontece no site da loja, com as garantias e o suporte dela.
+        </p>
+      </details>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

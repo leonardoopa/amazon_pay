@@ -1,0 +1,78 @@
+{% load static %}<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Comunidade do Desconto{% endblock %}</title>
+<meta name="description" content="{% block description %}Ofertas de verdade, medidas contra o preço histórico. Só avisamos quando o preço cai mesmo — nada de desconto inventado.{% endblock %}">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Comunidade do Desconto">
+<meta property="og:title" content="{% block og_title %}Comunidade do Desconto{% endblock %}">
+<meta property="og:description" content="{% block og_description %}Ofertas medidas contra o preço histórico dos últimos 60 dias.{% endblock %}">
+{% block og_extra %}{% endblock %}
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'vitrine/css/app.css' %}">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏷️</text></svg>">
+</head>
+<body>
+
+<div class="progresso" data-progresso aria-hidden="true"></div>
+
+<header class="topo">
+  <div class="topo-conteudo">
+    <a class="marca" href="{% url 'vitrine:home' %}">
+      <span class="marca-selo" aria-hidden="true"></span>
+      <span>Comunidade<strong>do Desconto</strong></span>
+    </a>
+    <nav class="topo-nav">
+      <a href="{% url 'vitrine:home' %}#como">Como funciona</a>
+      <a href="{% url 'vitrine:home' %}#ofertas">Ofertas</a>
+      {% if grupo_aberto %}
+        <a class="botao botao-mini" href="{{ grupo_aberto.convite }}" target="_blank" rel="noopener">Entrar no grupo</a>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+
+{% if messages %}
+  <div class="avisos">
+    {% for message in messages %}
+      <p class="aviso aviso-{{ message.tags }}">{{ message }}</p>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% block conteudo %}{% endblock %}
+
+<footer class="rodape">
+  <div class="rodape-grid">
+    <div>
+      <p class="rodape-marca">Comunidade<strong>do Desconto</strong></p>
+      <p class="rodape-texto">
+        Monitoramos preços todos os dias e só avisamos quando a queda é real
+        contra o histórico — não contra o “de/por” da loja.
+      </p>
+    </div>
+    <div>
+      <p class="rodape-titulo">Transparência</p>
+      <p class="rodape-texto">
+        Usamos links de afiliado. Ganhamos uma comissão da loja quando você
+        compra, e <strong>o preço para você não muda</strong>. É o que mantém
+        a comunidade gratuita.
+      </p>
+    </div>
+  </div>
+  <p class="rodape-fim">
+    Não somos o Mercado Livre nem temos vínculo com a loja. Preços e
+    disponibilidade mudam sem aviso — confirme sempre na página do produto.
+  </p>
+</footer>
+
+<script src="{% static 'vitrine/js/scroll-cinema.js' %}" defer></script>
+<script src="{% static 'vitrine/js/scroll.js' %}" defer></script>
+</body>
+</html>

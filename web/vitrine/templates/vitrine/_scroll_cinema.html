@@ -1,0 +1,66 @@
+{% load static %}
+{% comment %}
+Scroll Cinema: a altura da seção é o curso da animação, e o contêiner
+grudado segura o vídeo parado enquanto o resto rola. O progresso de 0 a 1
+sai dessa razão e comanda vídeo, legenda, contador e barra ao mesmo tempo.
+
+Só entra em cena quando o arquivo existe — a view confere. Sem vídeo, o
+hero normal continua valendo; meia tela preta com um spinner eterno seria
+pior do que não ter o efeito.
+{% endcomment %}
+
+<section class="sc-hero" data-sc-cena>
+  <div class="sc-grude">
+    <video class="sc-video" data-sc-video
+           src="{{ cinema_video }}"
+           {% if cinema_poster %}poster="{{ cinema_poster }}"{% endif %}
+           muted playsinline preload="auto"
+           aria-hidden="true"></video>
+
+    <div class="sc-veu" aria-hidden="true"></div>
+
+    <div class="sc-carregando" data-sc-carregando>
+      <span class="sc-girando" aria-hidden="true"></span>
+      <p>Carregando</p>
+    </div>
+
+    <div class="sc-conteudo">
+      <div class="sc-legendas">
+        <div class="sc-legenda ativa" data-sc-legenda>
+          <h2>O preço que a loja mostra não é o preço de verdade.</h2>
+          <p>Ela sobe na véspera para anunciar desconto no dia seguinte.</p>
+        </div>
+        <div class="sc-legenda" data-sc-legenda>
+          <h2>A gente anota o preço todo dia. Todo dia mesmo.</h2>
+          <p>Um registro por produto, por dia, sem depender do que a loja diz.</p>
+        </div>
+        <div class="sc-legenda" data-sc-legenda>
+          <h2>Só avisa quando cai contra a mediana de 60 dias.</h2>
+          <p>Se a promoção é encenada, você nem fica sabendo que existiu.</p>
+        </div>
+      </div>
+
+      <div class="sc-pe">
+        <div class="sc-medidor">
+          <div class="sc-medidor-topo">
+            <span class="sc-medidor-valor"
+                  data-sc-progresso="contador"
+                  data-sc-max="{{ numeros.observacoes|default:0 }}">0</span>
+            <span class="sc-medidor-rotulo">preços conferidos</span>
+          </div>
+          <div class="sc-trilha">
+            <span class="sc-barra" data-sc-progresso="barra"></span>
+          </div>
+        </div>
+
+        {% if grupo_aberto %}
+          <a class="botao" href="{{ grupo_aberto.convite }}" target="_blank" rel="noopener">
+            Entrar no grupo grátis
+          </a>
+        {% else %}
+          <a class="botao" href="#vaga">Avise-me quando abrir vaga</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
