@@ -10,3 +10,5 @@ __pycache__
 *.egg-info
 .claude
 README.md
+# Gerado dentro do build; mandar a copia local no contexto so atrasaria.
+web/staticfiles

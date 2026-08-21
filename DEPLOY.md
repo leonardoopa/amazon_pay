@@ -8,25 +8,31 @@ no grupo sem intervenção.
 ```
 ┌─ VPS (ou máquina em casa) ────────────────────────┐
 │                                                    │
-│  amazon_pay ──── SQLite em volume                 │
-│  (serve: API + loop de coleta)                    │
-│      │                                             │
-│      └──▶ evolution ──▶ postgres                  │
-│           (Baileys)     (sessão do WhatsApp)      │
-│                                                    │
-│  Portas: só 127.0.0.1. Nada exposto.              │
-└────────────────────────────────────────────────────┘
-                     │
-                  grupo do WhatsApp
+│  amazon_pay ──── SQLite em volume ────┐           │
+│  (serve: API + loop de coleta)         │ leitura   │
+│      │                                 │           │
+│      └──▶ evolution ──▶ postgres       │           │
+│           (Baileys)     (sessão)       │           │
+│                                        ▼           │
+│                          web (gunicorn, Django)   │
+│                                  ▲                 │
+│  Loopback só: API 8000, painel 8080.               │
+└──────────────────────────────────│─────────────────┘
+                     │             │ 80/443
+                  grupo do      caddy (TLS)
+                  WhatsApp         │
+                                visitante
 ```
 
-Três containers, tudo no `docker-compose.yml`. O `amazon_pay` roda o comando
+Cinco containers, tudo no `docker-compose.yml`. O `amazon_pay` roda o comando
 `serve`: a API HTTP e o loop de coleta no mesmo processo — dois processos
-escrevendo no mesmo SQLite dariam `database is locked`.
+escrevendo no mesmo SQLite dariam `database is locked`. O `web` serve a landing
+lendo o **mesmo** `promos.db`, só que sem escrever nele.
 
-**Nenhuma porta é publicada na internet.** A API e o painel da Evolution ficam
-presos em `127.0.0.1` e você chega neles por túnel SSH. Isso não é excesso de
-zelo: a `EVOLUTION_API_KEY` dá controle total do WhatsApp pareado.
+**Só o Caddy publica porta na internet** (80 e 443), porque o site precisa ser
+alcançável. A API e o painel da Evolution seguem presos em `127.0.0.1`, e você
+chega neles por túnel SSH. Isso não é excesso de zelo: a `EVOLUTION_API_KEY` dá
+controle total do WhatsApp pareado.
 
 ## Onde hospedar
 
@@ -62,15 +68,19 @@ sudo usermod -aG docker $USER && sudo systemctl enable --now docker
 
 Reabra a sessão SSH para o grupo `docker` valer.
 
-Firewall — só a 22 precisa entrar, porque todo o resto é loopback:
+Firewall — SSH, mais 80 e 443 para o site. Todo o resto é loopback:
 
 ```bash
-sudo ufw allow 22/tcp && sudo ufw --force enable
+sudo ufw allow 22/tcp && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw --force enable
 ```
 
 > No Oracle Cloud há um segundo firewall na console (Security List / NSG), além
-> do `ufw`. Como nada além do SSH precisa entrar, não é necessário abrir nada
-> lá — a configuração padrão já serve.
+> do `ufw`. Abra 80 e 443 lá também, senão o Caddy nem consegue validar o
+> domínio para emitir o certificado.
+
+A 80 continua necessária mesmo com o site em HTTPS: é por ela que o Let's
+Encrypt confirma que o domínio é seu, e é dela que o Caddy redireciona para a
+443.
 
 ## 2. Clonar e configurar
 
@@ -88,7 +98,7 @@ scp .env usuario@IP_DO_SERVIDOR:~/amazon_pay/.env
 chmod 600 .env
 ```
 
-No servidor, ajuste três coisas no `.env`:
+No servidor, ajuste o bloco do bot no `.env`:
 
 ```ini
 DELIVERY_BACKEND=evolution
@@ -98,6 +108,23 @@ API_SECRET=<gere com: openssl rand -hex 32>
 
 O `EVOLUTION_BASE_URL` muda porque, dentro da rede do compose, o host é o nome
 do serviço — não `localhost`.
+
+E o bloco do site, que **precisa** ser ajustado antes de subir — o `web` se
+recusa a iniciar sem chave e sem domínio, em vez de subir inseguro:
+
+```ini
+DJANGO_DEBUG=0
+DJANGO_SECRET_KEY=<gere com: openssl rand -hex 32>
+DJANGO_ALLOWED_HOSTS=ofertas.seudominio.com.br
+DJANGO_CSRF_TRUSTED_ORIGINS=https://ofertas.seudominio.com.br
+DJANGO_HTTPS=1
+SITE_ADDRESS=ofertas.seudominio.com.br
+```
+
+Sem domínio ainda? Use `SITE_ADDRESS=:80`, `DJANGO_HTTPS=0` e
+`DJANGO_ALLOWED_HOSTS=<IP do servidor>`. Serve para conferir o site pelo IP,
+mas **não divulgue esse endereço**: sem TLS, o e-mail digitado no formulário
+trafega em texto claro e o WhatsApp mostra aviso de link não seguro.
 
 ## 3. Build e autorização do Mercado Livre
 
@@ -161,9 +188,11 @@ docker compose up -d
 docker compose logs -f
 ```
 
-Daqui em diante é automático: o loop roda a cada `RUN_INTERVAL_SECONDS`
-(padrão 2h), e os posts saem no grupo espaçados por `DRIP_INTERVAL_SECONDS`
-(padrão 150s, com jitter) para não parecer rajada de robô.
+Sobem os cinco: bot, Evolution, Postgres, site e Caddy. Daqui em diante é
+automático: o loop roda a cada `RUN_INTERVAL_SECONDS` (padrão 2h), e os posts
+saem no grupo espaçados por `DRIP_INTERVAL_SECONDS` (padrão 150s, com jitter)
+para não parecer rajada de robô. O site fica no ar em `SITE_ADDRESS` — detalhes
+no passo 7.
 
 ### Os primeiros dias
 
@@ -205,12 +234,78 @@ curl -s -H "X-API-Key: $API_SECRET" localhost:8000/stats
 `/stats` e `/run` respondem **503** se `API_SECRET` estiver vazio. É falha
 fechada de propósito: `/run` gasta cota do Gemini e dispara post no grupo.
 
-## 7. Backup
+## 7. O site (landing + vitrine)
 
-Duas coisas insubstituíveis:
+O `docker compose up -d` do passo 5 já subiu `web` e `caddy`. O `web` roda da
+mesma imagem do bot — só troca o comando — e migra o banco do site sozinho
+antes de servir.
+
+**Aponte o DNS antes de subir com domínio.** Um registro A do subdomínio para o
+IP do servidor. O Let's Encrypt valida pelo próprio domínio, e tentativa
+falhada conta no limite semanal dele:
+
+```bash
+dig +short ofertas.seudominio.com.br
+```
+
+Confira se subiu:
+
+```bash
+docker compose logs -f web caddy
+```
+
+```bash
+curl -s https://ofertas.seudominio.com.br/saude/
+```
+
+O `/saude/` devolve os contadores e diz se o banco do bot está acessível — é o
+alvo do healthcheck e serve para monitor externo.
+
+### Cadastrar o grupo do WhatsApp
+
+O site não inventa link de convite: sem grupo cadastrado, o botão principal
+vira "avise-me quando abrir vaga". Crie o acesso ao admin:
+
+```bash
+docker compose exec web python web/manage.py createsuperuser
+```
+
+Depois entre em `https://ofertas.seudominio.com.br/admin/` e cadastre o grupo
+com o link `chat.whatsapp.com` gerado dentro do próprio grupo. `capacidade` é o
+limite do WhatsApp (1024) e `membros` é quanto já entrou — é essa razão que
+desenha a barra de ocupação e marca o grupo como lotado. Hoje esse número é
+manual: quando um grupo encher, atualize aqui e cadastre o próximo.
+
+### Imagem do preview de link
+
+É o que decide o clique quando alguém cola o link no WhatsApp. A ordem é:
+arte própria em `web/vitrine/static/vitrine/img/social.jpg`, se existir; senão
+a foto do produto em destaque; senão o pôster do vídeo. Para usar arte própria,
+salve um **JPG 1200×630, abaixo de 300 KB** nesse caminho e rebuilde — acima
+disso o WhatsApp desiste de baixar e mostra o link sem imagem.
+
+Depois de qualquer troca de texto ou imagem de preview, o WhatsApp guarda o
+que já baixou por horas. Para conferir o resultado na hora, use o depurador do
+Facebook (`developers.facebook.com/tools/debug`) e peça "Scrape Again".
+
+### Atualizar o site
+
+```bash
+docker compose up -d --build web
+```
+
+O `collectstatic` roda no build, com hash no nome de cada arquivo. Por isso
+navegador nenhum serve CSS velho depois do deploy — e por isso o build é
+obrigatório: `up -d` sozinho reaproveita a imagem antiga.
+
+## 8. Backup
+
+Três coisas insubstituíveis:
 
 - `./data/promos.db` — o histórico de preço. Perdeu, volta a esperar 7 dias de
   observação antes de postar de novo.
+- `./data/site.db` — grupos cadastrados e e-mails de quem pediu aviso de vaga.
+  Grupo se recadastra em minutos; a lista de e-mails, não.
 - Volumes `evolution_instances` e `evolution_postgres` — a sessão pareada.
   Perdeu, repareia o chip.
 
@@ -224,7 +319,7 @@ docker run --rm -v evolution_postgres:/v -v $(pwd):/out alpine tar czf /out/evol
 
 Coloque isso num cron diário e mande para fora da máquina.
 
-## 8. Operação
+## 9. Operação
 
 Atualizar:
 

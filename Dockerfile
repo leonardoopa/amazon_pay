@@ -17,6 +17,18 @@ RUN pip install --no-cache-dir --no-deps -e .
 
 COPY watchlist.json ./
 
+# O site (landing + vitrine) roda da mesma imagem que o bot: mesmo Python,
+# mesmas deps, um build so. O que muda e o comando -- `serve` para o bot,
+# gunicorn para o site.
+COPY web ./web
+
+# Estaticos resolvidos em build, com hash no nome. Assim o container sobe
+# pronto e um deploy novo nunca serve CSS velho de cache. As duas variaveis
+# existem so para o settings importar aqui: em runtime valem as do .env, e
+# nada disso fica gravado na imagem.
+RUN DJANGO_DEBUG=0 DJANGO_SECRET_KEY=build DJANGO_ALLOWED_HOSTS=build \
+    python web/manage.py collectstatic --noinput --clear
+
 # O banco vive num volume; o app cria o diretorio se faltar.
 RUN mkdir -p /app/data
 

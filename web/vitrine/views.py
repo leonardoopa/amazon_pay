@@ -70,9 +70,7 @@ def _quando(iso: str | None) -> datetime | None:
 def _numeros() -> dict:
     """Contadores da prova social. Só números reais — nada inflado."""
     produtos = _seguro(lambda: Produto.objects.count(), 0)
-    observacoes = _seguro(
-        lambda: HistoricoPreco.objects.using("promos").count(), 0
-    )
+    observacoes = _seguro(lambda: HistoricoPreco.objects.using("promos").count(), 0)
     enviados = _seguro(lambda: Post.objects.publicados().count(), 0)
     economia = 0.0
     for post in _seguro(lambda: list(Post.objects.publicados()[:500]), []):
@@ -164,6 +162,7 @@ def home(request):
     ofertas = _ofertas()
     # Uma para o topo e três para a vitrine que rola.
     destaques = _com_curva(ofertas, 4)
+    destaque = destaques[0] if destaques else None
     return render(
         request,
         "vitrine/home.html",
@@ -171,14 +170,30 @@ def home(request):
             "grupos": grupos,
             "grupo_aberto": next((g for g in grupos if not g.lotado), None),
             "ofertas": ofertas,
-            "destaque": destaques[0] if destaques else None,
+            "destaque": destaque,
             "vitrine": destaques[1:4] or destaques[:3],
             "numeros": _numeros(),
             "form": InscricaoForm(),
             "janela_dias": JANELA_DIAS,
+            # No preview do link, foto de produto real com preço convence mais
+            # que arte genérica. Sem destaque, o context processor entra com a
+            # imagem padrão.
+            "og_imagem": (
+                _absoluta(request, destaque["produto"].image_url) if destaque else None
+            ),
+            "og_imagem_alt": destaque["produto"].title if destaque else None,
             **_cinema(),
         },
     )
+
+
+def _absoluta(request, url: str | None) -> str | None:
+    """Deixa a URL pronta para meta tag: absoluta, com esquema e domínio.
+
+    `build_absolute_uri` devolve inalterado o que já é absoluto, então serve
+    tanto para o CDN da loja quanto para arquivo nosso.
+    """
+    return request.build_absolute_uri(url) if url else None
 
 
 def oferta(request, external_id: str):
@@ -213,6 +228,7 @@ def oferta(request, external_id: str):
             "dias": len(historico),
             "primeiro_dia": _data(historico[0][0]) if historico else None,
             "grupo_aberto": Grupo.aberto(),
+            "og_imagem": _absoluta(request, produto.image_url),
         },
     )
 
@@ -232,9 +248,7 @@ def inscrever(request):
     form = InscricaoForm(request.POST)
     if form.is_valid():
         form.save()
-        messages.success(
-            request, "Pronto. Você recebe o convite assim que abrir vaga."
-        )
+        messages.success(request, "Pronto. Você recebe o convite assim que abrir vaga.")
     else:
         messages.error(request, "E-mail inválido ou já cadastrado.")
     return redirect("vitrine:home")
