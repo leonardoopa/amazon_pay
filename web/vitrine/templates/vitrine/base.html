@@ -6,10 +6,27 @@
 <title>{% block title %}Comunidade do Desconto{% endblock %}</title>
 <meta name="description" content="{% block description %}Ofertas de verdade, medidas contra o preço histórico. Só avisamos quando o preço cai mesmo — nada de desconto inventado.{% endblock %}">
 
+<link rel="canonical" href="{{ canonical }}">
+
+{% comment %}
+  O link da comunidade circula colado no WhatsApp, e é o preview que decide o
+  clique. `og:url` e `og:image` precisam ser absolutos: nenhum desses leitores
+  resolve caminho relativo em meta tag. A view manda `og_imagem` quando tem
+  algo melhor (a foto do produto em destaque); o resto cai na arte padrão.
+{% endcomment %}
 <meta property="og:type" content="website">
+<meta property="og:locale" content="pt_BR">
 <meta property="og:site_name" content="Comunidade do Desconto">
+<meta property="og:url" content="{{ canonical }}">
 <meta property="og:title" content="{% block og_title %}Comunidade do Desconto{% endblock %}">
 <meta property="og:description" content="{% block og_description %}Ofertas medidas contra o preço histórico dos últimos 60 dias.{% endblock %}">
+{% firstof og_imagem og_imagem_padrao as imagem_preview %}
+{% if imagem_preview %}
+  <meta property="og:image" content="{{ imagem_preview }}">
+  <meta property="og:image:alt" content="{% block og_image_alt %}{% firstof og_imagem_alt "Curva de preço real de um produto monitorado" %}{% endblock %}">
+  {# X/Twitter cai no og:title e og:description; só o formato precisa ser dito. #}
+  <meta name="twitter:card" content="summary_large_image">
+{% endif %}
 {% block og_extra %}{% endblock %}
 
 <link rel="preconnect" href="https://fonts.googleapis.com">

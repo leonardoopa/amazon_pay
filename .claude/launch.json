@@ -3,9 +3,9 @@
   "configurations": [
     {
       "name": "comunidade",
-      "runtimeExecutable": "venv/Scripts/python.exe",
-      "runtimeArgs": ["web/manage.py", "runserver", "8000"],
-      "port": 8000
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["web/manage.py", "runserver", "8002"],
+      "port": 8002
     }
   ]
 }

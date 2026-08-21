@@ -5,7 +5,7 @@
 {% block description %}Curva de preço real dos últimos {{ dias }} dias deste produto, coletada dia a dia.{% endblock %}
 {% block og_title %}{{ produto.title }}{% endblock %}
 {% block og_description %}{% if post %}R$ {{ post.price|floatformat:2 }} — {{ post.discount_pct|floatformat:0 }}% abaixo da mediana histórica.{% else %}Histórico de preço aberto.{% endif %}{% endblock %}
-{% block og_extra %}{% if produto.image_url %}<meta property="og:image" content="{{ produto.image_url }}">{% endif %}{% endblock %}
+{% block og_image_alt %}{{ produto.title }}{% endblock %}
 
 {% block conteudo %}
 <div class="container">
