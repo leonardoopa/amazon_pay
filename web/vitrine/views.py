@@ -111,10 +111,32 @@ def _com_curva(ofertas: list[dict], quantas: int) -> list[dict]:
         curva = montar_curva(precos)
         if curva is None:
             continue
-        escolhidas.append({**item, "curva": curva, "dias": len(precos)})
+        escolhidas.append(
+            {
+                **item,
+                "curva": curva,
+                "dias": len(precos),
+                "video": _video_do_produto(item["external_id"]),
+            }
+        )
         if len(escolhidas) == quantas:
             break
     return escolhidas
+
+
+def _video_do_produto(external_id: str) -> str | None:
+    """Filme do produto, se alguém já produziu um.
+
+    A ligação é pelo nome do arquivo — `MLB46211942.mp4` casa com o produto
+    de mesmo id. Sem tabela de-para no código: quem renderiza um vídeo novo
+    só precisa salvá-lo com o id certo, e ele entra sozinho. Produto sem
+    filme continua com a foto, que é o caso da maioria.
+    """
+    from django.contrib.staticfiles import finders
+    from django.templatetags.static import static as url_estatica
+
+    caminho = f"vitrine/video/produto/{external_id}.mp4"
+    return url_estatica(caminho) if finders.find(caminho) else None
 
 
 def _cinema() -> dict:

@@ -14,6 +14,11 @@
 #
 # Piso obrigatório de 1920 de largura. Se o peso incomodar, a ordem é:
 # encurtar o vídeo, baixar para 40fps, subir o CRF — resolução por último.
+#
+# O piso vale para vídeo que ocupa a tela inteira. Numa caixa contida —
+# a foto da vitrine, por exemplo — 1920 é resolução que ninguém vê e peso
+# que todo mundo baixa; nesse caso passe LARGURA e PISO juntos, para a
+# decisão ficar explícita em vez de o piso ser contornado por acidente.
 
 set -euo pipefail
 
@@ -22,7 +27,12 @@ SAIDA="${2:?uso: scroll_cinema.sh <bruto.mp4> <saida.mp4>}"
 FPS="${FPS:-60}"
 CRF="${CRF:-18}"           # 18 para vídeo full-bleed, 21 para caixa contida
 LARGURA="${LARGURA:-1920}"
+PISO="${PISO:-1920}"
 VELOCIDADE="${VELOCIDADE:-1}"  # 2 = corta a duração pela metade
+# Gerador de vídeo costuma fechar o clipe dissolvendo de volta ao primeiro
+# quadro, para o resultado dar loop. Arrastado pelo scroll isso vira um
+# fantasma duplo nos últimos quadros. DURACAO corta a cauda antes de tudo.
+DURACAO="${DURACAO:-}"
 
 # O winget instala o ffmpeg e só acrescenta ao PATH de shells NOVOS. Aqui a
 # busca usa $HOME em vez de $LOCALAPPDATA porque essa variável chega com
@@ -59,8 +69,14 @@ if [ "$VELOCIDADE" != "1" ]; then
   FILTRO_VELOCIDADE="setpts=PTS/${VELOCIDADE},"
 fi
 
+CORTE=()
+if [ -n "$DURACAO" ]; then
+  echo "==> cortando em ${DURACAO}s (descarta a cauda de loop do gerador)"
+  CORTE=(-t "$DURACAO")
+fi
+
 echo "==> 1/2 interpolando para ${FPS}fps (~75s por 5s de vídeo)"
-ffmpeg -y -i "$BRUTO" \
+ffmpeg -y "${CORTE[@]}" -i "$BRUTO" \
   -vf "${FILTRO_VELOCIDADE}minterpolate=fps=${FPS}:mi_mode=mci:mc_mode=aobmc:vsbmc=1:me_mode=bidir:search_param=32" \
   -c:v libx264 -crf 16 -preset medium -an "$TEMP"
 
@@ -88,9 +104,13 @@ if [ "$TOTAL" != "$CHAVES" ]; then
   exit 1
 fi
 
-LARG_REAL=$(ffmpeg -i "$SAIDA" -hide_banner 2>&1 | grep -oE '[0-9]{3,}x[0-9]{3,}' | head -1 | cut -dx -f1)
-if [ "${LARG_REAL:-0}" -lt 1920 ]; then
-  echo "    FALHOU: largura ${LARG_REAL} abaixo do piso de 1920." >&2
+# ffprobe, e não `ffmpeg -i`: chamado sem arquivo de saída o ffmpeg sai com
+# código 1 mesmo tendo lido tudo, e sob `pipefail` isso derruba o script
+# depois de o vídeo já estar pronto — falha que parece do encode e não é.
+LARG_REAL=$(ffprobe -v error -select_streams v:0 \
+  -show_entries stream=width -of csv=p=0 "$SAIDA")
+if [ "${LARG_REAL:-0}" -lt "$PISO" ]; then
+  echo "    FALHOU: largura ${LARG_REAL} abaixo do piso de ${PISO}." >&2
   exit 1
 fi
 

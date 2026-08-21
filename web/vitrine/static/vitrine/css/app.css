@@ -519,6 +519,13 @@ a { color: inherit; }
 }
 .pilula-info { min-width: 0; }
 .pilula-nome {
+  /* `display: block` não é enfeite: `overflow` e `text-overflow` não se
+     aplicam a elemento inline não-substituído, e estes `span` vêm inline
+     do gabarito. Sem isto as três declarações abaixo são inertes, o nome
+     inteiro é pintado fora da pílula e invade a vizinha — 470px de texto
+     numa pílula de 292px. Aparece só quando o mouse pausa a esteira, que
+     é quando dá tempo de ler. */
+  display: block;
   margin: 0 0 3px; font-size: 13px; color: var(--texto-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -624,6 +631,10 @@ a { color: inherit; }
 .palco-produto {
   position: relative; display: grid; place-items: center;
   aspect-ratio: 1 / 1; width: 100%;
+  /* A linha vem do `aspect-ratio`, nunca do que está dentro. Foto do ML
+     chega em qualquer proporção, e uma retrato esticava a linha para além
+     do quadrado — o palco deixava de ser quadrado por causa do conteúdo. */
+  grid-template-rows: minmax(0, 1fr);
 }
 /* Brilho atrás do produto: dá volume sem precisar de sombra falsa. */
 .palco-produto::before {
@@ -724,23 +735,24 @@ a { color: inherit; }
    Duas medidas que precisam andar juntas:
    - o quadro é do tamanho do conteúdo, não da janela. Fixar 100vh num
      conteúdo de ~460px produz meia tela preta em volta;
-   - cada marcador vale 80vh, não 100vh. Com 100vh, três produtos custavam
-     quatro telas de rolagem — 38% da página inteira. */
+   - a altura do marcador É a duração da cena, do mesmo jeito que a altura
+     da seção é a duração do vídeo do topo. */
 @media (min-width: 861px) {
   .js-vitrine .vitrine { padding: 0; }
   .js-vitrine .vitrine-quadro {
     position: sticky; top: 0; overflow: hidden;
     height: 100svh;
     /* Nunca mais alto que o conteúdo precisa. */
-    max-height: 780px;
+    max-height: 920px;
     min-height: 560px;
   }
-  /* A altura precisa descer a cadeia inteira: quadro > palco > item >
-     foto. Se um elo ficar em `auto`, o `height: 100%` do item vira nada e
-     a foto volta a encolher. */
   .js-vitrine .vitrine-quadro { place-items: stretch; }
+  /* Mais largo que o resto da página de propósito. Esta seção é o produto
+     em tamanho grande; espremê-la na mesma medida de um bloco de texto
+     desperdiça a única tela em que a foto e o filme são o argumento. */
   .js-vitrine .vitrine-palco {
     position: relative; display: block; height: 100%; justify-self: center;
+    width: min(100% - 48px, 1320px);
   }
 
   /* Sem `transition` aqui: o script escreve opacity e transform a cada
@@ -755,20 +767,41 @@ a { color: inherit; }
      não pisca vazia. */
   .js-vitrine .vitrine-item:first-child { opacity: 1; visibility: visible; }
 
-  /* A composição ocupa a altura do quadro e a foto puxa a altura: é ela
-     que tira o vazio de cima e de baixo. Sem isto sobrava meia tela preta
-     em volta de um item de ~460px dentro de um quadro de 900px. */
   .js-vitrine .vitrine-item { height: 100%; align-items: center; }
+  /* Quadrado de verdade, com o lado saindo da largura da coluna.
+
+     Antes vinham `height: 100%` e `max-width: 100%` na mesma regra: a
+     altura era imposta pelo quadro, a largura era cortada pela coluna, e
+     entre as duas o `aspect-ratio` não tinha o que decidir. O palco saía
+     502x603 e o filme dentro dele virava um recorte retrato de um vídeo
+     deitado — cortava metade da cena para caber. Agora só a largura manda,
+     e o `78svh` é o teto para tela baixa. */
   .js-vitrine .vitrine-item .palco-produto {
-    align-self: stretch; height: 100%; max-height: 72svh;
-    width: auto; aspect-ratio: 1; max-width: 100%; margin-inline: auto;
+    align-self: center; max-width: none;
+    width: min(100%, 78svh); aspect-ratio: 1;
+    /* A linha não pode crescer com o conteúdo. Foto do ML vem em qualquer
+       proporção, e uma retrato de 393x500 esticava a linha para 459px num
+       palco de 440 — o quadrado deixava de ser quadrado por causa do que
+       estava dentro dele. Com `minmax(0, 1fr)` a altura vem do
+       `aspect-ratio`, e é contra ela que o `height: 82%` da foto resolve. */
+    grid-template-rows: minmax(0, 1fr);
+    margin-inline: auto;
   }
 
   .js-vitrine .vitrine-pontos {
     position: absolute; right: 0; top: 50%; translate: 0 -50%; z-index: 3;
     display: grid; gap: 10px;
   }
-  .js-vitrine .vitrine-marca { display: block; height: 80svh; }
+  /* 80svh era a medida de quando a vitrine mostrava foto parada: passar
+     rápido não custava nada, porque não havia nada acontecendo. Com filme
+     no lugar da foto, esse curso fazia o clipe inteiro caber em pouco mais
+     de uma tela de rolagem — um passar de dedo queimava a cena.
+
+     A conta que importa é px de rolagem por segundo de vídeo, e o alvo é o
+     mesmo do vídeo do topo: ~720. Abaixo disso o filme corre na frente do
+     dedo. O preço é a vitrine ocupar ~11 telas — é a seção mais longa da
+     página, e é de propósito: é ela que carrega o argumento. */
+  .js-vitrine .vitrine-marca { display: block; height: 350svh; }
 }
 
 .vitrine-ponto {
@@ -776,6 +809,42 @@ a { color: inherit; }
   background: var(--borda-clara); transition: all var(--transicao);
 }
 .vitrine-ponto.ativo { background: var(--verde); height: 26px; border-radius: 99px; }
+
+/* ---------- filme do produto ---------- */
+
+/* O vídeo cobre exatamente os mesmos 82% que a foto ocupa, sobreposto a
+   ela. Duas razões para não deixá-lo maior: a troca foto → filme fica sem
+   salto de tamanho, e o brilho de trás continua enquadrando o produto do
+   mesmo jeito nos itens que só têm foto.
+
+   `object-fit: cover` recorta o 16:9 num quadrado. É de propósito — o
+   assunto está centrado nos dois filmes, e um 16:9 encaixotado num palco
+   quadrado deixaria duas tarjas pretas onde deveria haver produto. */
+/* Ocupa o palco inteiro, não os 82% da foto. A foto é recorte em fundo
+   branco e precisa de ar em volta para não virar mancha; o filme tem cena
+   própria, e o ar em volta dele é só quadro desperdiçado. */
+.palco-filme {
+  position: absolute; z-index: 2;
+  width: 100%; height: 100%;
+  object-fit: cover; border-radius: 26px;
+  border: 1px solid var(--borda-clara);
+  box-shadow: 0 30px 60px -22px rgba(0, 0, 0, .78);
+  opacity: 0; transition: opacity 520ms ease;
+}
+.palco-com-filme img,
+.palco-com-filme::after { transition: opacity 520ms ease; }
+
+/* Uma classe só, no contêiner, comanda a troca inteira. Ela entra quando o
+   arquivo já tem duração conhecida — antes disso o vídeo é um retângulo
+   vazio, e revelá-lo apagaria a foto que está servindo de pôster.
+
+   A foto sai porque um vídeo com fundo próprio deixa borda fantasma nos
+   cantos arredondados quando há recorte aceso por trás. E o `::after`, que
+   é a sombra de contato de um recorte flutuando, sai porque o filme não
+   flutua: ele tem chão dentro do próprio quadro. */
+.palco-com-filme.filme-pronto .palco-filme { opacity: 1; }
+.palco-com-filme.filme-pronto img { opacity: 0; }
+.palco-com-filme.filme-pronto::after { opacity: 0; }
 
 /* ---------- cartões de oferta com imagem dominante ---------- */
 
