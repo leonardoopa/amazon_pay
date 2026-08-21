@@ -3,6 +3,10 @@
 
 {% block conteudo %}
 
+{% if cinema_video %}
+  {% include "vitrine/_scroll_cinema.html" %}
+{% endif %}
+
 <section class="hero">
   <div class="container hero-grid">
     <div>
@@ -140,9 +144,20 @@
 
       {% for item in vitrine %}
         <article class="vitrine-item" data-vitrine-item>
-          <div class="palco-produto">
+          {% comment %}
+            Quando existe filme do produto, a foto vira o pôster dele: fica
+            embaixo, aparece na hora, e o vídeo entra por cima só depois de
+            carregado. Assim nunca há retângulo vazio esperando a rede, e
+            sem JavaScript o visitante continua vendo o produto.
+          {% endcomment %}
+          <div class="palco-produto{% if item.video %} palco-com-filme{% endif %}">
             {% if item.produto.image_url %}
               <img src="{{ item.produto.image_url }}" alt="{{ item.produto.title }}" loading="lazy">
+            {% endif %}
+            {% if item.video %}
+              <video class="palco-filme" data-vitrine-video
+                     data-fonte="{{ item.video }}"
+                     muted playsinline preload="none" aria-hidden="true"></video>
             {% endif %}
           </div>
 

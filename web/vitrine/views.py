@@ -111,10 +111,52 @@ def _com_curva(ofertas: list[dict], quantas: int) -> list[dict]:
         curva = montar_curva(precos)
         if curva is None:
             continue
-        escolhidas.append({**item, "curva": curva, "dias": len(precos)})
+        escolhidas.append(
+            {
+                **item,
+                "curva": curva,
+                "dias": len(precos),
+                "video": _video_do_produto(item["external_id"]),
+            }
+        )
         if len(escolhidas) == quantas:
             break
     return escolhidas
+
+
+def _video_do_produto(external_id: str) -> str | None:
+    """Filme do produto, se alguém já produziu um.
+
+    A ligação é pelo nome do arquivo — `MLB46211942.mp4` casa com o produto
+    de mesmo id. Sem tabela de-para no código: quem renderiza um vídeo novo
+    só precisa salvá-lo com o id certo, e ele entra sozinho. Produto sem
+    filme continua com a foto, que é o caso da maioria.
+    """
+    from django.contrib.staticfiles import finders
+    from django.templatetags.static import static as url_estatica
+
+    caminho = f"vitrine/video/produto/{external_id}.mp4"
+    return url_estatica(caminho) if finders.find(caminho) else None
+
+
+def _cinema() -> dict:
+    """Localiza o vídeo do Scroll Cinema, se ele já existir.
+
+    A seção só entra quando o arquivo está lá. Meia tela preta com um
+    spinner eterno seria pior do que não ter o efeito, e o hero normal
+    continua funcionando sozinho.
+    """
+    from django.contrib.staticfiles import finders
+    from django.templatetags.static import static as url_estatica
+
+    if finders.find("vitrine/video/hero.mp4") is None:
+        return {"cinema_video": None, "cinema_poster": None}
+
+    poster = finders.find("vitrine/video/poster.jpg")
+    return {
+        "cinema_video": url_estatica("vitrine/video/hero.mp4"),
+        "cinema_poster": url_estatica("vitrine/video/poster.jpg") if poster else None,
+    }
 
 
 def home(request):
@@ -134,6 +176,7 @@ def home(request):
             "numeros": _numeros(),
             "form": InscricaoForm(),
             "janela_dias": JANELA_DIAS,
+            **_cinema(),
         },
     )
 
