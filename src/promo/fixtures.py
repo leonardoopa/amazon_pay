@@ -29,7 +29,7 @@ CATALOG = [
     # (id, titulo, preco normal, preco promocional, frete gratis, imagem)
     (
         "MLB46196451",
-        "Monitor Gamer Samsung Odyssey G5 32\" QHD 165Hz 1ms HDMI DisplayPort",
+        'Monitor Gamer Samsung Odyssey G5 32" QHD 165Hz 1ms HDMI DisplayPort',
         1899.0,
         1349.0,
         True,
@@ -61,7 +61,7 @@ CATALOG = [
     ),
     (
         "MLB59090080",
-        "Smart TV 43\" AOC LED Roku Full HD Wi-Fi 60Hz HDMI USB",
+        'Smart TV 43" AOC LED Roku Full HD Wi-Fi 60Hz HDMI USB',
         1699.0,
         1399.0,
         False,
