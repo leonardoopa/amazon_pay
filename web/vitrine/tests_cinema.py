@@ -143,7 +143,7 @@ class FilmeDoProdutoTests(TestCase):
             Path(__file__).resolve().parent / "templates" / "vitrine" / "home.html"
         ).read_text(encoding="utf-8")
         self.assertIn(marcacao, gabarito)
-        self.assertIn('video.src = video.dataset.fonte', JS_SCROLL)
+        self.assertIn("video.src = video.dataset.fonte", JS_SCROLL)
         self.assertIn('video.preload = "auto"', JS_SCROLL)
 
     def test_os_filmes_baixam_em_fila(self):
