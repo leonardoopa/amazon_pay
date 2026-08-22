@@ -52,7 +52,9 @@ class CurvaTests(TestCase):
 
 class GrupoTests(TestCase):
     def test_aberto_devolve_o_primeiro_com_vaga(self):
-        Grupo.objects.create(nome="1", convite="https://x", membros=10, capacidade=10, ordem=0)
+        Grupo.objects.create(
+            nome="1", convite="https://x", membros=10, capacidade=10, ordem=0
+        )
         vago = Grupo.objects.create(
             nome="2", convite="https://y", membros=3, capacidade=10, ordem=1
         )
