@@ -32,6 +32,16 @@ class Grupo(models.Model):
     )
     membros = models.PositiveIntegerField(default=0)
     capacidade = models.PositiveIntegerField(default=1024)
+    jid = models.CharField(
+        "JID do WhatsApp",
+        max_length=80,
+        blank=True,
+        help_text=(
+            "Termina em @g.us. Sai do `promo wa-groups`. Com ele preenchido, o "
+            "comando `sincronizar_grupos` atualiza o número de membros sozinho."
+        ),
+    )
+    membros_atualizados_em = models.DateTimeField(null=True, blank=True)
     ativo = models.BooleanField(default=True)
     ordem = models.PositiveSmallIntegerField(
         default=0, help_text="Menor primeiro. Define qual grupo recebe as entradas."
@@ -84,6 +94,48 @@ class Inscrito(models.Model):
 
     def __str__(self) -> str:
         return self.email
+
+
+class Clique(models.Model):
+    """Um clique no botão de entrar no grupo.
+
+    O site existe para uma coisa: levar gente para o grupo. Antes disso o
+    botão apontava direto para o `chat.whatsapp.com`, e o número de cliques
+    não existia em lugar nenhum — não havia como saber se a página convertia,
+    nem qual chamada convertia mais. Uma linha por clique responde as duas
+    perguntas e ainda permite trocar o convite sem editar template.
+
+    Uma linha por clique, e não um contador: contador diz "500" e não diz de
+    onde. `origem` é o que separa o botão do topo do botão do fim da página.
+    """
+
+    ORIGENS = [
+        ("topo", "barra do topo"),
+        ("cinema", "filme de abertura"),
+        ("hero", "chamada principal"),
+        ("grupos", "cartão do grupo"),
+        ("oferta", "página de oferta"),
+        ("desconhecida", "sem origem declarada"),
+    ]
+
+    grupo = models.ForeignKey(
+        "Grupo",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="cliques",
+        db_constraint=False,
+    )
+    origem = models.CharField(max_length=20, choices=ORIGENS, default="desconhecida")
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-criado_em"]
+        verbose_name_plural = "cliques"
+        indexes = [models.Index(fields=["criado_em"])]
+
+    def __str__(self) -> str:
+        return f"{self.origem} em {self.criado_em:%d/%m/%Y %H:%M}"
 
 
 # ---------- Espelho do banco do bot (somente leitura) ----------

@@ -1,5 +1,4 @@
 {% extends "vitrine/base.html" %}
-{% load humanize %}
 
 {% block title %}{{ produto.title }} — Comunidade do Desconto{% endblock %}
 {% block description %}{% if demonstracao %}Exemplo de curva de preço — série de demonstração, não coletada.{% else %}Curva de preço real dos últimos {{ dias }} dias deste produto, coletada dia a dia.{% endif %}{% endblock %}
@@ -90,7 +89,7 @@
           Ver na loja
         </a>
         {% if grupo_aberto %}
-          <a class="botao botao-fantasma" href="{{ grupo_aberto.convite }}" target="_blank" rel="noopener">
+          <a class="botao botao-fantasma" href="{% url 'vitrine:entrar' %}?de=oferta" target="_blank" rel="noopener">
             Receber as próximas
           </a>
         {% endif %}

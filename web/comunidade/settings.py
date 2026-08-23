@@ -141,8 +141,8 @@ DATABASES = {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": PROJECT_ROOT / os.getenv("DJANGO_DB_PATH", "data/site.db"),
         # Vários workers do gunicorn escrevendo inscrição no mesmo arquivo:
-        # esperar pelo lock é melhor do que devolver 500 a quem deixou o
-        # e-mail.
+        # WAL para leitor e escritor não se bloquearem, e espera pelo lock em
+        # vez de 500 na cara de quem acabou de deixar o e-mail.
         "OPTIONS": {"timeout": 20, "init_command": "PRAGMA journal_mode=WAL;"},
     },
     # Banco do bot, montado somente para leitura. O caminho acompanha o
@@ -194,6 +194,17 @@ LANGUAGE_CODE = "pt-br"
 TIME_ZONE = "America/Sao_Paulo"
 
 USE_I18N = True
+
+# "R$ 1349,00" lê como quatro algarismos soltos; num site cujo argumento é
+# preço, o separador de milhar é legibilidade, não enfeite. Com isto ligado,
+# `floatformat` já sai como "R$ 1.349,00" no locale pt-BR e o `intcomma` do
+# humanize deixa de ser necessário (ele usa vírgula e brigaria com a vírgula
+# decimal, produzindo "1,349,00").
+#
+# Cuidado ao ler número em atributo HTML: `data-contar="{{ n }}"` também é
+# localizado, e `Number("1.234")` em JavaScript dá 1,234. Onde o valor é lido
+# por script, o template usa `{% localize off %}`.
+USE_THOUSAND_SEPARATOR = True
 
 USE_TZ = True
 

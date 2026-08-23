@@ -16,6 +16,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest import mock
 
+from django.core.cache import cache
 from django.template.loader import render_to_string
 from django.test import TestCase
 from django.urls import reverse
@@ -97,22 +98,33 @@ class DestaqueTests(TestCase):
 class ContadoresTests(TestCase):
     databases = {"default", "promos"}
 
+    def setUp(self):
+        # Os contadores são guardados em cache por um minuto. Sem limpar, o
+        # teste leria o número que outro teste deixou lá.
+        cache.clear()
+
     def test_contadores_de_oferta_usam_so_o_medido(self):
         """Os rótulos na tela dizem "aprovadas no filtro" e "abaixo da
         mediana". Repasse não passou por filtro nosso."""
         medidos = mock.Mock()
         medidos.count.return_value = 3
-        medidos.__getitem__ = lambda _s, _k: [
-            _post(True, 100.0, 150.0),
-            _post(True, 200.0, 260.0),
-        ]
+        # A economia sai de um SUM no banco, não de objetos carregados aqui.
+        medidos.filter.return_value.aggregate.return_value = {"total": 110.0}
         gerente = mock.Mock()
         gerente.medidos.return_value = medidos
 
+        # Os outros dois contadores precisam devolver número de verdade: o
+        # resultado vai para o cache, e cache guarda o valor por pickle — um
+        # Mock ali estoura na serialização, não na asserção.
+        catalogo = mock.Mock()
+        catalogo.objects.exclude.return_value.count.return_value = 7
+        historico = mock.Mock()
+        historico.objects.using.return_value.exclude.return_value.count.return_value = 9
+
         with (
             mock.patch.object(views, "Post", SimpleNamespace(objects=gerente)),
-            mock.patch.object(views, "Produto", mock.Mock()),
-            mock.patch.object(views, "HistoricoPreco", mock.Mock()),
+            mock.patch.object(views, "Produto", catalogo),
+            mock.patch.object(views, "HistoricoPreco", historico),
         ):
             numeros = views._numeros()
 
