@@ -2,7 +2,7 @@
 {% load humanize %}
 
 {% block title %}{{ produto.title }} — Comunidade do Desconto{% endblock %}
-{% block description %}Curva de preço real dos últimos {{ dias }} dias deste produto, coletada dia a dia.{% endblock %}
+{% block description %}{% if demonstracao %}Exemplo de curva de preço — série de demonstração, não coletada.{% else %}Curva de preço real dos últimos {{ dias }} dias deste produto, coletada dia a dia.{% endif %}{% endblock %}
 {% block og_title %}{{ produto.title }}{% endblock %}
 {% block og_description %}{% if post %}R$ {{ post.price|floatformat:2 }} — {{ post.discount_pct|floatformat:0 }}% abaixo da mediana histórica.{% else %}Histórico de preço aberto.{% endif %}{% endblock %}
 {% block og_image_alt %}{{ produto.title }}{% endblock %}
@@ -30,6 +30,20 @@
       {% endif %}
 
       <ul class="detalhe-lista">
+        {% comment %}
+          Produto de demonstração não teve preço coletado. A página inteira
+          afirma o contrário — "coletado por nós", "menor preço desde que
+          começamos a monitorar" — e essas frases saem ao lado de um link de
+          afiliado para um anúncio real. Dizer o que ele é custa uma linha;
+          deixar passar custa a única coisa que o site vende.
+        {% endcomment %}
+        {% if demonstracao %}
+          <li>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+            <span><strong>Produto de demonstração.</strong> A série abaixo é um
+              exemplo de como a curva fica — estes preços não foram coletados.</span>
+          </li>
+        {% else %}
         <li>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
           <span>{{ dias }} dia{{ dias|pluralize }} de preço coletado por nós, um registro por dia.</span>
@@ -51,6 +65,7 @@
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
             <span>Monitorando desde {{ primeiro_dia|date:"d/m/Y" }}.</span>
           </li>
+        {% endif %}
         {% endif %}
       </ul>
 
@@ -75,7 +90,7 @@
     <div class="painel" style="margin-top:28px">
       <div class="painel-topo">
         <span class="painel-rotulo">Curva de preço — {{ dias }} dias</span>
-        <span class="painel-rotulo">coletado por nós</span>
+        <span class="painel-rotulo">{% if demonstracao %}preços de exemplo{% else %}coletado por nós{% endif %}</span>
       </div>
       {% include "vitrine/_grafico.html" %}
       <div class="grafico-legenda">
