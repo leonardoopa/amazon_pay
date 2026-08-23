@@ -50,6 +50,15 @@ class Command(BaseCommand):
                 "enviada no feed nem inflar o contador de ofertas aprovadas."
             ),
         )
+        parser.add_argument(
+            "--dias",
+            type=int,
+            default=60,
+            help=(
+                "Tamanho da série de preço semeada. É o número que a vitrine "
+                "mostra na etiqueta do card (padrão: 60)."
+            ),
+        )
 
     def handle(self, *args, **options):
         from promo import fixtures
@@ -65,13 +74,21 @@ class Command(BaseCommand):
             return
 
         if options["so_catalogo"]:
+            dias = options["dias"]
             init_db()
             with connect() as conn:
-                criados = fixtures.seed(conn, days=60)
+                # Limpa antes de semear: o seed faz upsert por dia, então
+                # rodar de novo com uma série menor deixaria os pontos velhos
+                # no banco e a curva continuaria do tamanho anterior.
+                fixtures.clear(conn)
+                # `seed(days=N)` grava N dias no preço normal e mais um, hoje,
+                # com a queda. Descontar 1 aqui faz `--dias` valer o tamanho da
+                # série que aparece no site, que é o que se quer dizer.
+                criados = fixtures.seed(conn, days=max(1, dias - 1))
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"{criados} produtos com 60 dias de histórico. Sem grupos e "
-                    "sem posts: o feed e os contadores continuam só com o real."
+                    f"{criados} produtos com {dias} dias de histórico. Sem grupos "
+                    "e sem posts: o feed e os contadores continuam só com o real."
                 )
             )
             return
