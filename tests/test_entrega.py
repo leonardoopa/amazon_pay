@@ -9,22 +9,26 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from promo.config import post_max_age_minutes  # noqa: E402
 from promo.db import (  # noqa: E402
     MAX_SEND_ATTEMPTS,
     SCHEMA,
     affiliate_link,
     create_post,
+    expire_stale_posts,
     last_post,
     mark_post_failed,
     mark_post_sent,
     pending_posts,
     products_missing_link,
+    now,
     record_offer,
     save_affiliate_link,
 )
@@ -230,3 +234,85 @@ def test_janela_fechada_nao_e_mascarada_pelo_fallback():
         wa.send_post("Oferta boa", "https://http2.mlstatic.com/foto-O.jpg")
 
     assert wa.enviados == []
+
+
+# ---------- prova medida x repasse da loja ----------
+
+
+def test_post_nasce_marcado_como_verificado():
+    """O caminho normal e a nossa medicao contra a mediana."""
+    conn = make_conn()
+    record_offer(conn, make_offer())
+    post_id = create_post(conn, PRODUCT, 100.0, 150.0, 33.0, "texto", None)
+
+    linha = conn.execute(
+        "SELECT verified FROM posts WHERE id = ?", (post_id,)
+    ).fetchone()
+    assert linha["verified"] == 1
+
+
+def test_repasse_da_vitrine_fica_gravado_como_nao_verificado():
+    """`ScoredOffer.verified` existia so em memoria e morria no INSERT. O site
+    lia repasse do "de/por" da loja como desconto medido por nos -- e chamava
+    o preco riscado do anuncio de "media"."""
+    conn = make_conn()
+    record_offer(conn, make_offer())
+    post_id = create_post(
+        conn, PRODUCT, 100.0, 150.0, 33.0, "texto", None, verified=False
+    )
+
+    linha = conn.execute(
+        "SELECT verified FROM posts WHERE id = ?", (post_id,)
+    ).fetchone()
+    assert linha["verified"] == 0
+
+
+# ---------- preco velho sai da fila ----------
+
+
+def test_post_recente_continua_na_fila():
+    conn = make_conn()
+    record_offer(conn, make_offer())
+    add_post(conn)
+
+    assert expire_stale_posts(conn) == []
+    assert len(pending_posts(conn)) == 1
+
+
+def test_post_velho_sai_da_fila_como_expired():
+    """Preco no texto e medicao com hora. Uma hora depois pode nao valer mais,
+    e mandar valor que o link nao confirma queima a confianca que a medicao
+    inteira existe para construir."""
+    conn = make_conn()
+    record_offer(conn, make_offer())
+    post_id = add_post(conn)
+    antigo = (now() - timedelta(minutes=post_max_age_minutes() + 1)).isoformat()
+    conn.execute("UPDATE posts SET created_at = ? WHERE id = ?", (antigo, post_id))
+
+    expirados = expire_stale_posts(conn)
+
+    assert [linha["id"] for linha in expirados] == [post_id]
+    assert pending_posts(conn) == []
+    linha = conn.execute(
+        "SELECT status, error FROM posts WHERE id = ?", (post_id,)
+    ).fetchone()
+    assert linha["status"] == "expired"
+    assert "velho" in linha["error"] or "min" in linha["error"]
+
+
+def test_expiracao_nao_toca_no_que_ja_foi_enviado():
+    """Post enviado e historico: a vitrine do site le dele."""
+    conn = make_conn()
+    record_offer(conn, make_offer())
+    post_id = add_post(conn)
+    mark_post_sent(conn, post_id)
+    antigo = (now() - timedelta(days=30)).isoformat()
+    conn.execute("UPDATE posts SET created_at = ? WHERE id = ?", (antigo, post_id))
+
+    assert expire_stale_posts(conn) == []
+    assert (
+        conn.execute("SELECT status FROM posts WHERE id = ?", (post_id,)).fetchone()[
+            "status"
+        ]
+        == "sent"
+    )

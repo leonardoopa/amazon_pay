@@ -203,6 +203,21 @@ confiar na mediana. Nesse período vale rodar só a coleta:
 docker compose run --rm amazon_pay daemon --collect-only
 ```
 
+Enquanto a mediana não amadurece, o bot também repassa oferta da vitrine do
+Mercado Livre para o grupo não ficar mudo. Nesse repasse o desconto é contra o
+preço riscado da loja, não contra medição nossa — o post vai marcado
+(`verified=0`), e o site trata os dois diferente: repasse nunca vira produto em
+destaque, não entra na esteira, não conta na economia somada, e o card dele diz
+**“preço da loja”** em vez de “média”. `promo stats` separa os dois em
+`posts_sent` e `posts_sent_verified`.
+
+**Post velho é descartado.** O texto de cada post carrega um preço com hora, e
+o gotejamento pode segurá-lo na fila. Passando de `POST_MAX_AGE_MINUTES`
+(padrão 60), ele sai como `expired` em vez de ir para o grupo — mandar um valor
+que o link não confirma mais custa mais do que a oferta perdida. Se
+`posts_expired` no `/stats` crescer, a coleta está produzindo mais rápido do
+que a entrega drena: baixe `MAX_OFFERS_PER_RUN` ou `DRIP_INTERVAL_SECONDS`.
+
 ## 6. A API
 
 Fica em `127.0.0.1:8000` no servidor. Para acessar de fora, túnel SSH:
@@ -213,8 +228,8 @@ ssh -L 8000:127.0.0.1:8000 usuario@IP_DO_SERVIDOR
 
 | Endpoint | Auth | O quê |
 |---|---|---|
-| `GET /health` | aberto | Estado do banco, do worker e da última rodada |
-| `GET /stats` | `X-API-Key` | Mesmas contagens do `promo stats`, em JSON |
+| `GET /health` | aberto | Estado do banco, do worker e se a última rodada falhou |
+| `GET /stats` | `X-API-Key` | Contagens do `promo stats` e o texto do último erro |
 | `POST /run` | `X-API-Key` | Adianta uma rodada fora do intervalo |
 | `GET /docs` | aberto | Swagger UI |
 
@@ -222,6 +237,11 @@ O `/health` é aberto de propósito — é ele que o healthcheck do compose
 consulta, e não devolve segredo nenhum. Responde **503** quando o banco não
 abre ou quando o worker deveria estar vivo e não está, então serve direto como
 alvo de um monitor externo (UptimeRobot, Healthchecks.io).
+
+Ele diz **se** a última rodada falhou (`last_run_failed`), não o quê. Texto de
+exceção carrega URL interna, caminho de arquivo e às vezes o JID do grupo, e
+num endpoint aberto isso é reconhecimento de graça. O texto sai no `/stats`,
+que exige a chave, e no log do container.
 
 ```bash
 curl -s localhost:8000/health
@@ -276,6 +296,19 @@ limite do WhatsApp (1024) e `membros` é quanto já entrou — é essa razão qu
 desenha a barra de ocupação e marca o grupo como lotado. Hoje esse número é
 manual: quando um grupo encher, atualize aqui e cadastre o próximo.
 
+### Dados de demonstração no site no ar
+
+A vitrine que rola (`#prova`) mostra três produtos com filme feito à mão. Se a
+coleta ainda não tem esses produtos, semeie **só o catálogo**:
+
+```bash
+docker compose exec web python web/manage.py semear_demo --so-catalogo
+```
+
+O modo cheio (`semear_demo` sem argumento) também cria grupos e posts marcados
+como enviados — preço inventado no feed e nos contadores do site. Com
+`DJANGO_DEBUG=0` o comando recusa fazer isso, e só passa com `--forcar`.
+
 ### Imagem do preview de link
 
 É o que decide o clique quando alguém cola o link no WhatsApp. A ordem é:
@@ -309,15 +342,26 @@ Três coisas insubstituíveis:
 - Volumes `evolution_instances` e `evolution_postgres` — a sessão pareada.
   Perdeu, repareia o chip.
 
-```bash
-sqlite3 data/promos.db ".backup '/tmp/promos-backup.db'"
-```
+Os quatro alvos estão no script:
 
 ```bash
-docker run --rm -v evolution_postgres:/v -v $(pwd):/out alpine tar czf /out/evolution-pg.tar.gz -C /v .
+scripts/backup.sh
 ```
 
-Coloque isso num cron diário e mande para fora da máquina.
+Ele usa `.backup` do SQLite, e não `cp`: com o bot escrevendo durante a cópia,
+um `cp` pode gravar arquivo inconsistente — e backup que não abre só é
+descoberto no dia em que ele é a única coisa que sobrou. Guarda em
+`./backups/<data>`, empacota os volumes da Evolution e apaga o que tem mais de
+14 dias (disco cheio derruba os containers todos de uma vez).
+
+No cron, diário às 3h:
+
+```bash
+(crontab -l 2>/dev/null; echo "0 3 * * * cd ~/amazon_pay && scripts/backup.sh >> backups/backup.log 2>&1") | crontab -
+```
+
+**Mande para fora da máquina depois.** Backup no mesmo disco não protege do
+caso mais comum, que é a VPS sumir.
 
 ## 9. Operação
 
@@ -327,9 +371,20 @@ Atualizar:
 git pull && docker compose up -d --build
 ```
 
+O `up -d --build` **reconstrói a imagem que o bot e o site compartilham**, então
+os dois reiniciam juntos: um ajuste de CSS derruba a coleta por alguns
+segundos. Sem consequência (o loop retoma no próximo intervalo e a fila é
+persistente), mas evite fazer isso no meio de uma drenagem. Para tocar só o
+site: `docker compose up -d --build web`.
+
+**Migração do banco do bot é automática.** O `init_db` aplica as colunas novas
+(`verified` entre elas) na subida, sem passo manual. Banco antigo herda
+`verified=1` em tudo que já existia — não há como separar retroativamente, e
+marcar tudo como repasse apagaria a prova real que existe.
+
 **Rotação de log** já vem configurada no compose (10 MB × 3 arquivos por
 serviço). Sem isso, rodando 24/7, o `json-file` do Docker encheria o disco em
-alguns meses — e disco cheio derruba os três containers de uma vez.
+alguns meses — e disco cheio derruba todos os containers de uma vez.
 
 **O cookie do Mercado Livre expira.** O `ML_AFFILIATE_COOKIE` é sessão de
 navegador e cai de tempos em tempos. Quando os links de afiliado pararem de ser

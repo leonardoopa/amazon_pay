@@ -14,7 +14,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from vitrine.models import Grupo
 
@@ -59,10 +59,32 @@ class Command(BaseCommand):
                 "mostra na etiqueta do card (padrão: 60)."
             ),
         )
+        parser.add_argument(
+            "--forcar",
+            action="store_true",
+            help=(
+                "Permite semear grupos e posts com DEBUG desligado. Só use se "
+                "você quer mesmo preço inventado no feed do site no ar."
+            ),
+        )
 
     def handle(self, *args, **options):
         from promo import fixtures
         from promo.db import connect, create_post, init_db, mark_post_sent, now
+
+        # O modo cheio cria posts marcados como enviados: eles entram no feed
+        # do site e no contador de ofertas com preço que ninguém coletou. Em
+        # produção isso é a mesma invenção que a landing acusa a loja de
+        # fazer, então aqui ele para. `--so-catalogo` continua liberado: ele
+        # não cria post nem grupo, e é o que a VITRINE_FIXA precisa.
+        cheio = not options["limpar"] and not options["so_catalogo"]
+        if cheio and not settings.DEBUG and not options["forcar"]:
+            raise CommandError(
+                "Recusando semear grupos e posts de demonstração com "
+                "DJANGO_DEBUG=0: eles entrariam no feed e nos contadores do "
+                "site como oferta real. Use --so-catalogo (só produtos e "
+                "histórico, para a vitrine ter filme) ou --forcar."
+            )
 
         if options["limpar"]:
             apagados, _ = Grupo.objects.filter(

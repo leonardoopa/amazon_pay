@@ -78,15 +78,19 @@
   </div>
 </section>
 
-{% if ofertas %}
+{% if esteira %}
 <section class="esteira" aria-label="Ofertas recentes em movimento">
   <div class="esteira-trilha">
     {% comment %}
       Duas cópias da lista: a animação anda -50% e emenda sem salto.
       A segunda some para leitor de tela, senão anuncia tudo duplicado.
+
+      Aqui só entra oferta medida por nós (ver `esteira` na view). A pílula
+      passa rápido e não tem espaço para dizer de onde veio a baseline — e um
+      "-29%" sem essa ressalva afirma medição que, no repasse, não houve.
     {% endcomment %}
     {% for volta in "12" %}
-      {% for item in ofertas %}
+      {% for item in esteira %}
         <a class="pilula" href="{% url 'vitrine:oferta' item.external_id %}"
            {% if volta == "2" %}aria-hidden="true" tabindex="-1"{% endif %}>
           {% if item.produto.image_url %}
@@ -315,9 +319,17 @@
   <div class="container">
     <div class="secao-cabeca" data-revelar>
       <span class="secao-etiqueta">Já foi para o grupo</span>
-      <h2>As últimas que passaram no filtro.</h2>
+      <h2>As últimas que foram para o grupo.</h2>
       <p class="secao-texto">
         Cada uma tem a curva de preço aberta. Clique e confira você mesmo.
+        {% comment %}
+          A ressalva só aparece quando existe repasse na lista. Explicar uma
+          etiqueta que não está na tela levanta dúvida sobre o que está.
+        {% endcomment %}
+        {% if tem_repasse %}
+          As que dizem <b>“preço da loja”</b> vieram da vitrine do Mercado
+          Livre e não passaram pela nossa medição — a etiqueta avisa, sempre.
+        {% endif %}
       </p>
     </div>
 
@@ -336,10 +348,23 @@
             <p class="oferta-titulo">{{ item.produto.title }}</p>
             <div class="oferta-precos">
               <span class="oferta-preco">R$ {{ item.post.price|floatformat:2 }}</span>
-              <span class="oferta-media">média <s>R$ {{ item.post.baseline|floatformat:2 }}</s></span>
+              {% comment %}
+                "média" só pode aparecer quando a baseline é a nossa mediana.
+                No repasse da vitrine do ML ela é o preço que a loja riscou —
+                o mesmo rótulo nos dois casos apresentaria o número da loja
+                como medição nossa.
+              {% endcomment %}
+              <span class="oferta-media">
+                {% if item.verificado %}média{% else %}preço da loja{% endif %}
+                <s>R$ {{ item.post.baseline|floatformat:2 }}</s>
+              </span>
             </div>
             <div class="oferta-rodape">
-              <span>economia de R$ {{ item.post.economia|floatformat:2 }}</span>
+              {% if item.verificado %}
+                <span>economia de R$ {{ item.post.economia|floatformat:2 }}</span>
+              {% else %}
+                <span>desconto anunciado pela loja</span>
+              {% endif %}
               <span class="oferta-ver">ver curva</span>
             </div>
           </div>

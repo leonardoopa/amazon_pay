@@ -83,9 +83,36 @@ def test_stats_com_chave_devolve_contagens(client):
         "price_points": 0,
         "with_baseline": 0,
         "posts_sent": 0,
+        "posts_sent_verified": 0,
         "posts_pending": 0,
         "posts_failed": 0,
+        "posts_expired": 0,
+        "last_run_error": None,
     }
+
+
+def test_health_nao_expoe_texto_de_erro(client):
+    """O /health e aberto. Mensagem de excecao carrega URL interna, caminho de
+    arquivo e as vezes o JID do grupo -- isso sai no /stats, com chave."""
+    corpo = client.get("/health").json()
+
+    assert "last_error" not in corpo
+    assert corpo["last_run_failed"] is False
+
+
+def test_erro_da_rodada_sai_no_stats_com_chave(client, tmp_path, monkeypatch):
+    from promo.db import connect, set_meta
+    from promo.worker import LAST_ERROR_KEY
+
+    with connect() as conn:
+        set_meta(conn, LAST_ERROR_KEY, "boom: http://evolution:8080/x")
+
+    aberto = client.get("/health").json()
+    assert aberto["last_run_failed"] is True
+    assert "evolution" not in str(aberto)
+
+    protegido = client.get("/stats", headers={"X-API-Key": SEGREDO}).json()
+    assert protegido["last_run_error"] == "boom: http://evolution:8080/x"
 
 
 def test_run_exige_chave(client):
