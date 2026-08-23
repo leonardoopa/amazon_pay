@@ -33,7 +33,7 @@ Se for de `evolution`, pareie um **chip secundário**. Não o seu número pessoa
 ## Setup
 
 ```bash
-cp .env.example .env
+cp .env.sample .env
 ```
 
 Preencha o `.env`:

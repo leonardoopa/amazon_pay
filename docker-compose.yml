@@ -53,6 +53,14 @@ services:
     logging: *logging
     env_file: .env
     environment:
+      # DEBUG nunca liga aqui, aconteca o que acontecer no .env.
+      #
+      # O mesmo arquivo serve a maquina de quem desenvolve (onde DJANGO_DEBUG=1
+      # e o normal) e o servidor -- o passo 2 do DEPLOY.md manda copiar o .env
+      # local para la. Sem esta linha, um `scp .env` carrega DEBUG=1 junto e o
+      # site em producao passa a mostrar traceback com settings para qualquer
+      # visitante. `environment` vence `env_file`, entao aqui e definitivo.
+      DJANGO_DEBUG: "0"
       # Le o historico de preco do mesmo arquivo que o coletor escreve.
       DB_PATH: /app/data/promos.db
       # Grupos e inscritos ficam no volume, nao na imagem: `up --build`
