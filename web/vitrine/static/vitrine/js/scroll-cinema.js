@@ -93,9 +93,26 @@
       duracao = video.duration;
     });
     video.addEventListener("canplaythrough", liberar);
-    // Se o arquivo for grande demais ou a rede cair, mostra do jeito que der.
-    setTimeout(liberar, ESPERA_MAXIMA);
-    if (video.readyState >= 4) liberar();
+
+    /* O download começa aqui, e só se valer a pena.
+
+       São 12MB. Em 4G, ou com economia de dados ligada, o visitante pagaria
+       franquia e ficaria segundos olhando um spinner antes da primeira frase.
+       Sem filme, `duracao` fica 0, `aplicar()` não escreve `currentTime`, e o
+       pôster que o elemento já pinta continua no lugar — legenda, contador e
+       barra seguem obedecendo a rolagem igual. */
+    const fonte = video.dataset.fonte;
+    if (fonte && !(window.RedeCara && window.RedeCara())) {
+      video.preload = "auto";
+      video.src = fonte;
+      // Se o arquivo for grande demais ou a rede cair, mostra do jeito que der.
+      setTimeout(liberar, ESPERA_MAXIMA);
+      if (video.readyState >= 4) liberar();
+    } else {
+      // Nada a esperar: libera na hora para o véu de carregamento sair.
+      if (fonte && window.RedeExplica) window.RedeExplica("filme de abertura");
+      liberar();
+    }
 
     addEventListener("scroll", aoRolar, { passive: true });
     addEventListener("resize", aoRolar);

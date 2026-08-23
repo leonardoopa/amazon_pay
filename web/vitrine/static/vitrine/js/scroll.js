@@ -301,6 +301,15 @@
       const enfileirar = (i) => {
         const trilha = trilhas[i];
         if (!trilha || trilha.video.src) return;
+        // ~6MB por filme, três deles. Com economia de dados ligada, ou em
+        // rede inviável, a fila nem começa: a foto do produto já está na tela
+        // e é o que o filme substituiria. Mesma regra do filme de abertura
+        // (rede.js), e ela diz no console quando poupa — "não funciona" e
+        // "foi poupado" se investigam de formas opostas.
+        if (window.RedeCara && window.RedeCara()) {
+          if (window.RedeExplica) window.RedeExplica("filme do produto");
+          return;
+        }
         const { video } = trilha;
         video.preload = "auto";
         video.src = video.dataset.fonte;

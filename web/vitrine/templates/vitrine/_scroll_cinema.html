@@ -11,10 +11,16 @@ pior do que não ter o efeito.
 
 <section class="sc-hero" data-sc-cena>
   <div class="sc-grude">
+    {% comment %}
+      O `src` sai do JavaScript, não daqui: são 12MB, e em 4G ou com economia
+      de dados ligada o script não baixa nada — fica o pôster, que o próprio
+      elemento já pinta. A seção continua com a mesma altura e as legendas
+      continuam trocando com a rolagem; o que se perde é o filme, não a cena.
+    {% endcomment %}
     <video class="sc-video" data-sc-video
-           src="{{ cinema_video }}"
+           data-fonte="{{ cinema_video }}"
            {% if cinema_poster %}poster="{{ cinema_poster }}"{% endif %}
-           muted playsinline preload="auto"
+           muted playsinline preload="none"
            aria-hidden="true"></video>
 
     <div class="sc-veu" aria-hidden="true"></div>
@@ -54,7 +60,7 @@ pior do que não ter o efeito.
         </div>
 
         {% if grupo_aberto %}
-          <a class="botao" href="{{ grupo_aberto.convite }}" target="_blank" rel="noopener">
+          <a class="botao" href="{% url 'vitrine:entrar' %}?de=cinema" target="_blank" rel="noopener">
             Entrar no grupo grátis
           </a>
         {% else %}
