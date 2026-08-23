@@ -22,6 +22,27 @@ from .precos import montar_curva
 # Quantos dias de histórico o gráfico mostra.
 JANELA_DIAS = 60
 
+# O catálogo de demonstração (`semear_demo`) entra no mesmo banco do bot, mas
+# os preços dele são inventados — está escrito em src/promo/fixtures.py. Por
+# isso ele fica fora de tudo que o site apresenta como prova: os contadores da
+# home, o /saude e as frases da página de detalhe que afirmam coleta diária.
+FONTE_DEMO = "demo"
+
+# Os três produtos da vitrine que rola (#prova), na ordem em que aparecem.
+#
+# É lista fixa de propósito. Cada um desses tem um filme produzido à mão
+# (`static/vitrine/video/produto/<id>.mp4`), e deixar a coleta escolher a
+# vitrine faz esse trabalho sumir na primeira oferta nova com desconto maior
+# — que foi exatamente o que aconteceu. Oferta nova entra pela esteira e pela
+# seção "As últimas que passaram no filtro"; aqui, não.
+#
+# Trocar um produto daqui pede também o filme dele com o id no nome.
+VITRINE_FIXA = (
+    "MLB46211942",  # relógio — Smartwatch Huawei Band 10
+    "MLB52052995",  # air fryer — Philco 6,5L
+    "MLB46470846",  # notebook — Vaio FE16
+)
+
 
 def _seguro(consulta, padrao):
     """Executa uma leitura do banco do bot tolerando ele não existir ainda."""
@@ -68,9 +89,20 @@ def _quando(iso: str | None) -> datetime | None:
 
 
 def _numeros() -> dict:
-    """Contadores da prova social. Só números reais — nada inflado."""
-    produtos = _seguro(lambda: Produto.objects.count(), 0)
-    observacoes = _seguro(lambda: HistoricoPreco.objects.using("promos").count(), 0)
+    """Contadores da prova social. Só números reais — nada inflado.
+
+    O catálogo de demonstração fica de fora: ele existe para a vitrine ter
+    produto com filme, e contar preço inventado como "preço registrado" é
+    exatamente a mentira que o site acusa a loja de contar. O /saude lê
+    daqui também, então o monitoramento continua enxergando só o real.
+    """
+    produtos = _seguro(lambda: Produto.objects.exclude(source=FONTE_DEMO).count(), 0)
+    observacoes = _seguro(
+        lambda: HistoricoPreco.objects.using("promos")
+        .exclude(product_id__startswith=f"{FONTE_DEMO}:")
+        .count(),
+        0,
+    )
     enviados = _seguro(lambda: Post.objects.publicados().count(), 0)
     economia = 0.0
     for post in _seguro(lambda: list(Post.objects.publicados()[:500]), []):
@@ -122,6 +154,61 @@ def _com_curva(ofertas: list[dict], quantas: int) -> list[dict]:
     return escolhidas
 
 
+def _produto_por_external_id(external_id: str):
+    """Acha o produto pelo id da loja, preferindo o coletado ao de demonstração.
+
+    O mesmo `external_id` pode existir duas vezes: uma linha `demo:` semeada
+    à mão e outra que a coleta trouxe depois (a watchlist tem "smartwatch",
+    "notebook" e "air fryer" — justamente os três da vitrine). Sem uma ordem
+    declarada, o Django resolveria pelo id e o `demo:` ganharia por vir antes
+    no alfabeto: a página mostraria preço inventado tendo o real ao lado.
+    """
+    real = _seguro(
+        lambda: Produto.objects.filter(external_id=external_id)
+        .exclude(source=FONTE_DEMO)
+        .order_by("-last_seen_at")
+        .first(),
+        None,
+    )
+    if real is not None:
+        return real
+    return _seguro(
+        lambda: Produto.objects.filter(external_id=external_id).first(), None
+    )
+
+
+def _fixos() -> list[dict]:
+    """Os produtos de `VITRINE_FIXA`, montados direto do catálogo.
+
+    Não passa por `posts`: o post é o que o bot mandou para o grupo hoje, e
+    amarrar a vitrine a ele foi o que trocou os produtos sozinho. Aqui basta
+    o produto existir e ter histórico para desenhar a curva.
+
+    Produto que sumiu do catálogo ou ainda não tem dois dias de preço é
+    pulado em silêncio — a vitrine encolhe, mas nunca fica quebrada.
+    """
+    itens = []
+    for external_id in VITRINE_FIXA:
+        produto = _produto_por_external_id(external_id)
+        if produto is None:
+            continue
+        precos = _historico(produto)
+        curva = montar_curva(precos)
+        if curva is None:
+            continue
+        itens.append(
+            {
+                "produto": produto,
+                "external_id": produto.external_id,
+                "curva": curva,
+                "dias": len(precos),
+                "video": _video_do_produto(produto.external_id),
+                "demonstracao": produto.source == FONTE_DEMO,
+            }
+        )
+    return itens
+
+
 def _video_do_produto(external_id: str) -> str | None:
     """Filme do produto, se alguém já produziu um.
 
@@ -163,6 +250,10 @@ def home(request):
     # Uma para o topo e três para a vitrine que rola.
     destaques = _com_curva(ofertas, 4)
     destaque = destaques[0] if destaques else None
+    # A vitrine é fixa; a lista dinâmica só entra se o catálogo ainda não
+    # tiver os produtos dela — seção vazia numa página que promete prova é
+    # pior do que prova com outro produto.
+    fixos = _fixos()
     return render(
         request,
         "vitrine/home.html",
@@ -171,7 +262,7 @@ def home(request):
             "grupo_aberto": next((g for g in grupos if not g.lotado), None),
             "ofertas": ofertas,
             "destaque": destaque,
-            "vitrine": destaques[1:4] or destaques[:3],
+            "vitrine": fixos or destaques[1:4] or destaques[:3],
             "numeros": _numeros(),
             "form": InscricaoForm(),
             "janela_dias": JANELA_DIAS,
@@ -198,9 +289,7 @@ def _absoluta(request, url: str | None) -> str | None:
 
 def oferta(request, external_id: str):
     """Página de uma oferta, com a curva de preço que prova o desconto."""
-    produto = _seguro(
-        lambda: Produto.objects.filter(external_id=external_id).first(), None
-    )
+    produto = _produto_por_external_id(external_id)
     if produto is None:
         raise Http404("Oferta não encontrada")
 
@@ -227,6 +316,9 @@ def oferta(request, external_id: str):
             "curva": montar_curva([preco for _, preco in historico]),
             "dias": len(historico),
             "primeiro_dia": _data(historico[0][0]) if historico else None,
+            # Produto de demonstração não teve preço coletado: a página troca
+            # as afirmações de monitoramento por um aviso do que ele é.
+            "demonstracao": produto.source == FONTE_DEMO,
             "grupo_aberto": Grupo.aberto(),
             "og_imagem": _absoluta(request, produto.image_url),
         },

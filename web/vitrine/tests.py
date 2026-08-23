@@ -8,11 +8,14 @@ existe (500 numa landing custa a visita inteira).
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from django.template.loader import render_to_string
 from django.test import TestCase
 from django.urls import reverse
 
+from . import views
 from .forms import InscricaoForm
 from .models import Grupo, Inscrito
 from .precos import montar_curva
@@ -185,3 +188,172 @@ class PaginasTests(TestCase):
         # E o item não nasce invisível.
         inicio_item = css.index(".vitrine-item {")
         self.assertNotIn("opacity: 0", css[inicio_item : css.index("}", inicio_item)])
+
+
+class VitrineFixaTests(TestCase):
+    """A vitrine com filme não pode ser trocada pela oferta do dia.
+
+    O filme de cada produto é feito à mão. Quando a seção seguia o post de
+    maior desconto, bastava uma coleta nova para o trabalho sumir da página
+    — e é justamente essa regressão que estes testes travam.
+    """
+
+    databases = {"default", "promos"}
+
+    def _produto(self, external_id, source="mercadolivre"):
+        return SimpleNamespace(
+            id=f"{source}:{external_id}",
+            source=source,
+            external_id=external_id,
+            title=f"Produto {external_id}",
+            image_url="https://exemplo/foto.jpg",
+        )
+
+    def _catalogo(self, presentes, source="mercadolivre", tambem_demo=False):
+        """Um `Produto` de mentira que só conhece os ids informados.
+
+        Reproduz o encadeamento que a view usa: `filter(...)` devolve tudo,
+        `filter(...).exclude(source="demo")` devolve só o coletado.
+        """
+
+        def consulta(external_id):
+            if external_id not in presentes:
+                return SimpleNamespace(
+                    first=lambda: None,
+                    exclude=lambda **_: SimpleNamespace(
+                        order_by=lambda *_a: SimpleNamespace(first=lambda: None)
+                    ),
+                )
+            achado = self._produto(external_id, source=source)
+            # Quem responde ao `.exclude(source="demo")`: existe só quando o
+            # produto veio da coleta, ou quando o teste pede os dois.
+            real = (
+                self._produto(external_id)
+                if tambem_demo
+                else (achado if source != views.FONTE_DEMO else None)
+            )
+            return SimpleNamespace(
+                first=lambda: achado,
+                exclude=lambda **_: SimpleNamespace(
+                    order_by=lambda *_a: SimpleNamespace(first=lambda: real)
+                ),
+            )
+
+        falso = mock.Mock()
+        falso.objects.filter.side_effect = consulta
+        return falso
+
+    def _item(self, external_id):
+        return {
+            "produto": self._produto(external_id),
+            "external_id": external_id,
+            "curva": montar_curva([100.0, 90.0, 80.0]),
+            "dias": 3,
+            "video": None,
+        }
+
+    def test_a_vitrine_sai_na_ordem_declarada(self):
+        with (
+            mock.patch.object(views, "Produto", self._catalogo(views.VITRINE_FIXA)),
+            mock.patch.object(views, "_historico", return_value=[100.0, 90.0, 80.0]),
+            mock.patch.object(
+                views, "_video_do_produto", side_effect=lambda id: f"/static/{id}.mp4"
+            ),
+        ):
+            itens = views._fixos()
+
+        self.assertEqual(
+            [item["external_id"] for item in itens], list(views.VITRINE_FIXA)
+        )
+        self.assertEqual(itens[0]["video"], f"/static/{views.VITRINE_FIXA[0]}.mp4")
+
+    def test_produto_fora_do_catalogo_e_pulado_sem_quebrar(self):
+        presentes = views.VITRINE_FIXA[1:]
+        with (
+            mock.patch.object(views, "Produto", self._catalogo(presentes)),
+            mock.patch.object(views, "_historico", return_value=[100.0, 90.0]),
+            mock.patch.object(views, "_video_do_produto", return_value=None),
+        ):
+            itens = views._fixos()
+
+        self.assertEqual([item["external_id"] for item in itens], list(presentes))
+
+    def test_sem_historico_suficiente_o_produto_nao_entra(self):
+        """Um ponto só não vira curva, e card sem gráfico não prova nada."""
+        with (
+            mock.patch.object(views, "Produto", self._catalogo(views.VITRINE_FIXA)),
+            mock.patch.object(views, "_historico", return_value=[100.0]),
+            mock.patch.object(views, "_video_do_produto", return_value=None),
+        ):
+            self.assertEqual(views._fixos(), [])
+
+    def test_home_mostra_os_fixos_e_ignora_o_desconto_do_dia(self):
+        with (
+            mock.patch.object(views, "_fixos", return_value=[self._item("FIXO")]),
+            mock.patch.object(
+                views,
+                "_com_curva",
+                return_value=[self._item("DINAMICO1"), self._item("DINAMICO2")],
+            ),
+        ):
+            resposta = self.client.get(reverse("vitrine:home"))
+
+        self.assertContains(resposta, "Produto FIXO")
+        self.assertNotContains(resposta, "Produto DINAMICO2")
+
+    def test_sem_os_fixos_a_vitrine_cai_para_a_lista_do_dia(self):
+        """Seção vazia numa página que promete prova é pior do que outro produto."""
+        with (
+            mock.patch.object(views, "_fixos", return_value=[]),
+            mock.patch.object(
+                views,
+                "_com_curva",
+                return_value=[self._item("DINAMICO1"), self._item("DINAMICO2")],
+            ),
+        ):
+            resposta = self.client.get(reverse("vitrine:home"))
+
+        self.assertContains(resposta, "Produto DINAMICO2")
+
+    def test_produto_de_demonstracao_e_marcado(self):
+        """A etiqueta do card e as frases do detalhe dependem desta marca."""
+        falso = self._catalogo(views.VITRINE_FIXA, source=views.FONTE_DEMO)
+        with (
+            mock.patch.object(views, "Produto", falso),
+            mock.patch.object(views, "_historico", return_value=[100.0, 90.0]),
+            mock.patch.object(views, "_video_do_produto", return_value=None),
+        ):
+            itens = views._fixos()
+
+        self.assertTrue(all(item["demonstracao"] for item in itens))
+
+    def test_card_de_demonstracao_nao_diz_prova(self):
+        """Preço inventado não pode sair sob a palavra que o site vende."""
+        item = self._item("DEMO")
+        item["demonstracao"] = True
+        with (
+            mock.patch.object(views, "_fixos", return_value=[item]),
+            mock.patch.object(views, "_com_curva", return_value=[]),
+        ):
+            resposta = self.client.get(reverse("vitrine:home"))
+
+        self.assertContains(resposta, "Exemplo")
+        self.assertNotContains(resposta, "Prova em")
+
+    def test_quando_a_coleta_traz_o_mesmo_id_o_real_ganha_do_demo(self):
+        """A watchlist tem 'smartwatch', 'notebook' e 'air fryer'. No dia em
+        que a coleta trouxer um deles, a página tem que mostrar o preço real,
+        não o semeado."""
+        falso = self._catalogo(
+            views.VITRINE_FIXA, source=views.FONTE_DEMO, tambem_demo=True
+        )
+        with (
+            mock.patch.object(views, "Produto", falso),
+            mock.patch.object(views, "_historico", return_value=[100.0, 90.0]),
+            mock.patch.object(views, "_video_do_produto", return_value=None),
+        ):
+            itens = views._fixos()
+
+        self.assertTrue(itens)
+        self.assertFalse(any(item["demonstracao"] for item in itens))
+        self.assertTrue(all(item["produto"].source == "mercadolivre" for item in itens))

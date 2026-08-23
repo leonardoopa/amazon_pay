@@ -40,6 +40,16 @@ class Command(BaseCommand):
             action="store_true",
             help="Remove os dados de demonstração em vez de criar",
         )
+        parser.add_argument(
+            "--so-catalogo",
+            action="store_true",
+            help=(
+                "Cria só os produtos e o histórico de preço, sem grupos e sem "
+                "posts. É o modo para um site que já tem coleta real: os "
+                "produtos da VITRINE_FIXA passam a existir sem inventar oferta "
+                "enviada no feed nem inflar o contador de ofertas aprovadas."
+            ),
+        )
 
     def handle(self, *args, **options):
         from promo import fixtures
@@ -52,6 +62,18 @@ class Command(BaseCommand):
             with connect() as conn:
                 removidos = fixtures.clear(conn)
             self.stdout.write(f"{apagados} grupos e {removidos} produtos removidos.")
+            return
+
+        if options["so_catalogo"]:
+            init_db()
+            with connect() as conn:
+                criados = fixtures.seed(conn, days=60)
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"{criados} produtos com 60 dias de histórico. Sem grupos e "
+                    "sem posts: o feed e os contadores continuam só com o real."
+                )
+            )
             return
 
         for nome, capacidade, membros, ordem in GRUPOS:

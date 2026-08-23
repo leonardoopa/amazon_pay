@@ -34,7 +34,7 @@
             Entrar no grupo grátis
           </a>
         {% else %}
-          <a class="botao" href="#vaga">Avise-me quando abrir vaga</a>
+          <a class="botao botao-frase" href="#vaga">Entre no grupo e aproveite nossas oportunidades</a>
         {% endif %}
         <a class="botao botao-fantasma" href="#como">Como a gente comprova</a>
       </div>
@@ -162,7 +162,15 @@
           </div>
 
           <div class="vitrine-texto">
-            <span class="secao-etiqueta">Prova em {{ item.dias }} dias de preço</span>
+            {% comment %}
+              Produto de demonstração tem preço inventado. A etiqueta muda de
+              "Prova" para "Exemplo" — mesma caixa, mesma altura, sem afirmar
+              coleta que não houve.
+            {% endcomment %}
+            <span class="secao-etiqueta">
+              {% if item.demonstracao %}Exemplo{% else %}Prova{% endif %}
+              em {{ item.dias }} dias de preço
+            </span>
             <h3>{{ item.produto.title }}</h3>
             <div class="vitrine-precos">
               <span class="vitrine-preco">R$ {{ item.curva.atual|floatformat:2 }}</span>

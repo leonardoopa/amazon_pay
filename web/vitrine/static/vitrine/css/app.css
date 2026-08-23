@@ -115,6 +115,9 @@ a { color: inherit; }
 .botao:hover { background: var(--verde-claro); transform: translateY(-2px); box-shadow: 0 14px 34px -12px var(--verde); }
 .botao:active { transform: translateY(0); }
 .botao-mini { padding: 10px 18px; font-size: 14px; }
+/* Chamada de frase inteira: com o `nowrap` do .botao ela passaria de 400px e
+   vazaria a tela do celular. Aqui ela quebra em duas linhas e centraliza. */
+.botao-frase { white-space: normal; text-align: center; line-height: 1.25; max-width: 100%; }
 .botao-fantasma {
   background: transparent; color: var(--texto);
   border: 1px solid var(--borda-clara); box-shadow: none;
