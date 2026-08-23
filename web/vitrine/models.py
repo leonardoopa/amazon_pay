@@ -122,6 +122,17 @@ class PostManager(models.Manager):
         """Ofertas que realmente foram enviadas — é o que vira vitrine."""
         return self.get_queryset().filter(status="sent").order_by("-created_at")
 
+    def medidos(self):
+        """Só o que foi medido contra a nossa mediana.
+
+        O bot também repassa oferta da vitrine do ML, onde o desconto vem do
+        preço riscado da loja (`verified=0`). Repasse serve para o grupo não
+        ficar mudo nos primeiros dias, mas não é prova de nada — então tudo
+        que o site apresenta como prova (contadores, produto em destaque,
+        curva) sai daqui, e não de `publicados()`.
+        """
+        return self.publicados().filter(verified=True)
+
 
 class Post(models.Model):
     """Tabela `posts` do bot: uma oferta que passou no filtro e foi enviada."""
@@ -134,6 +145,10 @@ class Post(models.Model):
     copy = models.TextField()
     image_url = models.TextField(null=True)
     attempts = models.IntegerField(default=0)
+    # 1 = desconto medido contra a nossa mediana; 0 = repasse da vitrine do ML,
+    # medido contra o "de/por" da loja. Quem escreve é o bot (ver
+    # promo.db.create_post); aqui é só leitura.
+    verified = models.BooleanField(default=True)
     status = models.TextField()
     error = models.TextField(null=True)
     created_at = models.TextField()
@@ -147,6 +162,13 @@ class Post(models.Model):
 
     @property
     def economia(self) -> float:
+        """Quanto abaixo da baseline. Só significa "economia" se for medido.
+
+        Num repasse a baseline é o preço riscado do anúncio, e a loja escolhe
+        esse número — somar isso como economia seria repetir a conta da loja.
+        """
+        if not self.verified:
+            return 0.0
         return max(0.0, self.baseline - self.price)
 
 

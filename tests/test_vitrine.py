@@ -303,3 +303,34 @@ def test_as_duas_fontes_usam_a_mesma_funcao():
 
     for classe in (MLOfertas, MercadoLivre):
         assert "resolve_affiliate_link" in inspect.getsource(classe.affiliate_url)
+
+
+def test_repasse_chega_ao_banco_como_nao_verificado(tmp_path, monkeypatch):
+    """A marca precisa sobreviver ao INSERT. Antes ela existia so no
+    `ScoredOffer` e o site lia repasse da vitrine como prova medida."""
+    import sqlite3
+
+    from promo import pipeline
+    from promo.db import SCHEMA
+
+    caminho = tmp_path / "t.db"
+    monkeypatch.setenv("DB_PATH", str(caminho))
+    conn = sqlite3.connect(caminho)
+    conn.executescript(SCHEMA)
+    conn.execute(
+        "INSERT INTO products (id, source, external_id, title, url, first_seen_at,"
+        " last_seen_at) VALUES ('ml_ofertas:MLB1','ml_ofertas','MLB1','P','u','x','x')"
+    )
+    conn.commit()
+    conn.close()
+
+    repasse = score_campaign(make_conn(), vitrine_offer(), rules())
+    monkeypatch.setattr(pipeline, "flush_pending", lambda: None)
+    pipeline.deliver([(repasse, "texto do repasse")])
+
+    conn = sqlite3.connect(caminho)
+    conn.row_factory = sqlite3.Row
+    linha = conn.execute("SELECT verified, baseline FROM posts").fetchone()
+    conn.close()
+    assert linha["verified"] == 0
+    assert linha["baseline"] == 200.0

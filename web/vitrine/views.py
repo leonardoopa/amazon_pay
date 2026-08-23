@@ -74,6 +74,11 @@ def _ofertas(limite: int = 12) -> list[dict]:
                 "produto": produto,
                 "external_id": produto.external_id,
                 "quando": _quando(post.sent_at or post.created_at),
+                # O card muda de texto quando o desconto é da loja, não nosso:
+                # o mesmo layout com o rótulo "média" em cima do "de/por" do
+                # anúncio é a mentira que a página inteira acusa a loja de
+                # contar.
+                "verificado": post.verified,
             }
         )
     return ofertas
@@ -103,9 +108,13 @@ def _numeros() -> dict:
         .count(),
         0,
     )
-    enviados = _seguro(lambda: Post.objects.publicados().count(), 0)
+    # `medidos()` e não `publicados()`: o rótulo na tela diz "aprovadas no
+    # filtro" e "abaixo da mediana". Repasse da vitrine do ML não passou por
+    # filtro nenhum nosso — a loja escolheu o preço riscado — e contá-lo aqui
+    # seria vender o número da loja como medição própria.
+    enviados = _seguro(lambda: Post.objects.medidos().count(), 0)
     economia = 0.0
-    for post in _seguro(lambda: list(Post.objects.publicados()[:500]), []):
+    for post in _seguro(lambda: list(Post.objects.medidos()[:500]), []):
         economia += post.economia
     return {
         "produtos": produtos,
@@ -134,9 +143,16 @@ def _com_curva(ofertas: list[dict], quantas: int) -> list[dict]:
 
     São elas que sustentam a promessa do site — sem gráfico, o card vira só
     mais um "de/por" e o argumento inteiro cai.
+
+    Repasse da vitrine do ML não entra: o número grande do topo (`-29%`) e a
+    curva ao lado dele afirmam que a queda foi medida por nós. Num repasse o
+    desconto é contra o preço que a loja riscou, e o produto pode nem ter
+    histórico — a mesma tela diria a coisa errada com mais destaque do que
+    qualquer outra na página.
     """
     escolhidas = []
-    for item in sorted(ofertas, key=lambda o: -o["post"].discount_pct):
+    medidas = [item for item in ofertas if item.get("verificado", True)]
+    for item in sorted(medidas, key=lambda o: -o["post"].discount_pct):
         precos = _historico(item["produto"])
         curva = montar_curva(precos)
         if curva is None:
@@ -261,6 +277,12 @@ def home(request):
             "grupos": grupos,
             "grupo_aberto": next((g for g in grupos if not g.lotado), None),
             "ofertas": ofertas,
+            # A esteira só leva o que foi medido: a pílula passa rápido e não
+            # cabe a ressalva de onde veio a baseline. O grid mais abaixo leva
+            # tudo, com a etiqueta dizendo qual é qual.
+            "esteira": [item for item in ofertas if item["verificado"]],
+            # Explica a etiqueta "preço da loja" só quando ela está na tela.
+            "tem_repasse": any(not item["verificado"] for item in ofertas),
             "destaque": destaque,
             "vitrine": fixos or destaques[1:4] or destaques[:3],
             "numeros": _numeros(),
@@ -319,6 +341,10 @@ def oferta(request, external_id: str):
             # Produto de demonstração não teve preço coletado: a página troca
             # as afirmações de monitoramento por um aviso do que ele é.
             "demonstracao": produto.source == FONTE_DEMO,
+            # Repasse da vitrine do ML: o desconto do post é contra o preço
+            # riscado da loja. A página para de chamar essa baseline de
+            # "mediana histórica" e diz de onde ela veio.
+            "verificado": post.verified if post else True,
             "grupo_aberto": Grupo.aberto(),
             "og_imagem": _absoluta(request, produto.image_url),
         },
