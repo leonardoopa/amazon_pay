@@ -9,15 +9,28 @@ from __future__ import annotations
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import Grupo, Inscrito
+from .models import Clique, Grupo, Inscrito
 
 
 @admin.register(Grupo)
 class GrupoAdmin(admin.ModelAdmin):
-    list_display = ("nome", "categoria", "ocupacao", "ativo", "ordem")
+    list_display = (
+        "nome",
+        "categoria",
+        "ocupacao",
+        "membros_atualizados_em",
+        "cliques_recebidos",
+        "ativo",
+        "ordem",
+    )
     list_editable = ("ativo", "ordem")
     list_filter = ("ativo", "categoria")
-    search_fields = ("nome", "categoria")
+    search_fields = ("nome", "categoria", "jid")
+    readonly_fields = ("membros_atualizados_em",)
+
+    @admin.display(description="cliques")
+    def cliques_recebidos(self, obj: Grupo) -> int:
+        return obj.cliques.count()
 
     @admin.display(description="ocupação")
     def ocupacao(self, obj: Grupo) -> str:
@@ -37,3 +50,22 @@ class InscritoAdmin(admin.ModelAdmin):
     list_display = ("email", "origem", "criado_em")
     search_fields = ("email",)
     readonly_fields = ("criado_em",)
+
+
+@admin.register(Clique)
+class CliqueAdmin(admin.ModelAdmin):
+    """Somente leitura: clique é registro de fato acontecido.
+
+    A tela existe para responder "de onde vem quem entra no grupo" — o filtro
+    por origem é o ponto todo.
+    """
+
+    list_display = ("criado_em", "origem", "grupo")
+    list_filter = ("origem", "grupo", "criado_em")
+    date_hierarchy = "criado_em"
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False

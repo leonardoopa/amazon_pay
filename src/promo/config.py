@@ -20,7 +20,7 @@ class MissingConfig(RuntimeError):
 def _get(key: str, default: str | None = None) -> str:
     value = os.getenv(key, default)
     if value is None or value == "":
-        raise MissingConfig(f"Falta {key} no .env (copie de .env.example)")
+        raise MissingConfig(f"Falta {key} no .env (copie de .env.sample)")
     return value
 
 
@@ -216,6 +216,19 @@ def drip_interval_seconds() -> float:
     Rajada e lida como flood pelo grupo e como robo pelo antifraude da Meta.
     """
     return float(_optional("DRIP_INTERVAL_SECONDS", "150"))
+
+
+def post_max_age_minutes() -> int:
+    """Idade maxima de um post na fila antes de ser descartado.
+
+    O texto de cada post carrega um preco com hora, e o gotejamento pode
+    segurar a fila por mais de uma hora. Mandar "R$ 389" quando o link ja abre
+    em R$ 459 e pior do que nao mandar nada: queima a confianca que a medicao
+    inteira existe para construir.
+
+    0 desliga o descarte -- so faca isso se a fila for curta o tempo todo.
+    """
+    return _int("POST_MAX_AGE_MINUTES", 60)
 
 
 def max_pending_queue() -> int:

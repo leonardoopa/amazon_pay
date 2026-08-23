@@ -49,7 +49,7 @@
       <a href="{% url 'vitrine:home' %}#como">Como funciona</a>
       <a href="{% url 'vitrine:home' %}#ofertas">Ofertas</a>
       {% if grupo_aberto %}
-        <a class="botao botao-mini" href="{{ grupo_aberto.convite }}" target="_blank" rel="noopener">Entrar no grupo</a>
+        <a class="botao botao-mini" href="{% url 'vitrine:entrar' %}?de=topo" target="_blank" rel="noopener">Entrar no grupo</a>
       {% endif %}
     </nav>
   </div>
@@ -89,6 +89,11 @@
   </p>
 </footer>
 
+{% comment %}
+  `rede.js` primeiro: os dois de baixo consultam `window.RedeCara()` para
+  decidir se baixam filme. `defer` garante a ordem de execução.
+{% endcomment %}
+<script src="{% static 'vitrine/js/rede.js' %}" defer></script>
 <script src="{% static 'vitrine/js/scroll-cinema.js' %}" defer></script>
 <script src="{% static 'vitrine/js/scroll.js' %}" defer></script>
 </body>

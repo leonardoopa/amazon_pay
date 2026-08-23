@@ -1,5 +1,5 @@
 {% extends "vitrine/base.html" %}
-{% load humanize %}
+{% load l10n %}
 
 {% block conteudo %}
 
@@ -13,7 +13,7 @@
       <span class="selo">
         <span class="pulso" aria-hidden="true"></span>
         {% if numeros.produtos %}
-          <b>{{ numeros.produtos|intcomma }} produtos</b> sob monitoramento agora
+          <b>{{ numeros.produtos }} produtos</b> sob monitoramento agora
         {% else %}
           Comunidade nova &mdash; <b>entrando no ar</b>
         {% endif %}
@@ -30,7 +30,7 @@
 
       <div class="hero-acoes">
         {% if grupo_aberto %}
-          <a class="botao" href="{{ grupo_aberto.convite }}" target="_blank" rel="noopener">
+          <a class="botao" href="{% url 'vitrine:entrar' %}?de=hero" target="_blank" rel="noopener">
             Entrar no grupo grátis
           </a>
         {% else %}
@@ -78,15 +78,19 @@
   </div>
 </section>
 
-{% if ofertas %}
+{% if esteira %}
 <section class="esteira" aria-label="Ofertas recentes em movimento">
   <div class="esteira-trilha">
     {% comment %}
       Duas cópias da lista: a animação anda -50% e emenda sem salto.
       A segunda some para leitor de tela, senão anuncia tudo duplicado.
+
+      Aqui só entra oferta medida por nós (ver `esteira` na view). A pílula
+      passa rápido e não tem espaço para dizer de onde veio a baseline — e um
+      "-29%" sem essa ressalva afirma medição que, no repasse, não houve.
     {% endcomment %}
     {% for volta in "12" %}
-      {% for item in ofertas %}
+      {% for item in esteira %}
         <a class="pilula" href="{% url 'vitrine:oferta' item.external_id %}"
            {% if volta == "2" %}aria-hidden="true" tabindex="-1"{% endif %}>
           {% if item.produto.image_url %}
@@ -111,19 +115,19 @@
   <div class="container">
     <div class="numeros-grid" data-revelar>
       <div class="numero">
-        <div class="numero-valor" data-contar="{{ numeros.produtos }}">{{ numeros.produtos|intcomma }}</div>
+        <div class="numero-valor" data-contar="{% localize off %}{{ numeros.produtos }}{% endlocalize %}">{{ numeros.produtos }}</div>
         <div class="numero-rotulo">produtos monitorados</div>
       </div>
       <div class="numero">
-        <div class="numero-valor" data-contar="{{ numeros.observacoes }}">{{ numeros.observacoes|intcomma }}</div>
+        <div class="numero-valor" data-contar="{% localize off %}{{ numeros.observacoes }}{% endlocalize %}">{{ numeros.observacoes }}</div>
         <div class="numero-rotulo">preços registrados</div>
       </div>
       <div class="numero">
-        <div class="numero-valor" data-contar="{{ numeros.ofertas_enviadas }}">{{ numeros.ofertas_enviadas|intcomma }}</div>
+        <div class="numero-valor" data-contar="{% localize off %}{{ numeros.ofertas_enviadas }}{% endlocalize %}">{{ numeros.ofertas_enviadas }}</div>
         <div class="numero-rotulo">ofertas aprovadas no filtro</div>
       </div>
       <div class="numero">
-        <div class="numero-valor" data-contar="{{ numeros.economia_total|floatformat:0 }}" data-prefixo="R$ ">R$ {{ numeros.economia_total|floatformat:0|intcomma }}</div>
+        <div class="numero-valor" data-contar="{{ numeros.economia_total|floatformat:'0u' }}" data-prefixo="R$ ">R$ {{ numeros.economia_total|floatformat:0 }}</div>
         <div class="numero-rotulo">abaixo da mediana, somado</div>
       </div>
     </div>
@@ -315,9 +319,17 @@
   <div class="container">
     <div class="secao-cabeca" data-revelar>
       <span class="secao-etiqueta">Já foi para o grupo</span>
-      <h2>As últimas que passaram no filtro.</h2>
+      <h2>As últimas que foram para o grupo.</h2>
       <p class="secao-texto">
         Cada uma tem a curva de preço aberta. Clique e confira você mesmo.
+        {% comment %}
+          A ressalva só aparece quando existe repasse na lista. Explicar uma
+          etiqueta que não está na tela levanta dúvida sobre o que está.
+        {% endcomment %}
+        {% if tem_repasse %}
+          As que dizem <b>“preço da loja”</b> vieram da vitrine do Mercado
+          Livre e não passaram pela nossa medição — a etiqueta avisa, sempre.
+        {% endif %}
       </p>
     </div>
 
@@ -336,10 +348,23 @@
             <p class="oferta-titulo">{{ item.produto.title }}</p>
             <div class="oferta-precos">
               <span class="oferta-preco">R$ {{ item.post.price|floatformat:2 }}</span>
-              <span class="oferta-media">média <s>R$ {{ item.post.baseline|floatformat:2 }}</s></span>
+              {% comment %}
+                "média" só pode aparecer quando a baseline é a nossa mediana.
+                No repasse da vitrine do ML ela é o preço que a loja riscou —
+                o mesmo rótulo nos dois casos apresentaria o número da loja
+                como medição nossa.
+              {% endcomment %}
+              <span class="oferta-media">
+                {% if item.verificado %}média{% else %}preço da loja{% endif %}
+                <s>R$ {{ item.post.baseline|floatformat:2 }}</s>
+              </span>
             </div>
             <div class="oferta-rodape">
-              <span>economia de R$ {{ item.post.economia|floatformat:2 }}</span>
+              {% if item.verificado %}
+                <span>economia de R$ {{ item.post.economia|floatformat:2 }}</span>
+              {% else %}
+                <span>desconto anunciado pela loja</span>
+              {% endif %}
               <span class="oferta-ver">ver curva</span>
             </div>
           </div>
@@ -375,15 +400,15 @@
             </div>
             <p class="grupo-vagas">
               {% if grupo.lotado %}
-                Lotado &mdash; {{ grupo.membros|intcomma }} membros
+                Lotado &mdash; {{ grupo.membros }} membros
               {% else %}
-                <b>{{ grupo.vagas|intcomma }} vagas</b> de {{ grupo.capacidade|intcomma }}
+                <b>{{ grupo.vagas }} vagas</b> de {{ grupo.capacidade }}
               {% endif %}
             </p>
             {% if grupo.lotado %}
               <span class="botao botao-desativado">Grupo lotado</span>
             {% else %}
-              <a class="botao" href="{{ grupo.convite }}" target="_blank" rel="noopener">Entrar agora</a>
+              <a class="botao" href="{% url 'vitrine:entrar' %}?de=grupos" target="_blank" rel="noopener">Entrar agora</a>
             {% endif %}
           </div>
         {% endfor %}
@@ -410,6 +435,14 @@
       <form class="captura-form" method="post" action="{% url 'vitrine:inscrever' %}">
         {% csrf_token %}
         {{ form.email }}
+        {% comment %}
+          Campo-isca: fica fora da tela, sem rótulo e fora da ordem de
+          tabulação. Visitante nunca o encontra; robô de formulário preenche
+          tudo que acha, e o formulário recusa quando ele vem com conteúdo.
+          Não é `display: none` de propósito — parte dos robôs pula campo
+          escondido assim, e a armadilha só funciona se ele cair nela.
+        {% endcomment %}
+        <div class="isca-caixa" aria-hidden="true">{{ form.url }}</div>
         <button class="botao" type="submit">Avise-me</button>
       </form>
     </div>

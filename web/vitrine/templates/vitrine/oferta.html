@@ -1,10 +1,9 @@
 {% extends "vitrine/base.html" %}
-{% load humanize %}
 
 {% block title %}{{ produto.title }} — Comunidade do Desconto{% endblock %}
 {% block description %}{% if demonstracao %}Exemplo de curva de preço — série de demonstração, não coletada.{% else %}Curva de preço real dos últimos {{ dias }} dias deste produto, coletada dia a dia.{% endif %}{% endblock %}
 {% block og_title %}{{ produto.title }}{% endblock %}
-{% block og_description %}{% if post %}R$ {{ post.price|floatformat:2 }} — {{ post.discount_pct|floatformat:0 }}% abaixo da mediana histórica.{% else %}Histórico de preço aberto.{% endif %}{% endblock %}
+{% block og_description %}{% if post and verificado %}R$ {{ post.price|floatformat:2 }} — {{ post.discount_pct|floatformat:0 }}% abaixo da mediana histórica.{% elif post %}R$ {{ post.price|floatformat:2 }} — {{ post.discount_pct|floatformat:0 }}% abaixo do preço anunciado pela loja.{% else %}Histórico de preço aberto.{% endif %}{% endblock %}
 {% block og_image_alt %}{{ produto.title }}{% endblock %}
 
 {% block conteudo %}
@@ -24,7 +23,15 @@
       {% if post %}
         <div class="detalhe-preco">
           <span class="detalhe-valor">R$ {{ post.price|floatformat:2 }}</span>
-          <span class="oferta-media">mediana <s>R$ {{ post.baseline|floatformat:2 }}</s></span>
+          {% comment %}
+            De onde saiu a baseline muda a frase. Com `verified` é a mediana
+            que apuramos; sem, é o preço que a própria loja riscou no anúncio.
+            Chamar os dois de "mediana" é o que a página acusa a loja de fazer.
+          {% endcomment %}
+          <span class="oferta-media">
+            {% if verificado %}mediana{% else %}preço da loja{% endif %}
+            <s>R$ {{ post.baseline|floatformat:2 }}</s>
+          </span>
           <span class="etiqueta-desconto" style="position:static">-{{ post.discount_pct|floatformat:0 }}%</span>
         </div>
       {% endif %}
@@ -44,6 +51,14 @@
               exemplo de como a curva fica — estes preços não foram coletados.</span>
           </li>
         {% else %}
+        {% if not verificado %}
+          <li>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+            <span><strong>Este desconto é o que a loja anuncia</strong>, não a nossa
+              medição: veio da vitrine de ofertas do Mercado Livre. A curva abaixo é
+              nossa e continua valendo — compare você mesmo.</span>
+          </li>
+        {% endif %}
         <li>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
           <span>{{ dias }} dia{{ dias|pluralize }} de preço coletado por nós, um registro por dia.</span>
@@ -74,7 +89,7 @@
           Ver na loja
         </a>
         {% if grupo_aberto %}
-          <a class="botao botao-fantasma" href="{{ grupo_aberto.convite }}" target="_blank" rel="noopener">
+          <a class="botao botao-fantasma" href="{% url 'vitrine:entrar' %}?de=oferta" target="_blank" rel="noopener">
             Receber as próximas
           </a>
         {% endif %}

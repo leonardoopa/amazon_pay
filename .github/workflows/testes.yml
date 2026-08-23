@@ -1,0 +1,66 @@
+# Os testes existem desde o começo do projeto, mas nada os executava fora da
+# máquina de quem escreveu. Este workflow fecha isso: as duas suítes rodam em
+# todo push e em todo pull request.
+#
+# São duas porque são dois runners diferentes -- o bot é pytest, o site é o
+# runner do Django (ele precisa do settings e do banco de teste). Rodar as
+# duas no mesmo job mantém o feedback num lugar só.
+name: testes
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Mesma versão da imagem do Dockerfile (python:3.12-slim).
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Testes do bot
+        run: pytest -q
+
+      - name: Testes do site
+        working-directory: web
+        # DJANGO_DEBUG=1 aqui é o que o settings espera de ambiente local: sem
+        # isso ele exige SECRET_KEY e ALLOWED_HOSTS, que é justamente a trava
+        # que protege produção.
+        env:
+          DJANGO_DEBUG: "1"
+        run: python manage.py test
+
+      - name: Checagem de deploy do site
+        working-directory: web
+        # Roda o `check --deploy` com a configuração de produção. Pega
+        # regressão em cookie, HSTS e afins antes de virar deploy.
+        env:
+          DJANGO_DEBUG: "0"
+          DJANGO_SECRET_KEY: chave-de-ci-nao-usada-em-producao-0123456789abcdef
+          DJANGO_ALLOWED_HOSTS: exemplo.com.br
+          DJANGO_HTTPS: "1"
+        run: python manage.py check --deploy --fail-level ERROR
+
+      - name: collectstatic (mesmo passo do build da imagem)
+        working-directory: web
+        # Se um `{% static %}` aponta para arquivo que não existe, é aqui que
+        # aparece -- e não no build do deploy.
+        env:
+          DJANGO_DEBUG: "0"
+          DJANGO_SECRET_KEY: chave-de-ci-nao-usada-em-producao-0123456789abcdef
+          DJANGO_ALLOWED_HOSTS: exemplo.com.br
+        run: python manage.py collectstatic --noinput

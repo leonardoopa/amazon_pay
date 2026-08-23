@@ -100,7 +100,13 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # CSP e Permissions-Policy. Ver comunidade/cabecalhos.py.
+    "comunidade.cabecalhos.seguranca",
 ]
+
+# Referer completo vaza a página exata que o visitante estava lendo para o CDN
+# da loja e para o Google Fonts. Só a origem é suficiente.
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 ROOT_URLCONF = "comunidade.urls"
 
@@ -134,13 +140,26 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": PROJECT_ROOT / os.getenv("DJANGO_DB_PATH", "data/site.db"),
+        # Vários workers do gunicorn escrevendo inscrição no mesmo arquivo:
+        # WAL para leitor e escritor não se bloquearem, e espera pelo lock em
+        # vez de 500 na cara de quem acabou de deixar o e-mail.
+        "OPTIONS": {"timeout": 20, "init_command": "PRAGMA journal_mode=WAL;"},
     },
     # Banco do bot, montado somente para leitura. O caminho acompanha o
     # DB_PATH que o coletor usa, então os dois falam do mesmo arquivo.
     "promos": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": PROJECT_ROOT / os.getenv("DB_PATH", "data/promos.db"),
-        "OPTIONS": {"transaction_mode": "DEFERRED"},
+        "OPTIONS": {
+            "transaction_mode": "DEFERRED",
+            # A coleta escreve neste arquivo enquanto o site o lê. O bot deixa
+            # o banco em WAL (ver promo.db.connect), então leitor e escritor
+            # não se bloqueiam — mas um checkpoint do WAL ainda pode segurar a
+            # leitura por instantes. Sem timeout o driver levanta na hora, e o
+            # `_seguro()` das views transformaria isso numa home com contador
+            # zerado, com status 200 e sem log.
+            "timeout": 20,
+        },
         "TEST": {"MIRROR": "default"},
     },
 }
@@ -175,6 +194,17 @@ LANGUAGE_CODE = "pt-br"
 TIME_ZONE = "America/Sao_Paulo"
 
 USE_I18N = True
+
+# "R$ 1349,00" lê como quatro algarismos soltos; num site cujo argumento é
+# preço, o separador de milhar é legibilidade, não enfeite. Com isto ligado,
+# `floatformat` já sai como "R$ 1.349,00" no locale pt-BR e o `intcomma` do
+# humanize deixa de ser necessário (ele usa vírgula e brigaria com a vírgula
+# decimal, produzindo "1,349,00").
+#
+# Cuidado ao ler número em atributo HTML: `data-contar="{{ n }}"` também é
+# localizado, e `Number("1.234")` em JavaScript dá 1,234. Onde o valor é lido
+# por script, o template usa `{% localize off %}`.
+USE_THOUSAND_SEPARATOR = True
 
 USE_TZ = True
 

@@ -24,6 +24,7 @@ from .config import (
     hot_track_limit,
     max_pending_queue,
     ofertas_pages,
+    post_max_age_minutes,
     run_interval_seconds,
     track_limit,
 )
@@ -31,6 +32,7 @@ from .copywriter import Copywriter, fallback_copy
 from .db import (
     connect,
     create_post,
+    expire_stale_posts,
     mark_post_failed,
     mark_post_sent,
     hot_products,
@@ -395,6 +397,10 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # drena. Sem teto, a fila vira um deposito e o grupo passa a receber oferta
     # de horas atras -- que pode nem existir mais no preco anunciado.
     with connect() as conn:
+        # Expira antes de contar: post velho vai ser descartado no flush desta
+        # mesma rodada, e deixa-lo no numero faria a fila parecer cheia e
+        # recusar oferta nova que tinha lugar.
+        expire_stale_posts(conn)
         na_fila = len(pending_posts(conn))
     espaco = max(0, min(rules.max_offers_per_run, max_pending_queue() - na_fila))
     if espaco < rules.max_offers_per_run:
@@ -486,6 +492,9 @@ def deliver(drafts: list[tuple[ScoredOffer, str]]) -> None:
                 scored.discount_pct,
                 text,
                 scored.offer.image_url,
+                # Sem isso a distincao morria aqui: o site lia repasse da
+                # vitrine como desconto medido por nos.
+                verified=scored.verified,
             )
     flush_pending()
 
@@ -512,9 +521,21 @@ def flush_pending(
     delivery = build_delivery()
 
     with connect() as conn:
+        # Antes de drenar, joga fora o que envelheceu. O texto na fila carrega
+        # um preco com hora; passado o prazo ele deixa de ser medicao e passa a
+        # ser chute -- e chute e o que o grupo existe para nao receber.
+        velhos = expire_stale_posts(conn)
         queue = [
             (row["id"], row["copy"], row["image_url"]) for row in pending_posts(conn)
         ]
+
+    if velhos:
+        log.warning(
+            "%d post(s) descartados por preco velho (mais de %d min na fila). "
+            "Fila produzindo mais rapido do que o gotejamento drena.",
+            len(velhos),
+            post_max_age_minutes(),
+        )
 
     if not queue:
         log.info("Nada pendente na fila.")

@@ -373,6 +373,18 @@ a { color: inherit; }
 .captura-form input::placeholder { color: var(--texto-3); }
 .captura-form input:focus-visible { outline: 2px solid var(--verde); outline-offset: 2px; border-color: transparent; }
 
+/* Campo-isca do formulário: existe para robô achar e pessoa não.
+
+   Tirado da tela por posição, e não com `display: none` — parte dos robôs de
+   spam ignora campo com display none, e a armadilha depende de ele preencher.
+   `!important` no flex porque a regra de cima manda em todo input do
+   formulário, e a isca não pode ocupar coluna ao lado do e-mail. */
+.isca-caixa {
+  position: absolute; left: -9999px; top: auto;
+  width: 1px; height: 1px; overflow: hidden;
+}
+.captura-form .isca-caixa input { flex: 0 0 1px !important; padding: 0; }
+
 /* ---------- perguntas ---------- */
 
 .perguntas { display: grid; gap: 12px; max-width: 62em; }
@@ -432,14 +444,16 @@ a { color: inherit; }
   color: var(--texto-3); font-size: 12.5px;
 }
 
-/* Modo claro: quem force o tema não pode receber texto branco no branco. */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --fundo: #ffffff; --fundo-2: #f7f8fa; --superficie: #eef0f4; --superficie-alta: #e4e7ee;
-    --borda: #dfe3ea; --borda-clara: #c6ccd8;
-    --texto: #0b0d12; --texto-2: #454c5c; --texto-3: #737b8c;
-  }
-}
+/* Não há modo claro, e é decisão, não esquecimento.
+   Havia aqui uma consulta de mídia de tema claro sob o seletor
+   `:root:not([data-theme="dark"])`. O `base.html` fixa `data-theme="dark"` no
+   <html>, então o seletor nunca casava: o bloco era código morto que dava a
+   impressão de haver tema claro suportado.
+   A página é escura por construção — o filme do topo é escuro com texto
+   branco por cima, e trocar só os tokens deixaria o hero inconsistente com o
+   resto. Para ligar tema claro de verdade: tire o `data-theme="dark"` do
+   base.html, redefina os tokens aqui e confira o Scroll Cinema, que é a parte
+   que não segue token. */
 
 /* ===============================================================
    SCROLL

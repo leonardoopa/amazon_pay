@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import threading
 from contextlib import asynccontextmanager
+from hmac import compare_digest
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
@@ -92,7 +93,11 @@ def require_key(x_api_key: Annotated[str | None, Header()] = None) -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="API_SECRET nao configurado; endpoint desabilitado.",
         )
-    if x_api_key != esperado:
+    # compare_digest em vez de `!=`: a comparacao de string do Python para no
+    # primeiro byte diferente, e o tempo de resposta entrega quantos bytes
+    # estao certos. Com a chave em hex, isso reduz a busca de exponencial para
+    # linear no tamanho dela.
+    if not compare_digest(x_api_key or "", esperado):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="X-API-Key invalido ou ausente.",
@@ -114,6 +119,12 @@ def create_app(worker_enabled: bool = True) -> FastAPI:
 
         Responde 503 quando o banco nao abre ou quando o worker deveria estar
         vivo e nao esta. E o que o healthcheck do compose consulta.
+
+        Nao expoe texto de excecao. Mensagem de erro de rodada carrega URL
+        interna, caminho de arquivo e as vezes o JID do grupo; num endpoint
+        aberto isso e reconhecimento gratis para quem estiver olhando. Aqui
+        vai so o fato de ter havido erro -- o texto sai no /stats, com chave,
+        e no log do container.
         """
         corpo: dict[str, Any] = {
             "status": "ok",
@@ -123,11 +134,11 @@ def create_app(worker_enabled: bool = True) -> FastAPI:
         try:
             with connect() as conn:
                 corpo["last_run_hours_ago"] = hours_since(conn, LAST_RUN_KEY)
-                corpo["last_error"] = get_meta(conn, LAST_ERROR_KEY) or None
+                corpo["last_run_failed"] = bool(get_meta(conn, LAST_ERROR_KEY))
             corpo["database"] = "ok"
-        except Exception as exc:  # noqa: BLE001 - o health nao pode levantar
+        except Exception:  # noqa: BLE001 - o health nao pode levantar
             log.exception("Health check falhou no banco")
-            corpo["database"] = f"erro: {exc}"
+            corpo["database"] = "erro"
             corpo["status"] = "degraded"
 
         if app.state.worker_enabled and not worker_running():
@@ -141,9 +152,16 @@ def create_app(worker_enabled: bool = True) -> FastAPI:
 
     @app.get("/stats", tags=["infra"], dependencies=[Depends(require_key)])
     def estado() -> dict[str, Any]:
-        """Mesmas contagens do `promo stats`, em JSON."""
+        """Contagens do `promo stats` e o erro da ultima rodada, em JSON.
+
+        O texto do erro vive aqui, e nao no /health, porque este endpoint
+        exige a chave.
+        """
         with connect() as conn:
-            return stats(conn)
+            return {
+                **stats(conn),
+                "last_run_error": get_meta(conn, LAST_ERROR_KEY) or None,
+            }
 
     @app.post(
         "/run",

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Iterator
 
-from .config import db_path
+from .config import db_path, post_max_age_minutes
 from .models import Offer
 
 SCHEMA = """
@@ -36,12 +36,20 @@ CREATE TABLE IF NOT EXISTS posts (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id   TEXT NOT NULL REFERENCES products(id),
     price        REAL NOT NULL,
+    -- Contra o que o desconto foi medido. Com verified=1 e a mediana que a
+    -- nossa coleta apurou; com verified=0 e o preco riscado do anuncio.
     baseline     REAL NOT NULL,
     discount_pct REAL NOT NULL,
     copy         TEXT NOT NULL,
     image_url    TEXT,           -- imagem enviada junto do texto
     attempts     INTEGER NOT NULL DEFAULT 0,
-    status       TEXT NOT NULL,  -- pending | sent | failed
+    -- 1 = desconto medido contra a nossa mediana. 0 = repasse da vitrine do
+    -- ML, medido contra o "de/por" da loja. A distincao existia so em memoria
+    -- (ScoredOffer.verified) e morria aqui: o site tratava os dois como prova
+    -- e chamava o "de/por" da loja de "media" -- exatamente o que a pagina
+    -- acusa a loja de fazer.
+    verified     INTEGER NOT NULL DEFAULT 1,
+    status       TEXT NOT NULL,  -- pending | sent | failed | expired
     error        TEXT,
     created_at   TEXT NOT NULL,
     sent_at      TEXT
@@ -105,7 +113,19 @@ MIGRATIONS = [
         "attempts",
         "ALTER TABLE posts ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0",
     ),
+    (
+        "posts",
+        "verified",
+        # DEFAULT 1 para o banco que ja existe: antes desta coluna o repasse da
+        # vitrine era minoria e nao ha como separar retroativamente. Marcar
+        # tudo como verificado herda o dado como ele era lido antes; marcar
+        # tudo como nao verificado apagaria a prova real que existe.
+        "ALTER TABLE posts ADD COLUMN verified INTEGER NOT NULL DEFAULT 1",
+    ),
 ]
+
+# Segundos que uma conexao espera por um lock antes de desistir.
+BUSY_TIMEOUT_SECONDS = 5.0
 
 
 def now() -> datetime:
@@ -118,9 +138,21 @@ def _iso(dt: datetime) -> str:
 
 @contextmanager
 def connect() -> Iterator[sqlite3.Connection]:
-    conn = sqlite3.connect(db_path())
+    conn = sqlite3.connect(db_path(), timeout=BUSY_TIMEOUT_SECONDS)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # WAL: o site (container `web`) le este mesmo arquivo enquanto a coleta
+    # escreve. No journal padrao a escrita toma um lock exclusivo e o leitor
+    # recebe SQLITE_BUSY na hora -- as views do site engolem o erro e a home
+    # serve contador zerado e feed vazio, com 200 e sem log. Em WAL leitor e
+    # escritor nao se bloqueiam.
+    #
+    # O modo fica gravado no arquivo, entao uma conexao basta para valer para
+    # todas. Banco em memoria (teste) ignora e responde "memory".
+    conn.execute("PRAGMA journal_mode = WAL")
+    # Duas escritas simultaneas ainda se excluem entre si. Esperar e melhor do
+    # que falhar: sem isso o segundo escritor levanta na hora.
+    conn.execute(f"PRAGMA busy_timeout = {int(BUSY_TIMEOUT_SECONDS * 1000)}")
     try:
         yield conn
         conn.commit()
@@ -374,16 +406,63 @@ def create_post(
     discount_pct: float,
     copy: str,
     image_url: str | None = None,
+    verified: bool = True,
 ) -> int:
+    """Enfileira um post.
+
+    `verified` acompanha o `ScoredOffer`: True quando a baseline e a mediana
+    que apuramos, False quando e o preco riscado da loja (repasse da vitrine).
+    O site le esta coluna para nao apresentar repasse como prova medida.
+    """
     cursor = conn.execute(
         """
         INSERT INTO posts (product_id, price, baseline, discount_pct, copy,
-                           image_url, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+                           image_url, verified, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
         """,
-        (product_id, price, baseline, discount_pct, copy, image_url, _iso(now())),
+        (
+            product_id,
+            price,
+            baseline,
+            discount_pct,
+            copy,
+            image_url,
+            1 if verified else 0,
+            _iso(now()),
+        ),
     )
     return int(cursor.lastrowid)
+
+
+def expire_stale_posts(
+    conn: sqlite3.Connection, max_age_minutes: int | None = None
+) -> list[sqlite3.Row]:
+    """Tira da fila os posts velhos demais para ainda valerem.
+
+    Devolve o que saiu, para o chamador poder registrar no log. O preco no
+    texto e uma medicao com hora, e uma hora depois ela pode nao valer mais --
+    ver config.post_max_age_minutes.
+    """
+    if max_age_minutes is None:
+        max_age_minutes = post_max_age_minutes()
+    if max_age_minutes <= 0:
+        return []
+    limite = _iso(now() - timedelta(minutes=max_age_minutes))
+    velhos = conn.execute(
+        """
+        SELECT id, product_id, price, created_at FROM posts
+        WHERE status = 'pending' AND created_at < ?
+        ORDER BY created_at
+        """,
+        (limite,),
+    ).fetchall()
+    if velhos:
+        conn.execute(
+            "UPDATE posts SET status = 'expired', error = ? "
+            "WHERE status = 'pending' AND created_at < ?",
+            (f"preco medido ha mais de {max_age_minutes} min", limite),
+        )
+    return velhos
 
 
 def recent_headlines(conn: sqlite3.Connection, limit: int = 12) -> list[str]:
@@ -521,6 +600,15 @@ def stats(conn: sqlite3.Connection, min_observations: int = 7) -> dict[str, int]
             (min_observations,),
         ),
         "posts_sent": conta("SELECT COUNT(*) c FROM posts WHERE status = 'sent'"),
+        # Quanto do que saiu foi medido por nos, e quanto foi repasse do
+        # "de/por" da loja. Separado porque so o primeiro sustenta a promessa
+        # do site; ver a coluna `verified`.
+        "posts_sent_verified": conta(
+            "SELECT COUNT(*) c FROM posts WHERE status = 'sent' AND verified = 1"
+        ),
         "posts_pending": conta("SELECT COUNT(*) c FROM posts WHERE status = 'pending'"),
         "posts_failed": conta("SELECT COUNT(*) c FROM posts WHERE status = 'failed'"),
+        # Enfileirados e descartados por preco velho. Numero alto quer dizer
+        # que a coleta produz mais do que o gotejamento drena.
+        "posts_expired": conta("SELECT COUNT(*) c FROM posts WHERE status = 'expired'"),
     }

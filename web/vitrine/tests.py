@@ -94,7 +94,12 @@ class PaginasTests(TestCase):
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "Comunidade")
 
-    def test_home_mostra_grupo_com_vaga(self):
+    def test_home_oferece_entrada_quando_ha_vaga(self):
+        """O botão aponta para `/entrar/`, que conta o clique e redireciona.
+
+        O convite não aparece mais no HTML — quem quiser o link passa pela
+        contagem, e raspador de página não sai daqui com o endereço do grupo.
+        """
         Grupo.objects.create(
             nome="Comunidade do Desconto #1",
             convite="https://chat.whatsapp.com/ABC",
@@ -102,9 +107,10 @@ class PaginasTests(TestCase):
             capacidade=1024,
         )
         resposta = self.client.get(reverse("vitrine:home"))
-        self.assertContains(resposta, "https://chat.whatsapp.com/ABC")
+        self.assertContains(resposta, reverse("vitrine:entrar"))
+        self.assertNotContains(resposta, "https://chat.whatsapp.com/ABC")
 
-    def test_grupo_lotado_nao_expoe_o_convite(self):
+    def test_grupo_lotado_nao_oferece_entrada(self):
         """Mandar alguém para grupo cheio queima a visita."""
         Grupo.objects.create(
             nome="Cheio",
@@ -114,6 +120,7 @@ class PaginasTests(TestCase):
         )
         resposta = self.client.get(reverse("vitrine:home"))
         self.assertNotContains(resposta, "https://chat.whatsapp.com/CHEIO")
+        self.assertNotContains(resposta, reverse("vitrine:entrar"))
         self.assertContains(resposta, "Grupo lotado")
 
     def test_oferta_inexistente_da_404(self):
