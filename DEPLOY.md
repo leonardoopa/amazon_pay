@@ -293,8 +293,39 @@ docker compose exec web python web/manage.py createsuperuser
 Depois entre em `https://ofertas.seudominio.com.br/admin/` e cadastre o grupo
 com o link `chat.whatsapp.com` gerado dentro do próprio grupo. `capacidade` é o
 limite do WhatsApp (1024) e `membros` é quanto já entrou — é essa razão que
-desenha a barra de ocupação e marca o grupo como lotado. Hoje esse número é
-manual: quando um grupo encher, atualize aqui e cadastre o próximo.
+desenha a barra de ocupação e marca o grupo como lotado.
+
+Preencha também o **JID** (sai do `promo wa-groups --search "nome do grupo"`,
+termina em `@g.us`). Com ele, o número de membros deixa de ser digitado à mão:
+
+```bash
+docker compose exec web python web/manage.py sincronizar_grupos
+```
+
+No cron, de hora em hora:
+
+```bash
+(crontab -l 2>/dev/null; echo "0 * * * * cd ~/amazon_pay && docker compose exec -T web python web/manage.py sincronizar_grupos >> /dev/null 2>&1") | crontab -
+```
+
+Se a Evolution estiver desconectada, o comando avisa e **mantém o número
+anterior** em vez de zerar — ocupação zerada anunciaria vaga em grupo cheio. A
+coluna "membros atualizados em" no admin diz se a sincronização ainda está
+viva.
+
+### Quantas pessoas o site levou para o grupo
+
+Os botões apontam para `/entrar/?de=<origem>`, que registra o clique e
+redireciona para o convite. O convite **não aparece mais no HTML** — quem
+quiser o link passa pela contagem, e raspador de página não sai da home com o
+endereço do grupo.
+
+No admin, em **Cliques**, o filtro por origem separa as chamadas: `topo`,
+`cinema`, `hero`, `grupos` e `oferta`. É o número que responde se a página
+converte, e qual parte dela converte.
+
+Clique com todos os grupos lotados também é registrado: é demanda sem vaga, o
+sinal de que está na hora de abrir o próximo grupo.
 
 ### Dados de demonstração no site no ar
 
@@ -320,6 +351,19 @@ disso o WhatsApp desiste de baixar e mostra o link sem imagem.
 Depois de qualquer troca de texto ou imagem de preview, o WhatsApp guarda o
 que já baixou por horas. Para conferir o resultado na hora, use o depurador do
 Facebook (`developers.facebook.com/tools/debug`) e peça "Scrape Again".
+
+### Busca e rede de celular
+
+`robots.txt` e `sitemap.xml` são servidos pelo Django, não por arquivo: eles
+saem com o domínio de quem pediu, então funcionam em localhost, no IP e no
+domínio final sem três versões. O `/entrar/` fica fora do índice — é
+redirecionamento, e visita de robô ali viraria clique falso na contagem.
+
+Os vídeos (12MB no topo, ~6MB por produto) **não são baixados** quando o
+navegador informa economia de dados ligada ou rede 2G/3G: fica o pôster, e a
+seção continua com a mesma altura e as mesmas legendas trocando com a rolagem.
+A regra mora em `static/vitrine/js/rede.js`, num arquivo só, porque os dois
+scripts que baixam filme precisam responder a mesma pergunta.
 
 ### Atualizar o site
 

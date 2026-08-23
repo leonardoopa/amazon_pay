@@ -50,7 +50,7 @@ PERMISSIONS_POLICY = (
 
 
 def seguranca(get_response):
-    """Middleware: acrescenta CSP e Permissions-Policy a toda resposta."""
+    """Middleware: CSP, Permissions-Policy e revalidação do HTML."""
 
     def middleware(request):
         resposta = get_response(request)
@@ -58,6 +58,28 @@ def seguranca(get_response):
         # relaxar a política num caso específico sem editar este arquivo.
         resposta.setdefault("Content-Security-Policy", CSP)
         resposta.setdefault("Permissions-Policy", PERMISSIONS_POLICY)
+        _revalidar_html(resposta)
         return resposta
 
     return middleware
+
+
+def _revalidar_html(resposta) -> None:
+    """Obriga o navegador a conferir o HTML antes de reusá-lo.
+
+    Os estáticos levam hash no nome e cache de um ano — é o que faz um deploy
+    novo nunca servir CSS velho. O HTML é o outro lado dessa moeda: se ele
+    ficar em cache, o visitante volta com uma página que aponta para
+    `app.<hash-antigo>.css`, arquivo que a imagem nova não tem. Resultado: 404
+    no CSS e no script, e a página aparece sem estilo e sem os filmes — o
+    mesmo sintoma de "está estático" que só um recarregar resolve.
+
+    `no-cache` não é "não guarde", é "guarde e pergunte antes de usar". A
+    resposta segue valendo 304 quando nada mudou, então o custo é um pedido
+    condicional, não o download da página.
+    """
+    if "Cache-Control" in resposta.headers:
+        return
+    tipo = resposta.headers.get("Content-Type", "")
+    if tipo.startswith("text/html"):
+        resposta.headers["Cache-Control"] = "no-cache, must-revalidate"

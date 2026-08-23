@@ -11,16 +11,29 @@ import sqlite3
 from datetime import date, datetime
 
 from django.contrib import messages
+from django.core.cache import cache
+from django.db.models import F, Sum
 from django.db.utils import DatabaseError, OperationalError
-from django.http import Http404, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
+from django.utils.html import escape
+from django.views.decorators.http import require_POST
 
 from .forms import InscricaoForm
-from .models import Grupo, HistoricoPreco, Post, Produto
+from .models import Clique, Grupo, HistoricoPreco, Post, Produto
 from .precos import montar_curva
 
 # Quantos dias de histórico o gráfico mostra.
 JANELA_DIAS = 60
+
+# Por quanto tempo guardar o que veio do banco do bot.
+#
+# A home consultava o `promos.db` a cada visita, e a coleta só muda esse dado a
+# cada duas horas: era leitura repetida de um arquivo que o bot está escrevendo
+# ao lado. Um minuto é curto o bastante para a oferta nova aparecer quase na
+# hora e longo o bastante para uma rajada de visitas custar uma consulta só.
+CACHE_SEGUNDOS = 60
 
 # O catálogo de demonstração (`semear_demo`) entra no mesmo banco do bot, mas
 # os preços dele são inventados — está escrito em src/promo/fixtures.py. Por
@@ -54,6 +67,10 @@ def _seguro(consulta, padrao):
 
 def _ofertas(limite: int = 12) -> list[dict]:
     """Últimas ofertas enviadas, já casadas com o produto."""
+    return _em_cache(f"vitrine:ofertas:{limite}", lambda: _ofertas_do_banco(limite))
+
+
+def _ofertas_do_banco(limite: int) -> list[dict]:
     posts = _seguro(lambda: list(Post.objects.publicados()[:limite]), [])
     if not posts:
         return []
@@ -93,6 +110,21 @@ def _quando(iso: str | None) -> datetime | None:
         return None
 
 
+def _em_cache(chave: str, produzir):
+    """Guarda por CACHE_SEGUNDOS o resultado de uma leitura do banco do bot.
+
+    O cache é local ao processo (LocMemCache), então cada worker do gunicorn
+    tem o seu. Não é problema aqui: o pior caso é uma consulta por worker por
+    minuto em vez de uma por visita, e o dado é o mesmo para todo mundo — não
+    há nada por visitante para vazar de um para o outro.
+    """
+    valor = cache.get(chave)
+    if valor is None:
+        valor = produzir()
+        cache.set(chave, valor, CACHE_SEGUNDOS)
+    return valor
+
+
 def _numeros() -> dict:
     """Contadores da prova social. Só números reais — nada inflado.
 
@@ -101,6 +133,10 @@ def _numeros() -> dict:
     exatamente a mentira que o site acusa a loja de contar. O /saude lê
     daqui também, então o monitoramento continua enxergando só o real.
     """
+    return _em_cache("vitrine:numeros", _numeros_do_banco)
+
+
+def _numeros_do_banco() -> dict:
     produtos = _seguro(lambda: Produto.objects.exclude(source=FONTE_DEMO).count(), 0)
     observacoes = _seguro(
         lambda: HistoricoPreco.objects.using("promos")
@@ -113,15 +149,30 @@ def _numeros() -> dict:
     # filtro nenhum nosso — a loja escolheu o preço riscado — e contá-lo aqui
     # seria vender o número da loja como medição própria.
     enviados = _seguro(lambda: Post.objects.medidos().count(), 0)
-    economia = 0.0
-    for post in _seguro(lambda: list(Post.objects.medidos()[:500]), []):
-        economia += post.economia
     return {
         "produtos": produtos,
         "observacoes": observacoes,
         "ofertas_enviadas": enviados,
-        "economia_total": economia,
+        "economia_total": _economia_total(),
     }
+
+
+def _economia_total() -> float:
+    """Soma de quanto cada oferta medida ficou abaixo da mediana.
+
+    A soma é do banco, não do Python. Antes eram até 500 objetos carregados e
+    somados aqui, o que tinha dois problemas: o teto de 500 tornava o número
+    silenciosamente errado depois do 500º post, e cada visita pagava a
+    carga inteira. O `filter(baseline__gt=F("price"))` faz o mesmo que o
+    `max(0, ...)` da propriedade `economia`, mas em SQL.
+    """
+    agregado = _seguro(
+        lambda: Post.objects.medidos()
+        .filter(baseline__gt=F("price"))
+        .aggregate(total=Sum(F("baseline") - F("price"))),
+        {},
+    )
+    return float((agregado or {}).get("total") or 0.0)
 
 
 def _historico(produto) -> list[float]:
@@ -358,9 +409,18 @@ def _data(iso: str) -> date | None:
         return None
 
 
+@require_POST
 def inscrever(request):
-    """Captura de e-mail — o que salva a visita quando todo grupo está lotado."""
-    if request.method != "POST":
+    """Captura de e-mail — o que salva a visita quando todo grupo está lotado.
+
+    Três camadas contra robô, em ordem de custo: o campo-isca do formulário
+    (custa nada e pega a maioria), o limite por IP aqui, e o `unique` do
+    e-mail no banco. Nenhuma delas cobra nada de quem é gente.
+    """
+    if _excedeu_limite(request):
+        # Mensagem de gente, não de sistema: quem cai aqui por acidente
+        # (clique duplo, aba duplicada) precisa entender o que fazer.
+        messages.error(request, "Muitas tentativas. Espere um minuto e tente de novo.")
         return redirect("vitrine:home")
 
     form = InscricaoForm(request.POST)
@@ -370,6 +430,77 @@ def inscrever(request):
     else:
         messages.error(request, "E-mail inválido ou já cadastrado.")
     return redirect("vitrine:home")
+
+
+# Envios permitidos por IP dentro da janela. Cinco é folgado para uma pessoa
+# (errar o e-mail duas vezes é normal) e apertado para quem varre formulário.
+LIMITE_ENVIOS = 5
+JANELA_LIMITE_SEGUNDOS = 300
+
+
+def _excedeu_limite(request) -> bool:
+    """Conta envios por IP numa janela curta.
+
+    O contador vive no cache do processo, então com N workers do gunicorn o
+    limite efetivo é N × LIMITE_ENVIOS. Fica assim de propósito: um contador
+    compartilhado exigiria Redis ou uma tabela, e para um formulário de um
+    campo a isca já derruba o volume — isto aqui é o teto que impede alguém de
+    encher a tabela num laço.
+
+    O IP não é gravado em lugar nenhum: ele só compõe a chave do contador, que
+    expira junto com a janela.
+    """
+    ip = _ip_do_visitante(request)
+    if not ip:
+        return False
+    chave = f"vitrine:inscricao:{ip}"
+    try:
+        enviados = cache.get_or_set(chave, 0, JANELA_LIMITE_SEGUNDOS)
+        cache.set(chave, (enviados or 0) + 1, JANELA_LIMITE_SEGUNDOS)
+    except Exception:  # noqa: BLE001 - cache indisponível não pode barrar cadastro
+        return False
+    return (enviados or 0) >= LIMITE_ENVIOS
+
+
+def _ip_do_visitante(request) -> str:
+    """IP de quem pediu, respeitando o proxy da frente.
+
+    Atrás do Caddy o `REMOTE_ADDR` é o próprio container, igual para todos —
+    limitar por ele barraria o site inteiro quando um único robô batesse. O
+    primeiro endereço do `X-Forwarded-For` é o cliente.
+    """
+    encaminhado = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if encaminhado:
+        return encaminhado.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def entrar(request):
+    """Redireciona para o convite do grupo, registrando o clique.
+
+    Existe para responder "quantas pessoas o site levou para o grupo?" — que
+    era uma pergunta sem resposta enquanto o botão apontava direto para o
+    `chat.whatsapp.com`. De quebra, o convite passa a ter um lugar só: trocar
+    o link do grupo é editar o cadastro, não caçar `href` em cinco templates.
+
+    Sem grupo com vaga, manda para a captura de e-mail em vez de dar erro:
+    quem clicou já demonstrou interesse, e é a hora de pedir o contato.
+    """
+    grupo = Grupo.aberto()
+    origem = request.GET.get("de", "")
+    validas = {chave for chave, _ in Clique.ORIGENS}
+    try:
+        Clique.objects.create(
+            grupo=grupo,
+            origem=origem if origem in validas else "desconhecida",
+        )
+    except DatabaseError:
+        # Medição não pode impedir a conversão que ela mede.
+        pass
+
+    if grupo is None:
+        return redirect(reverse("vitrine:home") + "#vaga")
+    return redirect(grupo.convite)
 
 
 def saude(request):
@@ -382,3 +513,69 @@ def saude(request):
             **numeros,
         }
     )
+
+
+def robots(request):
+    """robots.txt servido pelo Django, não por arquivo estático.
+
+    Assim ele aponta para o sitemap no domínio de quem pediu — o mesmo código
+    roda em localhost, no IP do servidor e no domínio final, sem três versões
+    do arquivo.
+
+    `/entrar/` fica fora do índice de propósito: é um redirecionamento para o
+    WhatsApp, não conteúdo, e cada visita de robô ali viraria um clique falso
+    na medição.
+    """
+    linhas = [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /admin/",
+        "Disallow: /entrar/",
+        "Disallow: /inscrever/",
+        "Disallow: /saude/",
+        "",
+        f"Sitemap: {request.build_absolute_uri(reverse('vitrine:sitemap'))}",
+        "",
+    ]
+    return HttpResponse("\n".join(linhas), content_type="text/plain; charset=utf-8")
+
+
+# Quantas páginas de oferta entram no sitemap. O buscador não precisa da
+# história inteira, e um sitemap de milhares de URLs de produto que a loja pode
+# ter tirado do ar gasta o rastreamento no lugar errado.
+SITEMAP_LIMITE = 200
+
+
+def sitemap(request):
+    """Sitemap XML: a home e as páginas de oferta que têm curva.
+
+    Escrito à mão em vez de `django.contrib.sitemaps` porque a fonte aqui é o
+    banco do bot, somente leitura e sem `LastModified` confiável por linha — o
+    framework pediria um model gerenciado e um `sites` instalado para entregar
+    o mesmo XML de duas dezenas de linhas.
+    """
+    urls = [(request.build_absolute_uri(reverse("vitrine:home")), "1.0", None)]
+
+    for item in _ofertas(SITEMAP_LIMITE):
+        quando = item.get("quando")
+        urls.append(
+            (
+                request.build_absolute_uri(
+                    reverse("vitrine:oferta", args=[item["external_id"]])
+                ),
+                "0.7",
+                quando.date().isoformat() if quando else None,
+            )
+        )
+
+    partes = ['<?xml version="1.0" encoding="UTF-8"?>']
+    partes.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+    for endereco, prioridade, modificado in urls:
+        partes.append("  <url>")
+        partes.append(f"    <loc>{escape(endereco)}</loc>")
+        if modificado:
+            partes.append(f"    <lastmod>{modificado}</lastmod>")
+        partes.append(f"    <priority>{prioridade}</priority>")
+        partes.append("  </url>")
+    partes.append("</urlset>")
+    return HttpResponse("\n".join(partes), content_type="application/xml")
