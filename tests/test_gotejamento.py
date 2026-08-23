@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from promo import pipeline  # noqa: E402
-from promo.db import SCHEMA, create_post, pending_posts  # noqa: E402
+from promo.config import post_max_age_minutes  # noqa: E402
+from promo.db import (  # noqa: E402
+    SCHEMA,
+    create_post,
+    now,
+    pending_posts,
+)
 
 
 class FakeDelivery:
@@ -209,3 +216,32 @@ def test_fila_vazia_nao_envia_nada(banco, monkeypatch):
     flush(monkeypatch, entrega, relogio)
 
     assert entrega.enviados == []
+
+
+# ---------- preco velho nao vai para o grupo ----------
+
+
+def test_flush_descarta_post_velho_antes_de_drenar(banco, monkeypatch):
+    """A fila pode segurar um post por mais de uma hora (orcamento de
+    drenagem + gotejamento). Preco de anuncio nao espera: o texto diz um valor
+    que o link talvez nao confirme mais."""
+    enfileira(banco, 2)
+    conn = sqlite3.connect(banco)
+    antigo = (now() - timedelta(minutes=post_max_age_minutes() + 5)).isoformat()
+    conn.execute("UPDATE posts SET created_at = ? WHERE id = 1", (antigo,))
+    conn.commit()
+    conn.close()
+
+    entrega, relogio = FakeDelivery(), Relogio()
+    flush(monkeypatch, entrega, relogio, budget=10_000)
+
+    assert entrega.enviados == ["post 1"]
+
+    conn = sqlite3.connect(banco)
+    conn.row_factory = sqlite3.Row
+    status = {
+        linha["id"]: linha["status"]
+        for linha in conn.execute("SELECT id, status FROM posts")
+    }
+    conn.close()
+    assert status == {1: "expired", 2: "sent"}
