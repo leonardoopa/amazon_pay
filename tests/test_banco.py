@@ -98,7 +98,8 @@ def test_banco_antigo_ganha_a_coluna_verified(tmp_path, monkeypatch):
     monkeypatch.setenv("DB_PATH", str(caminho))
 
     antigo = sqlite3.connect(caminho)
-    antigo.executescript("""
+    antigo.executescript(
+        """
         CREATE TABLE products (
             id TEXT PRIMARY KEY, source TEXT NOT NULL, external_id TEXT NOT NULL,
             title TEXT NOT NULL, url TEXT NOT NULL, image_url TEXT, category TEXT,
@@ -111,7 +112,8 @@ def test_banco_antigo_ganha_a_coluna_verified(tmp_path, monkeypatch):
             copy TEXT NOT NULL, status TEXT NOT NULL, error TEXT,
             created_at TEXT NOT NULL, sent_at TEXT
         );
-        """)
+        """
+    )
     antigo.commit()
     antigo.close()
 
