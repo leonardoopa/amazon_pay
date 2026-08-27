@@ -5,6 +5,12 @@
    só no que é dado. Se tudo brilha, nada brilha. */
 
 :root {
+  /* Diz ao navegador que a página é escura, e não só que ela pinta escuro.
+     Sem isto o Safari desenha em claro tudo que é dele e não nosso: barra
+     de rolagem, controles de formulário e a faixa de rubber-band que
+     aparece ao puxar além do fim da página. */
+  color-scheme: dark;
+
   --fundo: #08090c;
   --fundo-2: #0e1015;
   --superficie: #14171e;
