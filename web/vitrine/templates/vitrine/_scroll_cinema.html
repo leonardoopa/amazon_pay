@@ -51,7 +51,13 @@ pior do que não ter o efeito.
           <div class="sc-medidor-topo">
             <span class="sc-medidor-valor"
                   data-sc-progresso="contador"
-                  data-sc-max="{{ numeros.observacoes|default:0 }}">0</span>
+                  {% comment %}
+                  O `u` do floatformat desliga a localização. Sem ele o
+                  USE_THOUSAND_SEPARATOR escreve "1.673" aqui, e o
+                  Number() do JS lê isso como 1,673 -- o contador subia
+                  até 2 em vez de até o total de preços coletados.
+                  {% endcomment %}
+                  data-sc-max="{{ numeros.observacoes|default:0|floatformat:'0u' }}">0</span>
             <span class="sc-medidor-rotulo">preços conferidos</span>
           </div>
           <div class="sc-trilha">
