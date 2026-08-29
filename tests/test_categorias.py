@@ -188,31 +188,32 @@ def oferta(price: float, external_id: str = "MLB1") -> Offer:
 
 def test_aplica_o_teto_de_preco_da_categoria():
     fonte = FonteComDestaques([oferta(100.0, "MLB1"), oferta(5000.0, "MLB2")])
-    offers = collect_categories(fonte, [Category(id="MLB1051", max_price=1000)])
+    offers, _ = collect_categories(fonte, [Category(id="MLB1051", max_price=1000)])
 
     assert [o.external_id for o in offers] == ["MLB1"]
 
 
 def test_sem_teto_passa_tudo():
     fonte = FonteComDestaques([oferta(100.0), oferta(5000.0, "MLB2")])
-    assert len(collect_categories(fonte, [Category(id="MLB1051")])) == 2
+    assert len(collect_categories(fonte, [Category(id="MLB1051")])[0]) == 2
 
 
 def test_fonte_sem_highlights_e_ignorada():
     """Categoria e conceito do ML; a Amazon nao precisa fingir que tem."""
-    assert collect_categories(FonteSemDestaques(), [Category(id="MLB1051")]) == []
+    # Fonte sem `highlights` nao chamou ninguem, entao nao respondeu nada.
+    assert collect_categories(FonteSemDestaques(), [Category(id="MLB1051")]) == ([], False)
 
 
 def test_sem_categorias_nao_consulta():
     fonte = FonteComDestaques([oferta(100.0)])
-    assert collect_categories(fonte, []) == []
+    assert collect_categories(fonte, []) == ([], False)
     assert fonte.pedidas == []
 
 
 def test_categoria_quebrada_nao_derruba_as_outras():
     """Uma categoria fora do ar nao pode custar a rodada inteira."""
     fonte = FonteComDestaques([], falha=True)
-    offers = collect_categories(fonte, [Category(id="MLB1051"), Category(id="MLB1276")])
+    offers, _ = collect_categories(fonte, [Category(id="MLB1051"), Category(id="MLB1276")])
 
     assert offers == []
     assert fonte.pedidas == ["MLB1051", "MLB1276"]  # seguiu depois da falha

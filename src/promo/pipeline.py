@@ -158,6 +158,15 @@ def collect(
     """
     rules = rules or Rules.load()
     descobrir = _time_to_discover()
+    # Descoberta que so levantou excecao nao pode contar como descoberta feita.
+    # Ver o carimbo no fim desta funcao.
+    #
+    # Sao dois sinais, e nao um: "ninguem respondeu" e falha, mas "nao havia o
+    # que chamar" (rodada so com a vitrine, que nao busca por termo nem tem
+    # categoria) e o funcionamento normal. Tratar os dois como falha encheria
+    # o log de aviso em toda rodada sem nada de errado.
+    descoberta_tentou = False
+    descoberta_respondeu = False
     offers: list[Offer] = []
     for source in sources:
         # Nem toda fonte busca por termo: a vitrine e uma foto do que o ML
@@ -165,6 +174,8 @@ def collect(
         # watchlist virava um WARNING por rodada -- 35 linhas de ruido que
         # escondiam qualquer falha de verdade no meio.
         buscar = getattr(source, "search", None)
+        if descobrir and buscar and watchlist:
+            descoberta_tentou = True
         for watch in watchlist if (descobrir and buscar) else []:
             try:
                 found = buscar(watch.term)
@@ -173,21 +184,42 @@ def collect(
             ) as exc:  # noqa: BLE001 - uma fonte quebrada nao derruba a rodada
                 log.warning("%s falhou em '%s': %s", source.name, watch.term, exc)
                 continue
+            descoberta_respondeu = True
             if watch.max_price is not None:
                 found = [o for o in found if o.price <= watch.max_price]
             offers.extend(found)
             log.info("%s: %d ofertas para '%s'", source.name, len(found), watch.term)
 
         if descobrir:
-            offers.extend(collect_categories(source, categories or []))
+            if getattr(source, "highlights", None) and categories:
+                descoberta_tentou = True
+            achados, respondeu = collect_categories(source, categories or [])
+            offers.extend(achados)
+            descoberta_respondeu = descoberta_respondeu or respondeu
         offers.extend(collect_vitrine(source))
         if _due("last_full_refetch", full_refetch_interval_hours()):
             offers.extend(refetch_tracked(source, rules))
             _stamp("last_full_refetch")
         offers.extend(refetch_hot(source))
 
-    if descobrir:
+    # So carimba se a descoberta realmente aconteceu.
+    #
+    # Antes o carimbo era incondicional, e isso custou meio dia de coleta: na
+    # primeira rodada do servidor o `ml-auth` ainda nao tinha sido feito, cada
+    # busca por termo levantou "nao autorizado" -- tratadas uma a uma, com
+    # aviso, sem derrubar a rodada -- e o carimbo foi gravado assim mesmo. O
+    # bot registrou "descoberta feita" para uma descoberta que nao chamou uma
+    # API sequer, e passou a pular a proxima por 12 horas.
+    #
+    # Falha total nao pode virar sucesso no relogio: sem resposta de ninguem, a
+    # proxima rodada tenta de novo em vez de esperar o intervalo inteiro.
+    if descobrir and descoberta_respondeu:
         _stamp(DISCOVERY_KEY)
+    elif descobrir and descoberta_tentou:
+        log.warning(
+            "Nenhuma fonte respondeu a descoberta; nao carimbando. "
+            "A proxima rodada tenta de novo."
+        )
     return offers
 
 
@@ -293,17 +325,61 @@ def _time_to_discover() -> bool:
     return False
 
 
-def collect_categories(source, categories: list[Category]) -> list[Offer]:
+def _intercalar_por_fonte(
+    escolhidas: list[ScoredOffer], limite: int
+) -> list[ScoredOffer]:
+    """Distribui as vagas entre as fontes, a melhor de cada uma por vez.
+
+    Ordenar so por desconto entregava as cinco vagas a vitrine todas as vezes,
+    e nao por ela ter oferta melhor: o desconto do repasse e medido contra o
+    preco riscado, que quem escolhe e a loja. Quanto mais inflado o "de", mais
+    alto o produto subia. A ordenacao premiava exatamente a pratica que a
+    landing acusa -- e o grupo recebia cinco eletronicos por rodada enquanto
+    perfume, roupa e o resto do catalogo nunca chegavam.
+
+    O rodizio nao deixa vaga vazia: quando uma fonte acaba, as outras seguem
+    preenchendo. Com uma fonte so, o resultado e identico ao corte simples.
+
+    A ordem por desconto e preservada DENTRO de cada fonte -- continua saindo
+    a melhor oferta de cada uma, so nao as cinco melhores da mesma.
+    """
+    if limite <= 0:
+        return []
+
+    filas: dict[str, list[ScoredOffer]] = {}
+    for scored in escolhidas:
+        filas.setdefault(scored.offer.source, []).append(scored)
+
+    saida: list[ScoredOffer] = []
+    while len(saida) < limite and any(filas.values()):
+        for fila in filas.values():
+            if len(saida) >= limite:
+                break
+            if fila:
+                saida.append(fila.pop(0))
+    return saida
+
+
+def collect_categories(
+    source, categories: list[Category]
+) -> tuple[list[Offer], bool]:
     """Mais vendidos das categorias acompanhadas.
 
+    Devolve as ofertas e se ALGUMA categoria respondeu. O segundo valor existe
+    para o `collect()` nao carimbar a descoberta quando ninguem respondeu --
+    lista vazia por falha e lista vazia por nao haver oferta boa hoje sao
+    situacoes opostas, e sem esse sinal as duas ficam iguais.
+
     Fonte sem `highlights` (Amazon) e ignorada em silencio -- categoria e
-    conceito do ML, nao um recurso que toda loja precise ter.
+    conceito do ML, nao um recurso que toda loja precise ter. Ela tambem nao
+    conta como resposta: nunca houve chamada.
     """
     destaques = getattr(source, "highlights", None)
     if destaques is None or not categories:
-        return []
+        return [], False
 
     offers: list[Offer] = []
+    respondeu = False
     for category in categories:
         rotulo = category.name or category.id
         try:
@@ -311,11 +387,12 @@ def collect_categories(source, categories: list[Category]) -> list[Offer]:
         except Exception as exc:  # noqa: BLE001 - idem: nao derruba a rodada
             log.warning("%s falhou na categoria '%s': %s", source.name, rotulo, exc)
             continue
+        respondeu = True
         if category.max_price is not None:
             found = [o for o in found if o.price <= category.max_price]
         offers.extend(found)
         log.info("%s: %d mais vendidos em '%s'", source.name, len(found), rotulo)
-    return offers
+    return offers, respondeu
 
 
 def refetch_tracked(source, rules: Rules) -> list[Offer]:
@@ -386,10 +463,27 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             if scored is not None:
                 picked.append(scored)
 
+        # Repasse aceita qualquer fonte que traga o preco riscado, e nao so a
+        # vitrine.
+        #
+        # A trava em `ml_ofertas` foi escrita quando o catalogo praticamente
+        # nao devolvia `original_price` -- 213 vazios em 218, o numero que o
+        # ml_ofertas.py registra. Isso mudou: medido no servidor, 88 dos 223
+        # produtos vindos da API tem preco riscado, 39,5%, e 71 deles com 15%
+        # de desconto ou mais.
+        #
+        # Enquanto a trava existiu, TODA rodada saia com cinco itens da
+        # vitrine, e perfume, roupa e suplemento -- ja no catalogo, ja com
+        # desconto -- nunca chegavam ao grupo.
+        #
+        # O que protege contra repasse ruim nao e a fonte: e o
+        # `score_campaign`, que exige preco riscado maior que o atual, o
+        # desconto minimo e o cooldown. E o post continua saindo marcado
+        # `verified=False`, entao nada aqui afirma medicao que nao houve.
         ja_escolhido = {s.offer.product_id for s in picked}
         repasses: list[ScoredOffer] = []
         for offer in unique.values():
-            if offer.source != "ml_ofertas" or offer.product_id in ja_escolhido:
+            if offer.product_id in ja_escolhido:
                 continue
             scored = score_campaign(conn, offer, rules)
             if scored is not None:
@@ -442,8 +536,12 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             "Fila com %d post(s); aceitando so mais %d nesta rodada.", na_fila, espaco
         )
 
-    # Repasse preenche o que sobrou da cota, nunca desloca uma verificada.
-    picked = (picked + repasses)[:espaco]
+    # Repasse preenche o que sobrou da cota, nunca desloca uma verificada. A
+    # ordem entre as duas listas continua sendo essa; o que muda dentro de cada
+    # uma e de qual fonte vem cada vaga.
+    picked = _intercalar_por_fonte(picked, espaco)
+    if len(picked) < espaco:
+        picked += _intercalar_por_fonte(repasses, espaco - len(picked))
     verificadas = sum(1 for s in picked if s.verified)
     log.info(
         "%d ofertas selecionadas (%d verificadas, %d repasse da vitrine)",
