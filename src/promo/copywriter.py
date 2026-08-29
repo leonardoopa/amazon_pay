@@ -149,6 +149,21 @@ Regras rigidas:
 Responda apenas com o texto do post, nada mais."""
 
 
+def _chave_da_chamada(texto: str) -> str:
+    """Primeira linha reduzida ao que o leitor reconhece como "a mesma frase".
+
+    Compara sem acento, sem caixa, sem emoji e sem pontuacao: no grupo,
+    "MAIS BARATO QUE UM LANCHE DE PADARIA 🦷" e a mesma piada que
+    "mais barato que um lanche de padaria!" -- trocar o enfeite nao torna a
+    chamada nova para quem le.
+    """
+    primeira = texto.strip().splitlines()[0] if texto.strip() else ""
+    sem_acento = unicodedata.normalize("NFKD", primeira)
+    sem_acento = "".join(c for c in sem_acento if not unicodedata.combining(c))
+    so_texto = re.sub(r"[^a-z0-9 ]+", " ", sem_acento.casefold())
+    return re.sub(r"\s+", " ", so_texto).strip()
+
+
 class Copywriter:
     def __init__(self, client: genai.Client | None = None) -> None:
         self._client = client or genai.Client(api_key=gemini_api_key())
@@ -165,6 +180,44 @@ class Copywriter:
         link: str,
         coupon: str | None = None,
         avoid: list[str] | None = None,
+    ) -> str:
+        """Escreve o post, recusando chamada que ja saiu no grupo.
+
+        O prompt sempre listou as chamadas recentes pedindo para nao repetir, e
+        mesmo assim elas voltavam -- medido no banco: seis repeticoes, todas a
+        2 a 6 posts de distancia, dentro da mesma rodada e portanto dentro da
+        lista que o modelo tinha em maos. Pedir nao basta.
+
+        Este arquivo ja trata o resto da saida do Gemini assim: `_reject_*` e
+        `_enforce_*` conferem o que voltou em vez de confiar. A chamada
+        repetida era a unica regra do prompt sem essa contrapartida.
+
+        Duas tentativas, porque a segunda amostra do modelo quase sempre difere.
+        Se ainda repetir, levanta -- e o `deliver()` cai no `fallback_copy`, que
+        abre com o titulo do produto e por construcao nunca repete. Post sem
+        gracinha e melhor do que o grupo ler a mesma frase duas vezes.
+        """
+        proibidas = {_chave_da_chamada(linha) for linha in (avoid or [])}
+        proibidas.discard("")
+
+        for tentativa in range(2):
+            text = self._escrever_uma_vez(scored, link, coupon, avoid)
+            if _chave_da_chamada(text) not in proibidas:
+                return text
+            log.info(
+                "Gemini repetiu a chamada %r (tentativa %d/2).",
+                text.strip().splitlines()[0].strip()[:60],
+                tentativa + 1,
+            )
+
+        raise RuntimeError("Gemini insistiu numa chamada ja usada nos posts recentes")
+
+    def _escrever_uma_vez(
+        self,
+        scored: ScoredOffer,
+        link: str,
+        coupon: str | None,
+        avoid: list[str] | None,
     ) -> str:
         response = self._generate(_facts(scored, link, coupon, avoid))
 
