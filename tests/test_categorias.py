@@ -275,10 +275,15 @@ def test_url_dos_destaques_usa_o_site_configurado():
 # ---------- fontes sem busca por termo ----------
 
 
-def test_fonte_sem_search_nao_gera_ruido(caplog):
+def test_fonte_sem_search_nao_gera_ruido(caplog, banco_em_memoria):
     """A vitrine e uma foto do dia, nao aceita consulta por termo. Sem guarda,
     cada termo da watchlist virava um WARNING -- 35 por rodada, escondendo
-    falha de verdade no meio."""
+    falha de verdade no meio.
+
+    `banco_em_memoria` nao e detalhe deste caso: `collect()` abre o banco
+    sozinho pra decidir se descobre, entao sem a fixture o teste vai parar no
+    SQLite real do ambiente.
+    """
     import logging
 
     from promo.pipeline import Watch, collect
