@@ -41,46 +41,140 @@ o Postgres são o peso; o bot em si é leve.
 
 | Opção | RAM | Custo/mês | Nota |
 |---|---|---|---|
-| Oracle Always Free (São Paulo) | 24 GB (ARM) | **R$ 0** | Cota ARM costuma estar esgotada; confira se a imagem da Evolution tem tag `arm64` |
+| **Locaweb VPS 2 GB Linux** | 2 GB | **R$ 45 mensal** | Em uso. 2 vCPU, 60 GB SSD, datacenter BR. Exige o ajuste da seção "VPS de 2 GB" |
+| Locaweb VPS 4 GB Linux | 4 GB | R$ 89,90 mensal | Sobe o compose sem ajuste nenhum |
+| Oracle Always Free (São Paulo) | 12 GB (ARM) | R$ 0 | Ver ressalvas abaixo |
 | Raspberry Pi 5 em casa | 4–8 GB | ~R$ 5 de luz | IP residencial brasileiro — menor risco de ban |
 | Notebook velho em casa | — | ~R$ 15 de luz | Mesmo benefício de IP |
 | Hostinger VPS BR | 4 GB | ~R$ 30–60 | |
 | AWS Lightsail sa-east-1 | 2–4 GB | ~US$ 10–20 | |
 | Vultr São Paulo | 2–4 GB | ~US$ 12–24 | |
 
+Os planos da Locaweb têm dois preços: o de contrato de 24 meses (R$ 23,90 no
+de 2 GB) e o mensal sem fidelidade (R$ 45). Os valores da tabela são os
+mensais. O plano de **1 GB por R$ 30 não serve** para a configuração completa:
+com Ubuntu, Docker e os cinco containers já espremidos ao mínimo a soma passa
+de 1,1 GB, e o que sobra é swap em regime permanente — que na Evolution
+significa websocket caindo e repareamento do chip.
+
+Sobre a Oracle Always Free, três ressalvas que o preço de R$ 0 esconde:
+
+- O cadastro **exige cartão de crédito** para verificação de identidade.
+- A cota ARM de `sa-saopaulo-1` vive esgotada (`Out of host capacity`).
+- **Instância ociosa é recuperada.** Se por 7 dias corridos a CPU no percentil
+  95 ficar abaixo de 20%, a rede abaixo de 20% e a memória abaixo de 20%, a
+  Oracle apaga a máquina. Este bot roda um loop a cada 2h: ele bate os três
+  critérios com folga. Só o upgrade para Pay As You Go desliga a política — e
+  aí o cartão passa a ser cobrável no que exceder a cota.
+
+As imagens todas publicam `arm64` (`evoapicloud/evolution-api`,
+`postgres:16-alpine`, `caddy:2-alpine`, `python:3.12-slim`), então a máquina
+ARM não é impedimento técnico. O impedimento é a recuperação por ociosidade.
+
 Prefira **região São Paulo** ou máquina em casa. A Evolution roda sobre
 Baileys, e parear um chip brasileiro a partir de um IP de datacenter
 estrangeiro é um sinal a mais para o antifraude da Meta.
 
-Distro: Ubuntu 24.04 LTS.
-
 ## 1. Preparar o servidor
 
-Docker e o plugin do compose:
+Distro: Ubuntu 24.04 LTS. Logo depois do primeiro SSH, o `vps-setup.sh` faz
+Docker, swap, firewall e o ajuste de paginação de uma vez:
 
 ```bash
-curl -fsSL https://get.docker.com | sh
+curl -fsSL https://raw.githubusercontent.com/leonardoopa/amazon_pay/main/scripts/vps-setup.sh -o vps-setup.sh
+```
+
+Leia antes de rodar — é `sudo` que ele usa:
+
+```bash
+less vps-setup.sh
 ```
 
 ```bash
-sudo usermod -aG docker $USER && sudo systemctl enable --now docker
+bash vps-setup.sh
 ```
 
-Reabra a sessão SSH para o grupo `docker` valer.
+Ele é idempotente: rodar de novo não duplica swap nem regra de firewall.
+**Reabra a sessão SSH depois** — o grupo `docker` só vale no login seguinte.
 
-Firewall — SSH, mais 80 e 443 para o site. Todo o resto é loopback:
+O que ele configura, e por quê:
+
+- **Swap de 2 GB, `vm.swappiness=10`.** O swap aqui é rede de segurança, não
+  regime: o pico do `docker compose build` (pip install mais collectstatic)
+  passa de 400 MB, e sem swap esse pico mata um container em produção em vez
+  de falhar o build. O `swappiness` baixo mantém o kernel na RAM enquanto
+  houver — paginar a Evolution em regime derruba o websocket do WhatsApp.
+- **Firewall: só 22, 80 e 443.** A API (8000) e o painel da Evolution (8080)
+  ficam presos em `127.0.0.1` pelo compose e se alcançam por túnel SSH. Isso
+  não é excesso de zelo: a `EVOLUTION_API_KEY` dá controle total do WhatsApp
+  pareado. A 80 continua necessária mesmo com o site em HTTPS — é por ela que
+  o Let's Encrypt confirma que o domínio é seu, e é dela que o Caddy
+  redireciona para a 443.
+- **`fail2ban` e endurecimento do SSH.** Importa em servidor que aceita senha:
+  um IP público começa a receber tentativa de login em minutos, de listas que
+  testam primeiro o padrão "nome + data + símbolo". O `fail2ban` bane o IP após
+  5 tentativas, `PermitRootLogin no` obriga a acertar usuário além de senha, e
+  `MaxAuthTries 3` corta a sessão cedo. `PasswordAuthentication` continua
+  ligado — desligar tiraria o acesso de quem escolheu senha no painel.
+- **`sqlite3`**, que o `scripts/backup.sh` prefere ao fallback em Python.
+
+> Depois de rodar o script, **abra um segundo terminal e confirme o login antes
+> de fechar o primeiro**. `PermitRootLogin no` passa a valer na hora: se você
+> só tinha acesso como root e fechar a sessão, o caminho de volta é o console
+> do painel da hospedagem.
+
+> Em nuvem com firewall próprio na console (Oracle Security List / NSG, AWS
+> Security Group), abra 80 e 443 lá também. Senão o Caddy nem consegue validar
+> o domínio para emitir o certificado.
+
+### VPS de 2 GB
+
+Pule esta seção em máquina de 4 GB ou mais.
+
+O `docker-compose.yml` foi dimensionado para 4 GB. Em 2 GB a soma dos cinco
+containers encosta no teto, e quem morre é quem estiver alocando na hora — na
+prática a Evolution, porque é a maior. Evolution morrendo é sessão do WhatsApp
+caindo.
+
+O `docker-compose.vps-2gb.yml` corta consumo onde dá (2 workers no gunicorn em
+vez de 3, heap do Node em 448 MB, `shared_buffers` do Postgres em 48 MB) e põe
+teto por container, para que um vazamento derrube um serviço só em vez da
+máquina inteira.
+
+Ligue como `docker-compose.override.yml`, que o Compose carrega sozinho — assim
+um `docker compose up -d` distraído não perde o ajuste:
 
 ```bash
-sudo ufw allow 22/tcp && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw --force enable
+ln -s docker-compose.vps-2gb.yml docker-compose.override.yml
 ```
 
-> No Oracle Cloud há um segundo firewall na console (Security List / NSG), além
-> do `ufw`. Abra 80 e 443 lá também, senão o Caddy nem consegue validar o
-> domínio para emitir o certificado.
+Symlink, e não cópia: um `git pull` que atualize o ajuste passa a valer sem
+segundo passo. Confira que pegou:
 
-A 80 continua necessária mesmo com o site em HTTPS: é por ela que o Let's
-Encrypt confirma que o domínio é seu, e é dela que o Caddy redireciona para a
-443.
+```bash
+docker compose config | grep -E 'mem_limit|workers'
+```
+
+Orçamento com 2048 MB: ~300 MB de Ubuntu e do daemon do Docker, 1488 MB de
+teto somado, ~260 MB de folga para page cache.
+
+**Builde com os serviços parados.** Em 2 GB o pico do build concorre com os
+containers em pé:
+
+```bash
+docker compose down && docker compose build && docker compose up -d
+```
+
+Para acompanhar o consumo real depois de estabilizar:
+
+```bash
+docker stats --no-stream
+```
+
+Se algum container aparecer com `MEM %` perto de 100, ou o `docker compose ps`
+mostrar reinício repetido, o teto daquele serviço ficou curto — suba o
+`mem_limit` dele no `docker-compose.vps-2gb.yml` e desça outro, mantendo a soma
+abaixo de 1500 MB.
 
 ## 2. Clonar e configurar
 
@@ -284,16 +378,29 @@ alvo do healthcheck e serve para monitor externo.
 ### Cadastrar o grupo do WhatsApp
 
 O site não inventa link de convite: sem grupo cadastrado, o botão principal
-vira "avise-me quando abrir vaga". Crie o acesso ao admin:
+vira "avise-me quando abrir vaga". Um comando resolve:
+
+```bash
+docker compose exec web python web/manage.py cadastrar_grupo --nome "Comunidade do Desconto #1" --convite "https://chat.whatsapp.com/SEU_CODIGO"
+```
+
+O convite entra por argumento e vive só no banco. Ele **nunca** aparece no HTML
+da página nem em arquivo do repositório: quem quiser o link passa pelo
+`/entrar/`, que conta o clique antes de redirecionar — e assim raspador de
+página não sai da home com o endereço do grupo. Por isso também não o cole em
+template, em migração ou no `.env` versionado.
+
+Rodar de novo com o mesmo `--nome` atualiza em vez de duplicar, que é como se
+troca um convite revogado. `--capacidade` é o limite do WhatsApp (padrão 1024)
+e `--membros` é quanto já entrou — é essa razão que desenha a barra de ocupação
+e marca o grupo como lotado. Quando o primeiro lotar, cadastre o próximo com
+`--ordem 1`.
+
+O mesmo cadastro existe no admin, se preferir a tela:
 
 ```bash
 docker compose exec web python web/manage.py createsuperuser
 ```
-
-Depois entre em `https://ofertas.seudominio.com.br/admin/` e cadastre o grupo
-com o link `chat.whatsapp.com` gerado dentro do próprio grupo. `capacidade` é o
-limite do WhatsApp (1024) e `membros` é quanto já entrou — é essa razão que
-desenha a barra de ocupação e marca o grupo como lotado.
 
 Preencha também o **JID** (sai do `promo wa-groups --search "nome do grupo"`,
 termina em `@g.us`). Com ele, o número de membros deixa de ser digitado à mão:

@@ -1,0 +1,84 @@
+# Sobreposicao para VPS de 2 GB de RAM.
+#
+# O docker-compose.yml sozinho foi dimensionado para 4 GB. Em 2 GB a soma dos
+# cinco containers encosta no teto e quem morre e o processo que estiver
+# alocando na hora -- na pratica a Evolution, porque ela e a maior. E a
+# Evolution morrendo e a sessao do WhatsApp caindo.
+#
+# Este arquivo faz tres coisas: corta consumo onde da (workers do gunicorn,
+# heap do Node, buffers do Postgres) e poe teto por container, para que um
+# vazamento derrube um servico so em vez da maquina inteira.
+#
+# No servidor ele e ligado como docker-compose.override.yml, que o Compose
+# carrega sozinho -- assim um `docker compose up -d` distraido nao perde o
+# ajuste:
+#
+#   ln -s docker-compose.vps-2gb.yml docker-compose.override.yml
+#
+# Orcamento com 2048 MB: ~300 MB de Ubuntu e do daemon do Docker, 1488 MB de
+# teto somado aqui, ~260 MB de folga para page cache. O swap do vps-setup.sh
+# cobre o pico do build.
+
+services:
+  amazon_pay:
+    # O bot e httpx e SQLite -- o pico dele e a resposta da coleta em memoria,
+    # nao o processo em regime.
+    mem_limit: 256m
+    memswap_limit: 512m
+
+  web:
+    # Tres workers do gunicorn sao ~360 MB so de Django. Dois atendem a
+    # landing com sobra: o trafego dela e um punhado de visitas por post no
+    # grupo, e nao ha requisicao longa que segure worker.
+    #
+    # A concorrencia de escrita no site.db continua coberta: o settings.py
+    # abre o banco em WAL com timeout de 20s, entao dois workers gravando
+    # inscricao ao mesmo tempo se enfileiram em vez de dar 500.
+    #
+    # O entrypoint do compose base e ["sh", "-c"], e command sobrescreve
+    # inteiro -- por isso a linha do migrate vem repetida aqui.
+    command:
+      - >-
+        python web/manage.py migrate --noinput &&
+        exec gunicorn comunidade.wsgi:application
+        --chdir web --bind 0.0.0.0:8001 --workers 2
+        --access-logfile - --error-logfile -
+    mem_limit: 352m
+    memswap_limit: 512m
+
+  evolution:
+    environment:
+      # Sem teto explicito o V8 dimensiona o heap pela RAM da maquina e vai
+      # crescendo ate o limite do container, coletando lixo tarde demais.
+      # Com 448 MB de heap ele passa a coletar antes de encostar no mem_limit,
+      # e o container nao e morto por OOM no meio de uma sessao.
+      NODE_OPTIONS: --max-old-space-size=448
+    # Teto mais alto da pilha, de proposito: e o unico servico cuja morte
+    # custa repareamento do chip. A folga entre o heap (448) e o teto (640)
+    # cobre o que o Node aloca fora do heap -- buffers de socket e o binario.
+    mem_limit: 640m
+    memswap_limit: 896m
+
+  postgres:
+    # Guarda so a sessao da Evolution: uma conexao, tabelas pequenas, nenhuma
+    # consulta analitica. Os defaults do postgres:16-alpine (128 MB de
+    # shared_buffers, 100 conexoes) reservam para um porte que nao existe aqui.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=48MB
+      - -c
+      - max_connections=30
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - effective_cache_size=192MB
+    mem_limit: 192m
+    memswap_limit: 320m
+
+  caddy:
+    # Proxy reverso com um site: o binario em Go e uns poucos MB de estado.
+    mem_limit: 48m
+    memswap_limit: 96m
