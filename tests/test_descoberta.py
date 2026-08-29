@@ -208,3 +208,90 @@ def test_nao_mistura_fontes():
     add_history(conn, "MLB9", [100.0, 100.0, 100.0])
 
     assert hot_products(conn, "amazon", 10, 25) == []
+
+
+# ---------- carimbo da descoberta ----------
+
+
+class FonteQueFalha:
+    """Fonte cuja busca sempre levanta -- o caso do servidor sem `ml-auth`."""
+
+    name = "mercadolivre"
+
+    def search(self, termo, limit=None):
+        raise RuntimeError("Mercado Livre nao autorizado ainda")
+
+    def highlights(self, category_id, limit=None):
+        raise RuntimeError("Mercado Livre nao autorizado ainda")
+
+
+class FonteSoVitrine:
+    """Sem `search` e sem `highlights`: nao participa da descoberta."""
+
+    name = "ml_ofertas"
+
+    def fetch(self, pages=1):
+        return []
+
+
+def test_descoberta_que_falhou_inteira_nao_carimba(banco_em_memoria, monkeypatch):
+    """O bug que custou meio dia de coleta.
+
+    Na primeira rodada do servidor o `ml-auth` ainda nao tinha sido feito.
+    Cada busca levantou "nao autorizado" -- tratadas uma a uma, sem derrubar a
+    rodada -- e o carimbo era gravado assim mesmo. O bot passou a pular a
+    descoberta por 12 horas por causa de uma descoberta que nao aconteceu.
+    """
+    from promo.db import get_meta
+    from promo.pipeline import DISCOVERY_KEY, Category, Watch, collect
+
+    monkeypatch.setattr("promo.pipeline._time_to_discover", lambda: True)
+    collect(
+        [FonteQueFalha()],
+        [Watch(term="fone")],
+        Rules_stub(),
+        [Category(id="MLB1051")],
+    )
+
+    assert get_meta(banco_em_memoria, DISCOVERY_KEY) is None
+
+
+def test_descoberta_que_respondeu_carimba(banco_em_memoria, monkeypatch):
+    from promo.db import get_meta
+    from promo.pipeline import DISCOVERY_KEY, Watch, collect
+
+    class FonteOk:
+        name = "mercadolivre"
+
+        def search(self, termo, limit=None):
+            return []
+
+    monkeypatch.setattr("promo.pipeline._time_to_discover", lambda: True)
+    collect([FonteOk()], [Watch(term="fone")], Rules_stub())
+
+    assert get_meta(banco_em_memoria, DISCOVERY_KEY) is not None
+
+
+def test_fonte_sem_descoberta_nao_gera_aviso(banco_em_memoria, monkeypatch, caplog):
+    """Rodada so com a vitrine e o normal, nao uma falha a ser avisada."""
+    import logging
+
+    from promo.pipeline import Watch, collect
+
+    monkeypatch.setattr("promo.pipeline._time_to_discover", lambda: True)
+    with caplog.at_level(logging.WARNING):
+        collect([FonteSoVitrine()], [Watch(term="fone")], Rules_stub())
+
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def Rules_stub():
+    from promo.config import Rules
+
+    return Rules(
+        min_discount_pct=15.0,
+        baseline_window_days=60,
+        min_observations=4,
+        repost_cooldown_days=14,
+        max_offers_per_run=10,
+    )

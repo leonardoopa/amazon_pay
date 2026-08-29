@@ -158,6 +158,15 @@ def collect(
     """
     rules = rules or Rules.load()
     descobrir = _time_to_discover()
+    # Descoberta que so levantou excecao nao pode contar como descoberta feita.
+    # Ver o carimbo no fim desta funcao.
+    #
+    # Sao dois sinais, e nao um: "ninguem respondeu" e falha, mas "nao havia o
+    # que chamar" (rodada so com a vitrine, que nao busca por termo nem tem
+    # categoria) e o funcionamento normal. Tratar os dois como falha encheria
+    # o log de aviso em toda rodada sem nada de errado.
+    descoberta_tentou = False
+    descoberta_respondeu = False
     offers: list[Offer] = []
     for source in sources:
         # Nem toda fonte busca por termo: a vitrine e uma foto do que o ML
@@ -165,6 +174,8 @@ def collect(
         # watchlist virava um WARNING por rodada -- 35 linhas de ruido que
         # escondiam qualquer falha de verdade no meio.
         buscar = getattr(source, "search", None)
+        if descobrir and buscar and watchlist:
+            descoberta_tentou = True
         for watch in watchlist if (descobrir and buscar) else []:
             try:
                 found = buscar(watch.term)
@@ -173,21 +184,42 @@ def collect(
             ) as exc:  # noqa: BLE001 - uma fonte quebrada nao derruba a rodada
                 log.warning("%s falhou em '%s': %s", source.name, watch.term, exc)
                 continue
+            descoberta_respondeu = True
             if watch.max_price is not None:
                 found = [o for o in found if o.price <= watch.max_price]
             offers.extend(found)
             log.info("%s: %d ofertas para '%s'", source.name, len(found), watch.term)
 
         if descobrir:
-            offers.extend(collect_categories(source, categories or []))
+            if getattr(source, "highlights", None) and categories:
+                descoberta_tentou = True
+            achados, respondeu = collect_categories(source, categories or [])
+            offers.extend(achados)
+            descoberta_respondeu = descoberta_respondeu or respondeu
         offers.extend(collect_vitrine(source))
         if _due("last_full_refetch", full_refetch_interval_hours()):
             offers.extend(refetch_tracked(source, rules))
             _stamp("last_full_refetch")
         offers.extend(refetch_hot(source))
 
-    if descobrir:
+    # So carimba se a descoberta realmente aconteceu.
+    #
+    # Antes o carimbo era incondicional, e isso custou meio dia de coleta: na
+    # primeira rodada do servidor o `ml-auth` ainda nao tinha sido feito, cada
+    # busca por termo levantou "nao autorizado" -- tratadas uma a uma, com
+    # aviso, sem derrubar a rodada -- e o carimbo foi gravado assim mesmo. O
+    # bot registrou "descoberta feita" para uma descoberta que nao chamou uma
+    # API sequer, e passou a pular a proxima por 12 horas.
+    #
+    # Falha total nao pode virar sucesso no relogio: sem resposta de ninguem, a
+    # proxima rodada tenta de novo em vez de esperar o intervalo inteiro.
+    if descobrir and descoberta_respondeu:
         _stamp(DISCOVERY_KEY)
+    elif descobrir and descoberta_tentou:
+        log.warning(
+            "Nenhuma fonte respondeu a descoberta; nao carimbando. "
+            "A proxima rodada tenta de novo."
+        )
     return offers
 
 
@@ -293,17 +325,26 @@ def _time_to_discover() -> bool:
     return False
 
 
-def collect_categories(source, categories: list[Category]) -> list[Offer]:
+def collect_categories(
+    source, categories: list[Category]
+) -> tuple[list[Offer], bool]:
     """Mais vendidos das categorias acompanhadas.
 
+    Devolve as ofertas e se ALGUMA categoria respondeu. O segundo valor existe
+    para o `collect()` nao carimbar a descoberta quando ninguem respondeu --
+    lista vazia por falha e lista vazia por nao haver oferta boa hoje sao
+    situacoes opostas, e sem esse sinal as duas ficam iguais.
+
     Fonte sem `highlights` (Amazon) e ignorada em silencio -- categoria e
-    conceito do ML, nao um recurso que toda loja precise ter.
+    conceito do ML, nao um recurso que toda loja precise ter. Ela tambem nao
+    conta como resposta: nunca houve chamada.
     """
     destaques = getattr(source, "highlights", None)
     if destaques is None or not categories:
-        return []
+        return [], False
 
     offers: list[Offer] = []
+    respondeu = False
     for category in categories:
         rotulo = category.name or category.id
         try:
@@ -311,11 +352,12 @@ def collect_categories(source, categories: list[Category]) -> list[Offer]:
         except Exception as exc:  # noqa: BLE001 - idem: nao derruba a rodada
             log.warning("%s falhou na categoria '%s': %s", source.name, rotulo, exc)
             continue
+        respondeu = True
         if category.max_price is not None:
             found = [o for o in found if o.price <= category.max_price]
         offers.extend(found)
         log.info("%s: %d mais vendidos em '%s'", source.name, len(found), rotulo)
-    return offers
+    return offers, respondeu
 
 
 def refetch_tracked(source, rules: Rules) -> list[Offer]:
