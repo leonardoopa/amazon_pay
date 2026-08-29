@@ -325,6 +325,41 @@ def _time_to_discover() -> bool:
     return False
 
 
+def _intercalar_por_fonte(
+    escolhidas: list[ScoredOffer], limite: int
+) -> list[ScoredOffer]:
+    """Distribui as vagas entre as fontes, a melhor de cada uma por vez.
+
+    Ordenar so por desconto entregava as cinco vagas a vitrine todas as vezes,
+    e nao por ela ter oferta melhor: o desconto do repasse e medido contra o
+    preco riscado, que quem escolhe e a loja. Quanto mais inflado o "de", mais
+    alto o produto subia. A ordenacao premiava exatamente a pratica que a
+    landing acusa -- e o grupo recebia cinco eletronicos por rodada enquanto
+    perfume, roupa e o resto do catalogo nunca chegavam.
+
+    O rodizio nao deixa vaga vazia: quando uma fonte acaba, as outras seguem
+    preenchendo. Com uma fonte so, o resultado e identico ao corte simples.
+
+    A ordem por desconto e preservada DENTRO de cada fonte -- continua saindo
+    a melhor oferta de cada uma, so nao as cinco melhores da mesma.
+    """
+    if limite <= 0:
+        return []
+
+    filas: dict[str, list[ScoredOffer]] = {}
+    for scored in escolhidas:
+        filas.setdefault(scored.offer.source, []).append(scored)
+
+    saida: list[ScoredOffer] = []
+    while len(saida) < limite and any(filas.values()):
+        for fila in filas.values():
+            if len(saida) >= limite:
+                break
+            if fila:
+                saida.append(fila.pop(0))
+    return saida
+
+
 def collect_categories(
     source, categories: list[Category]
 ) -> tuple[list[Offer], bool]:
@@ -484,8 +519,12 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             "Fila com %d post(s); aceitando so mais %d nesta rodada.", na_fila, espaco
         )
 
-    # Repasse preenche o que sobrou da cota, nunca desloca uma verificada.
-    picked = (picked + repasses)[:espaco]
+    # Repasse preenche o que sobrou da cota, nunca desloca uma verificada. A
+    # ordem entre as duas listas continua sendo essa; o que muda dentro de cada
+    # uma e de qual fonte vem cada vaga.
+    picked = _intercalar_por_fonte(picked, espaco)
+    if len(picked) < espaco:
+        picked += _intercalar_por_fonte(repasses, espaco - len(picked))
     verificadas = sum(1 for s in picked if s.verified)
     log.info(
         "%d ofertas selecionadas (%d verificadas, %d repasse da vitrine)",
