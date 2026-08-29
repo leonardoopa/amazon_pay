@@ -110,3 +110,80 @@ def test_limite_zero_nao_devolve_nada():
 
 def test_lista_vazia_nao_estoura():
     assert _intercalar_por_fonte([], 5) == []
+
+
+# ---------- repasse nao e exclusividade da vitrine ----------
+
+
+def test_catalogo_com_preco_riscado_vira_repasse():
+    """A trava por fonte segurava 71 candidatos do catalogo.
+
+    Ela foi escrita quando o catalogo quase nunca devolvia `original_price`.
+    Hoje devolve em 39,5% dos produtos -- e enquanto a trava existiu, toda
+    rodada saia com cinco itens da vitrine e nada de perfume, roupa ou
+    suplemento, que ja estavam no catalogo com desconto de sobra.
+    """
+    import sqlite3
+
+    from promo.config import Rules
+    from promo.db import SCHEMA, record_offer
+    from promo.scoring import score_campaign
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA)
+
+    perfume = Offer(
+        source="mercadolivre",  # catalogo, nao a vitrine
+        external_id="MLB99",
+        title="Perfume Natura Una Brilho EDP 75ml",
+        price=191.99,
+        url="https://mercadolivre.com.br/MLB99",
+        original_price=292.99,
+    )
+    record_offer(conn, perfume)
+
+    regras = Rules(
+        min_discount_pct=15.0,
+        baseline_window_days=60,
+        min_observations=4,
+        repost_cooldown_days=14,
+        max_offers_per_run=5,
+    )
+    scored = score_campaign(conn, perfume, regras)
+
+    assert scored is not None
+    assert scored.verified is False  # segue marcado como repasse, sem afirmar medicao
+    assert 34 < scored.discount_pct < 35
+
+
+def test_repasse_sem_preco_riscado_continua_recusado():
+    """A protecao real nunca foi a fonte, e sim exigir o preco riscado."""
+    import sqlite3
+
+    from promo.config import Rules
+    from promo.db import SCHEMA, record_offer
+    from promo.scoring import score_campaign
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA)
+
+    sem_riscado = Offer(
+        source="mercadolivre",
+        external_id="MLB98",
+        title="Produto sem De/Por",
+        price=100.0,
+        url="https://mercadolivre.com.br/MLB98",
+    )
+    record_offer(conn, sem_riscado)
+
+    regras = Rules(
+        min_discount_pct=15.0,
+        baseline_window_days=60,
+        min_observations=4,
+        repost_cooldown_days=14,
+        max_offers_per_run=5,
+    )
+
+    assert score_campaign(conn, sem_riscado, regras) is None

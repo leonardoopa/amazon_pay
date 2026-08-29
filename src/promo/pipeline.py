@@ -463,10 +463,27 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             if scored is not None:
                 picked.append(scored)
 
+        # Repasse aceita qualquer fonte que traga o preco riscado, e nao so a
+        # vitrine.
+        #
+        # A trava em `ml_ofertas` foi escrita quando o catalogo praticamente
+        # nao devolvia `original_price` -- 213 vazios em 218, o numero que o
+        # ml_ofertas.py registra. Isso mudou: medido no servidor, 88 dos 223
+        # produtos vindos da API tem preco riscado, 39,5%, e 71 deles com 15%
+        # de desconto ou mais.
+        #
+        # Enquanto a trava existiu, TODA rodada saia com cinco itens da
+        # vitrine, e perfume, roupa e suplemento -- ja no catalogo, ja com
+        # desconto -- nunca chegavam ao grupo.
+        #
+        # O que protege contra repasse ruim nao e a fonte: e o
+        # `score_campaign`, que exige preco riscado maior que o atual, o
+        # desconto minimo e o cooldown. E o post continua saindo marcado
+        # `verified=False`, entao nada aqui afirma medicao que nao houve.
         ja_escolhido = {s.offer.product_id for s in picked}
         repasses: list[ScoredOffer] = []
         for offer in unique.values():
-            if offer.source != "ml_ofertas" or offer.product_id in ja_escolhido:
+            if offer.product_id in ja_escolhido:
                 continue
             scored = score_campaign(conn, offer, rules)
             if scored is not None:
