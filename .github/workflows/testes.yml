@@ -11,6 +11,10 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  # Chamado por deploy.yml antes de publicar. É o mesmo job, e não uma cópia:
+  # suíte duplicada envelhece em ritmos diferentes, e a que roda antes do
+  # deploy é justamente a que não pode ficar para trás.
+  workflow_call:
 
 jobs:
   testes:
