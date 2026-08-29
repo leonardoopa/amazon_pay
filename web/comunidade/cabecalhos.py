@@ -12,6 +12,8 @@ HSTS e os redirects de HTTPS.
 
 from __future__ import annotations
 
+from django.conf import settings
+
 # Fontes permitidas, uma linha por diretiva para o diff mostrar o que mudou.
 #
 # `style-src` precisa de 'unsafe-inline': os templates usam atributo `style=`
@@ -22,24 +24,36 @@ from __future__ import annotations
 # `img-src https:` é largo de propósito: a foto do produto vem do CDN do
 # Mercado Livre, que troca de host (http2.mlstatic.com, mla-s1-p, …) sem
 # aviso. Restringir por host aqui viraria card sem foto no dia da mudança.
-CSP = "; ".join(
-    [
-        "default-src 'self'",
-        "script-src 'self'",
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-        "font-src 'self' https://fonts.gstatic.com",
-        "img-src 'self' data: https:",
-        "media-src 'self'",
-        # Nenhum formulário do site posta para fora, e nada é embutido em
-        # iframe — as duas portas ficam fechadas.
-        "form-action 'self'",
-        "frame-ancestors 'none'",
-        "base-uri 'self'",
-        # Upgrade em vez de bloqueio: se sobrar um `http://` num template, o
-        # navegador tenta em HTTPS em vez de recusar o recurso.
-        "upgrade-insecure-requests",
-    ]
-)
+DIRETIVAS = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: https:",
+    "media-src 'self'",
+    # Nenhum formulário do site posta para fora, e nada é embutido em
+    # iframe — as duas portas ficam fechadas.
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+]
+
+# `upgrade-insecure-requests` só entra quando existe HTTPS na frente.
+#
+# A diretiva reescreve TODO subrecurso `http://` para `https://`. Num site
+# servido por HTTPS isso é rede de proteção: um `http://` esquecido num
+# template é corrigido em vez de virar conteúdo misto bloqueado.
+#
+# Servido por HTTP puro — que é o modo documentado no DEPLOY.md para quem ainda
+# não tem domínio (`SITE_ADDRESS=:80`, `DJANGO_HTTPS=0`) — ela é destrutiva: o
+# navegador pede o CSS em https://<ip>/static/..., cai na 443 onde não há
+# certificado, e leva ERR_CONNECTION_REFUSED. O HTML chega, todo o resto morre,
+# e a página aparece sem estilo nenhum.
+#
+# `curl` não expõe isso, porque cliente de linha de comando ignora CSP. Só
+# aparece em navegador, que é onde o visitante está.
+CSP_SEM_TLS = "; ".join(DIRETIVAS)
+CSP_COM_TLS = "; ".join([*DIRETIVAS, "upgrade-insecure-requests"])
 
 # Desliga o que a página não usa. Sem isso um script de terceiro que entre um
 # dia (tag de analytics, por exemplo) herda acesso a câmera e microfone.
@@ -54,9 +68,12 @@ def seguranca(get_response):
 
     def middleware(request):
         resposta = get_response(request)
+        # Lido por requisição, e não uma vez na montagem do middleware, para
+        # que `override_settings` no teste valha.
+        csp = CSP_COM_TLS if getattr(settings, "HTTPS", False) else CSP_SEM_TLS
         # Não sobrescreve o que já veio definido: deixa espaço para uma view
         # relaxar a política num caso específico sem editar este arquivo.
-        resposta.setdefault("Content-Security-Policy", CSP)
+        resposta.setdefault("Content-Security-Policy", csp)
         resposta.setdefault("Permissions-Policy", PERMISSIONS_POLICY)
         _revalidar_html(resposta)
         return resposta

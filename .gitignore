@@ -112,3 +112,8 @@ venv.bak/
 
 # banco de precos e logs do cron
 data/
+
+# Sobreposicao do compose, ligada por symlink no servidor e diferente em cada
+# maquina: no VPS de 2 GB ela aponta para docker-compose.vps-2gb.yml, e na
+# maquina de quem desenvolve normalmente nem existe.
+docker-compose.override.yml

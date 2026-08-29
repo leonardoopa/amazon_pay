@@ -18,7 +18,7 @@ from unittest import mock
 
 from django.core.cache import cache
 from django.template.loader import render_to_string
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from . import views
@@ -218,6 +218,33 @@ class CabecalhosTests(TestCase):
         self.assertIn("img-src 'self' data: https:", csp)
         # A folha do Google Fonts precisa passar, senão a página perde a fonte.
         self.assertIn("https://fonts.googleapis.com", csp)
+
+    @override_settings(HTTPS=False)
+    def test_sem_tls_a_csp_nao_manda_upgrade_de_subrecurso(self):
+        """Servido por HTTP, `upgrade-insecure-requests` apaga a página.
+
+        A diretiva reescreve todo subrecurso `http://` para `https://`. Sem
+        certificado na frente — o modo por IP que o DEPLOY.md documenta para
+        quem ainda não tem domínio — o navegador vai buscar o CSS na 443, leva
+        ERR_CONNECTION_REFUSED e renderiza o HTML cru, sem estilo e sem os
+        filmes. Aconteceu em produção no primeiro deploy.
+        """
+        resposta = self.client.get(reverse("vitrine:home"))
+
+        csp = resposta.headers["Content-Security-Policy"]
+        self.assertNotIn("upgrade-insecure-requests", csp)
+        # O resto da política continua valendo: o que muda é só a diretiva
+        # que depende de haver TLS.
+        self.assertIn("frame-ancestors 'none'", csp)
+
+    @override_settings(HTTPS=True)
+    def test_com_tls_a_csp_volta_a_mandar_o_upgrade(self):
+        resposta = self.client.get(reverse("vitrine:home"))
+
+        self.assertIn(
+            "upgrade-insecure-requests",
+            resposta.headers["Content-Security-Policy"],
+        )
 
     def test_resposta_desliga_o_que_a_pagina_nao_usa(self):
         resposta = self.client.get(reverse("vitrine:home"))
