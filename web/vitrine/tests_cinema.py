@@ -89,6 +89,39 @@ class BindingTests(TestCase):
         self.assertIn("ESPERA_MAXIMA", JS)
         self.assertIn("setTimeout(liberar", JS)
 
+    def test_libera_no_loadeddata_e_nao_so_no_canplaythrough(self):
+        """`canplaythrough` não chega no Safari do iOS.
+
+        Lá o vídeo para de buscar assim que tem quadro suficiente, e aquele
+        evento nunca dispara sem um gesto. Esperando só por ele, a cena ficava
+        no véu até o prazo de 6s estourar, e aí `liberar()` rodava com a
+        duração ainda indefinida: `aplicar()` pulava o `currentTime` e o
+        pôster ficava congelado enquanto a legenda e a barra andavam.
+
+        Os filmes de produto já usavam `loadeddata` e por isso funcionavam no
+        mesmo aparelho em que este não funcionava.
+        """
+        self.assertIn('addEventListener("loadeddata", liberar)', JS)
+
+    def test_acorda_o_decodificador_antes_de_raspar_o_video(self):
+        """O iOS não desenha quadro por `currentTime` sem ter tocado antes.
+
+        `muted` mais `playsinline` liberam o autoplay inline, então um
+        `play()` seguido de `pause()` prepara o decodificador sem movimento
+        visível. Sem isso o efeito inteiro morre no iPhone.
+        """
+        self.assertIn("prepararDecodificador", JS)
+        self.assertIn("video.play()", JS)
+        self.assertIn("video.pause()", JS)
+
+    def test_tem_segunda_tentativa_no_primeiro_toque(self):
+        """Navegador que recusar o autoplay ainda libera depois de um gesto."""
+        self.assertIn('addEventListener("touchstart", destravar', JS)
+
+    def test_chama_load_ao_trocar_o_preload(self):
+        """Trocar `preload` depois de "none" não faz o iOS buscar nada."""
+        self.assertIn("video.load()", JS)
+
     def test_o_progresso_fica_entre_zero_e_um(self):
         self.assertIn("Math.min(1, Math.max(0,", JS)
 
