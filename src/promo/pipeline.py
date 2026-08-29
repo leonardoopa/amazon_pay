@@ -6,7 +6,7 @@ import json
 import logging
 import random
 import time
-from datetime import date
+from datetime import date, datetime
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +25,9 @@ from .config import (
     max_pending_queue,
     ofertas_pages,
     post_max_age_minutes,
+    quiet_drip_multiplier,
+    quiet_max_offers_per_run,
+    quiet_window,
     run_interval_seconds,
     track_limit,
 )
@@ -402,8 +405,16 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         # recusar oferta nova que tinha lugar.
         expire_stale_posts(conn)
         na_fila = len(pending_posts(conn))
-    espaco = max(0, min(rules.max_offers_per_run, max_pending_queue() - na_fila))
-    if espaco < rules.max_offers_per_run:
+
+    # Na janela de silencio a entrega anda devagar; produzir no ritmo normal so
+    # encheria a fila de post que morre como `expired` antes de amanhecer.
+    teto = rules.max_offers_per_run
+    if em_horario_silencioso():
+        teto = min(teto, quiet_max_offers_per_run())
+        log.info("Horario silencioso: aceitando no maximo %d oferta(s).", teto)
+
+    espaco = max(0, min(teto, max_pending_queue() - na_fila))
+    if espaco < teto:
         log.info(
             "Fila com %d post(s); aceitando so mais %d nesta rodada.", na_fila, espaco
         )
@@ -465,14 +476,42 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     return picked
 
 
+def em_horario_silencioso(agora: datetime | None = None) -> bool:
+    """A hora atual cai na janela de silencio?
+
+    A janela normal cruza a meia-noite (23:30 as 07:30), entao a comparacao
+    inverte quando o inicio e maior que o fim: dentro dela e "depois do inicio
+    OU antes do fim", nao "entre os dois".
+
+    Compara hora local de proposito. O que importa e a hora de quem le no
+    grupo, e o Dockerfile fixa TZ=America/Sao_Paulo no container.
+    """
+    janela = quiet_window()
+    if janela is None:
+        return False
+
+    inicio, fim = janela
+    agora_hora = (agora or datetime.now()).time()
+
+    if inicio <= fim:
+        return inicio <= agora_hora < fim
+    return agora_hora >= inicio or agora_hora < fim
+
+
 def _drip_gap() -> float:
     """Intervalo ate o proximo post, com variacao.
 
     O jitter importa: intervalo exato de 150s em 150s e assinatura de robo, e
     o numero que assina os posts e um chip pareado por cliente nao oficial.
     Os grupos reais mandam a cada 2-3 minutos, sem regularidade nenhuma.
+
+    Dentro da janela de silencio o intervalo estica pelo multiplicador. Com o
+    padrao (6) ele passa do orcamento de drenagem de uma rodada, entao sai um
+    post por rodada em vez de cinco.
     """
     base = drip_interval_seconds()
+    if em_horario_silencioso():
+        base *= quiet_drip_multiplier()
     return base * random.uniform(1 - DRIP_JITTER, 1 + DRIP_JITTER)
 
 
