@@ -209,16 +209,24 @@ recusa a iniciar sem chave e sem domínio, em vez de subir inseguro:
 ```ini
 DJANGO_DEBUG=0
 DJANGO_SECRET_KEY=<gere com: openssl rand -hex 32>
-DJANGO_ALLOWED_HOSTS=ofertas.seudominio.com.br
+DJANGO_ALLOWED_HOSTS=ofertas.seudominio.com.br,127.0.0.1,localhost
 DJANGO_CSRF_TRUSTED_ORIGINS=https://ofertas.seudominio.com.br
 DJANGO_HTTPS=1
 SITE_ADDRESS=ofertas.seudominio.com.br
 ```
 
+**`127.0.0.1` e `localhost` no `ALLOWED_HOSTS` não são enfeite.** O healthcheck
+do compose chama `http://127.0.0.1:8001/saude/` de dentro do container. Deixe só
+o domínio ali e o Django responde **400 DisallowedHost** a cada minuto: o site
+atende visitante normalmente, mas o container fica `unhealthy` para sempre, e o
+`docker compose ps` passa a mentir sobre o estado do serviço. Os dois nomes só
+são alcançáveis de dentro da máquina, então não ampliam superfície nenhuma.
+
 Sem domínio ainda? Use `SITE_ADDRESS=:80`, `DJANGO_HTTPS=0` e
-`DJANGO_ALLOWED_HOSTS=<IP do servidor>`. Serve para conferir o site pelo IP,
-mas **não divulgue esse endereço**: sem TLS, o e-mail digitado no formulário
-trafega em texto claro e o WhatsApp mostra aviso de link não seguro.
+`DJANGO_ALLOWED_HOSTS=<IP do servidor>,127.0.0.1,localhost`. Serve para conferir
+o site pelo IP, mas **não divulgue esse endereço**: sem TLS, o e-mail digitado
+no formulário trafega em texto claro e o WhatsApp mostra aviso de link não
+seguro.
 
 ## 3. Build e autorização do Mercado Livre
 
