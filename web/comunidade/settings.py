@@ -65,6 +65,20 @@ SECURE_SSL_REDIRECT = HTTPS
 SESSION_COOKIE_SECURE = HTTPS
 CSRF_COOKIE_SECURE = HTTPS
 
+# O healthcheck fica de fora do redirect, e sem isso o site quebra o próprio
+# monitoramento no dia em que o TLS entra.
+#
+# O healthcheck do compose chama `http://127.0.0.1:8001/saude/` de dentro do
+# container, onde não existe TLS nenhum -- quem termina o certificado é o
+# Caddy, do lado de fora. Com o redirect valendo aqui, a sonda recebe 301 para
+# https://127.0.0.1:8001/, segue, e morre em "handshake operation timed out".
+# O container vira `unhealthy` para sempre e o portão de saúde do deploy
+# reprova uma publicação que está de pé.
+#
+# Isolar este caminho não abre brecha: a porta 8001 não é publicada, só o Caddy
+# alcança o gunicorn, e o `/saude/` devolve contadores -- nenhum segredo.
+SECURE_REDIRECT_EXEMPT = [r"^saude/$"]
+
 # HSTS começa curto de propósito. O navegador guarda o prazo que recebeu e
 # não há como encurtá-lo depois: se o certificado falhar com um ano gravado,
 # o domínio fica inacessível por um ano. Suba para 31536000 depois de uma

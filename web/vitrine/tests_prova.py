@@ -260,3 +260,30 @@ class CabecalhosTests(TestCase):
 
         self.assertNotIn("<script>", html)
         self.assertNotIn("javascript:", html)
+
+
+class SaudeSobHTTPSTests(TestCase):
+    """O healthcheck não pode ser vítima do redirect de HTTPS.
+
+    O compose chama `http://127.0.0.1:8001/saude/` de dentro do container,
+    onde não há TLS -- o certificado termina no Caddy, fora dele. Sem a isenção
+    a sonda recebe 301, segue para https na mesma porta e morre em handshake;
+    o container fica `unhealthy` para sempre e o portão de saúde do deploy
+    reprova uma publicação que está no ar e funcionando.
+    """
+
+    databases = {"default", "promos"}
+
+    @override_settings(SECURE_SSL_REDIRECT=True)
+    def test_saude_responde_sem_redirecionar_para_https(self):
+        resposta = self.client.get(reverse("vitrine:saude"))
+
+        self.assertEqual(resposta.status_code, 200)
+
+    @override_settings(SECURE_SSL_REDIRECT=True)
+    def test_o_resto_do_site_continua_redirecionando(self):
+        """A isenção vale para o healthcheck e para mais nada."""
+        resposta = self.client.get(reverse("vitrine:home"))
+
+        self.assertEqual(resposta.status_code, 301)
+        self.assertTrue(resposta["Location"].startswith("https://"))

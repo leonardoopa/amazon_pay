@@ -25,6 +25,40 @@
 
   const ESPERA_MAXIMA = 6000; // rede lenta: mostra assim mesmo
 
+  /* Faz o vídeo tocar por um instante para acordar o decodificador.
+
+     O iOS não desenha quadro nenhum a partir de `currentTime` enquanto o
+     vídeo não tiver tocado ao menos uma vez. Sem isto o efeito inteiro cai
+     no iPhone: a rolagem move a legenda, o contador e a barra, e a imagem
+     fica congelada no pôster -- o que parece bug de site, não economia.
+
+     Tocar é seguro porque o elemento é `muted` e `playsinline`: o iOS libera
+     autoplay inline nessa combinação, e o `pause()` vem no mesmo instante,
+     antes de qualquer movimento visível.
+
+     Se ainda assim o navegador recusar, refazemos no primeiro toque. Aí o
+     gesto do visitante autoriza, e ele nem percebe que houve uma segunda
+     tentativa -- o toque que destrava costuma ser o próprio começo da
+     rolagem. */
+  function prepararDecodificador(video) {
+    const tentar = () => {
+      const p = video.play();
+      if (p && typeof p.then === "function") {
+        return p.then(() => video.pause());
+      }
+      video.pause();
+      return Promise.resolve();
+    };
+
+    tentar().catch(() => {
+      const destravar = () => {
+        tentar().catch(() => {});
+      };
+      addEventListener("touchstart", destravar, { once: true, passive: true });
+      addEventListener("click", destravar, { once: true });
+    });
+  }
+
   function ligarCena(secao) {
     const video = secao.querySelector("[data-sc-video]");
     const carregando = secao.querySelector("[data-sc-carregando]");
@@ -93,6 +127,19 @@
       duracao = video.duration;
     });
     video.addEventListener("canplaythrough", liberar);
+    /* `loadeddata` além de `canplaythrough`, e é o que salva o iPhone.
+
+       O Safari do iOS não busca o arquivo inteiro sem um gesto: ele para
+       assim que tem quadro suficiente e `canplaythrough` simplesmente nunca
+       chega. Só com aquele evento, a cena ficava presa no véu de carregamento
+       até o prazo de 6s estourar -- e aí `liberar()` rodava com `duration`
+       ainda indefinida, `aplicar()` pulava o `currentTime`, e o visitante
+       via o pôster parado enquanto rolava.
+
+       `loadeddata` dispara cedo e em todo navegador. Os filmes de produto já
+       usavam ele (ver scroll.js) e por isso funcionavam no mesmo iPhone em
+       que este aqui não funcionava. */
+    video.addEventListener("loadeddata", liberar);
 
     /* O download começa aqui, e só se valer a pena.
 
@@ -105,6 +152,10 @@
     if (fonte && !(window.RedeCara && window.RedeCara())) {
       video.preload = "auto";
       video.src = fonte;
+      // Trocar `preload` depois que o elemento nasceu com "none" não faz o
+      // iOS buscar nada. `load()` é o que realmente inicia o download lá.
+      video.load();
+      prepararDecodificador(video);
       // Se o arquivo for grande demais ou a rede cair, mostra do jeito que der.
       setTimeout(liberar, ESPERA_MAXIMA);
       if (video.readyState >= 4) liberar();
