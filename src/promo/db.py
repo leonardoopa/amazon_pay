@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Iterator
 
-from .config import db_path, post_max_age_minutes
+from .config import db_path, post_cooldown_minutes, post_max_age_minutes
 from .models import Offer
 
 SCHEMA = """
@@ -432,6 +432,44 @@ def create_post(
         ),
     )
     return int(cursor.lastrowid)
+
+
+def products_in_cooldown(
+    conn: sqlite3.Connection, cooldown_minutes: int | None = None
+) -> set[str]:
+    """Produtos que nao podem virar post agora, por terem virado ha pouco.
+
+    Duas situacoes bloqueiam, e por motivos diferentes:
+
+    - `pending`: ainda nao foi para o grupo, mas vai. Enfileirar um segundo
+      post do mesmo produto garante a repeticao em vez de arriscar ela.
+    - `sent` dentro da janela: acabou de sair. E o caso que o leitor percebe.
+
+    `expired` e `failed` ficam de fora de proposito -- eles nunca chegaram ao
+    grupo, entao nao ha repeticao a evitar, e bloquear por causa deles tiraria
+    do ar justamente a oferta que falhou em ser entregue.
+    """
+    if cooldown_minutes is None:
+        cooldown_minutes = post_cooldown_minutes()
+    if cooldown_minutes <= 0:
+        # Mesmo desligada a regra, post na fila continua bloqueando: sem isso
+        # duas rodadas seguidas enfileiram o mesmo produto e o grupo recebe os
+        # dois em sequencia, com minutos de diferenca.
+        rows = conn.execute(
+            "SELECT DISTINCT product_id FROM posts WHERE status = 'pending'"
+        ).fetchall()
+        return {row["product_id"] for row in rows}
+
+    limite = _iso(now() - timedelta(minutes=cooldown_minutes))
+    rows = conn.execute(
+        """
+        SELECT DISTINCT product_id FROM posts
+        WHERE status = 'pending'
+           OR (status = 'sent' AND COALESCE(sent_at, created_at) >= ?)
+        """,
+        (limite,),
+    ).fetchall()
+    return {row["product_id"] for row in rows}
 
 
 def expire_stale_posts(

@@ -24,6 +24,7 @@ from .config import (
     hot_track_limit,
     max_pending_queue,
     ofertas_pages,
+    post_cooldown_minutes,
     post_max_age_minutes,
     quiet_drip_multiplier,
     quiet_max_offers_per_run,
@@ -41,6 +42,7 @@ from .db import (
     hot_products,
     hours_since,
     pending_posts,
+    products_in_cooldown,
     recent_headlines,
     record_offer,
     set_meta,
@@ -405,6 +407,27 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         # recusar oferta nova que tinha lugar.
         expire_stale_posts(conn)
         na_fila = len(pending_posts(conn))
+        bloqueados = products_in_cooldown(conn)
+
+    # Fora antes de escolher, e nao depois: assim o produto repetido nao ocupa
+    # uma vaga da cota que outra oferta poderia usar, e nao gasta chamada do
+    # Gemini nem link de afiliado para virar post que nao pode sair.
+    #
+    # A vitrine devolve o mesmo item rodada apos rodada enquanto ele seguir em
+    # promocao, e o filtro aprova de novo -- o desconto continua real. Quem le
+    # o grupo, porem, ve a mesma oferta duas vezes em quinze minutos.
+    if bloqueados:
+        antes = len(picked) + len(repasses)
+        picked = [s for s in picked if s.offer.product_id not in bloqueados]
+        repasses = [s for s in repasses if s.offer.product_id not in bloqueados]
+        repetidos = antes - len(picked) - len(repasses)
+        if repetidos:
+            log.info(
+                "%d oferta(s) fora por repeticao: mesmo produto postado nos "
+                "ultimos %d min ou ainda na fila.",
+                repetidos,
+                post_cooldown_minutes(),
+            )
 
     # Na janela de silencio a entrega anda devagar; produzir no ritmo normal so
     # encheria a fila de post que morre como `expired` antes de amanhecer.

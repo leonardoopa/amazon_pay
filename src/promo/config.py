@@ -287,6 +287,24 @@ def post_max_age_minutes() -> int:
     return _int("POST_MAX_AGE_MINUTES", 60)
 
 
+def post_cooldown_minutes() -> int:
+    """Silencio minimo entre dois posts do MESMO produto.
+
+    A vitrine do ML devolve o mesmo item rodada apos rodada enquanto ele
+    seguir em promocao, e o filtro aprova de novo -- o desconto continua real.
+    Do lado do grupo, porem, o segundo post em quinze minutos nao e uma oferta
+    nova: e a mesma, repetida. Repeticao e o que faz gente sair de grupo de
+    oferta.
+
+    Nao se confunde com a variacao de texto que o `recent_headlines` ja fazia.
+    Aquilo evita repetir a FRASE; isto evita repetir o PRODUTO, que e o que o
+    leitor percebe mesmo com a frase trocada.
+
+    0 desliga a regra.
+    """
+    return _int("POST_COOLDOWN_MINUTES", 60)
+
+
 def max_pending_queue() -> int:
     """Teto da fila de posts nao enviados.
 
