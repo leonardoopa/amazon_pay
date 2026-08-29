@@ -24,6 +24,29 @@ fi
 USUARIO="${SUDO_USER:-$USER}"
 SWAP_GB="${SWAP_GB:-2}"
 
+# ---------------------------------------------------------------------------
+# Lock do dpkg
+#
+# Servidor recém-criado quase sempre está rodando `unattended-upgrades` no
+# primeiro boot -- são as "14 atualizações pendentes" que o banner do SSH
+# anuncia. Enquanto ele roda, segura /var/lib/dpkg/lock-frontend, e qualquer
+# apt-get morre na hora com "Could not get lock".
+#
+# Isso derrubava o script no meio: swap e SSH aplicados, Docker não. Definir o
+# timeout no apt.conf.d faz o apt esperar em vez de falhar, e vale para TODO
+# apt-get da máquina -- inclusive os que rodam dentro do get.docker.com, que
+# não temos como parametrizar de fora.
+#
+# Escrever este arquivo não precisa do lock, então funciona mesmo com o
+# unattended-upgrades em pleno curso.
+# ---------------------------------------------------------------------------
+echo 'DPkg::Lock::Timeout "600";' \
+	| sudo tee /etc/apt/apt.conf.d/99-lock-timeout >/dev/null
+
+if pgrep -x unattended-upgrade >/dev/null 2>&1; then
+	echo "==> unattended-upgrades em execução; o apt vai esperar (até 10 min)."
+fi
+
 echo "==> Pacotes base"
 sudo apt-get update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
