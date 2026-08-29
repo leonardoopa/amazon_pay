@@ -43,11 +43,32 @@ SWAP_GB="${SWAP_GB:-2}"
 echo 'DPkg::Lock::Timeout "600";' \
 	| sudo tee /etc/apt/apt.conf.d/99-lock-timeout >/dev/null
 
-if pgrep -x unattended-upgrade >/dev/null 2>&1; then
-	echo "==> unattended-upgrades em execução; o apt vai esperar (até 10 min)."
-fi
+# O timeout acima cobre o lock do dpkg, mas não o de /var/lib/apt/lists, que o
+# `apt-get update` do unattended-upgrades segura em separado. Por isso o script
+# espera os quatro locks explicitamente antes de cada bloco que chama apt --
+# inclusive antes do get.docker.com, que roda o próprio apt-get lá dentro.
+#
+# `pgrep -f`, e não `-x`: "unattended-upgrade" tem 18 caracteres e o -x só casa
+# nomes de até 15.
+esperar_apt() {
+	local limite=$((SECONDS + 900)) avisou=0
+	while sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock \
+		/var/lib/apt/lists/lock /var/cache/apt/archives/lock \
+		>/dev/null 2>&1 || pgrep -f unattended-upgrade >/dev/null 2>&1; do
+		if [ "$avisou" -eq 0 ]; then
+			echo "    aguardando o unattended-upgrades liberar o apt..."
+			avisou=1
+		fi
+		if [ "$SECONDS" -gt "$limite" ]; then
+			echo "erro: locks do apt presos há 15 minutos. Rode de novo mais tarde." >&2
+			exit 1
+		fi
+		sleep 10
+	done
+}
 
 echo "==> Pacotes base"
+esperar_apt
 sudo apt-get update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
 	ca-certificates curl sqlite3 ufw fail2ban
@@ -156,6 +177,7 @@ if command -v docker >/dev/null 2>&1; then
 	echo "==> Docker já instalado, pulando"
 else
 	echo "==> Docker"
+	esperar_apt
 	curl -fsSL https://get.docker.com | sh
 fi
 
