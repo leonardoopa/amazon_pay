@@ -79,6 +79,10 @@ services:
     memswap_limit: 320m
 
   caddy:
-    # Proxy reverso com um site: o binario em Go e uns poucos MB de estado.
-    mem_limit: 48m
-    memswap_limit: 96m
+    # Proxy reverso com um site. O binario em Go parte de ~38 MB em repouso --
+    # o teto de 48 MB que estava aqui deixava 20% de folga, e o primeiro pico
+    # de trafego (ou a emissao do certificado, quando entrar o dominio) mataria
+    # o unico servico exposto a internet. 96 MB da margem sem pesar: mesmo com
+    # ele, a soma dos tetos fica em 1536 MB dos 1963 MB da maquina.
+    mem_limit: 96m
+    memswap_limit: 160m
