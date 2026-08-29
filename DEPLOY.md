@@ -524,7 +524,57 @@ caso mais comum, que é a VPS sumir.
 
 ## 9. Operação
 
-Atualizar:
+### Deploy automático
+
+Todo push em `main` publica sozinho, pelo `.github/workflows/deploy.yml`. A
+suíte de testes roda antes — o deploy só começa se ela passar — e no fim o
+workflow confere se a API e o site voltaram respondendo, falhando vermelho se
+não voltarem. Dá para publicar sem push pelo botão "Run workflow" na aba
+Actions.
+
+O código vai por `rsync` a partir do runner, não por `git pull` no servidor.
+O repositório é privado, e um pull exigiria guardar credencial do GitHub na
+VPS — credencial parada num servidor é a que ninguém lembra de rotacionar. O
+`.env` e o `data/` ficam de fora do rsync, então segredo e histórico de preço
+nunca são tocados, mesmo com `--delete` ligado.
+
+Antes do primeiro deploy, quatro segredos em *Settings → Secrets and variables
+→ Actions*:
+
+| Segredo | Valor |
+|---|---|
+| `VPS_HOST` | IP do servidor |
+| `VPS_USER` | usuário de deploy (o mesmo do passo 1) |
+| `VPS_SSH_KEY` | chave **privada** de deploy, sem passphrase |
+| `VPS_KNOWN_HOSTS` | saída de `ssh-keyscan -t ed25519 <IP>` |
+
+Crie uma chave dedicada, e não reuse a sua pessoal — assim revogar o acesso do
+CI é apagar uma linha, sem trocar a chave que você usa todo dia:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/amazon_pay_deploy -N "" -C "github-actions-deploy"
+```
+
+Sem passphrase é intencional aqui: o runner não tem como digitar uma. É por
+isso que a chave é dedicada e o `authorized_keys` do servidor pode revogá-la
+isoladamente.
+
+```bash
+ssh-copy-id -i ~/.ssh/amazon_pay_deploy.pub <usuario>@<IP>
+```
+
+```bash
+pbcopy < ~/.ssh/amazon_pay_deploy
+```
+
+Cole em `VPS_SSH_KEY`. O `VPS_KNOWN_HOSTS` fixa o host: sem ele, o primeiro
+deploy aceitaria qualquer servidor que respondesse naquele IP — e o que
+trafega ali é acesso de shell à produção.
+
+### Atualizar à mão
+
+Continua valendo, para quando o CI estiver fora do ar ou você quiser publicar
+de uma branch:
 
 ```bash
 git pull && docker compose up -d --build

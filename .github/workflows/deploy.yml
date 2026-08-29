@@ -1,0 +1,130 @@
+# Publica em produção a cada push em `main`.
+#
+# O código vai por rsync a partir do runner, e não por `git pull` no servidor.
+# O repositório é privado: um pull exigiria guardar credencial do GitHub na
+# VPS, e credencial parada num servidor é a que ninguém lembra de rotacionar.
+# O runner já tem o código no checkout, então ele empurra.
+#
+# O `.env` e o `data/` NUNCA são tocados: um é segredo que só existe no
+# servidor, o outro é o histórico de preço e a lista de e-mails. Estão nos
+# excludes do rsync, que roda com `--delete`.
+#
+# Para publicar sem esperar um push, use "Run workflow" na aba Actions
+# (workflow_dispatch).
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Dois deploys ao mesmo tempo se sobrescreveriam no meio do build. Enfileira.
+  #
+  # `cancel-in-progress: false` de propósito: cancelar um deploy pela metade
+  # deixa o servidor com arquivo novo e container velho, que é pior do que
+  # esperar o anterior terminar.
+  group: deploy-producao
+  cancel-in-progress: false
+
+jobs:
+  # A suíte inteira antes de qualquer coisa tocar o servidor. Reusa o workflow
+  # de testes em vez de repetir os passos.
+  testes:
+    uses: ./.github/workflows/testes.yml
+
+  deploy:
+    needs: testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar chave SSH
+        env:
+          CHAVE: ${{ secrets.VPS_SSH_KEY }}
+          HOSTS_CONHECIDOS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$CHAVE" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          # Host key fixado. Sem isto o primeiro deploy aceitaria qualquer
+          # servidor que respondesse no IP -- e o que trafega aqui dá acesso
+          # de shell à produção.
+          printf '%s\n' "$HOSTS_CONHECIDOS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Enviar o código
+        env:
+          ALVO: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy -o BatchMode=yes" \
+            --exclude '.git' \
+            --exclude '.env' \
+            --exclude 'data' \
+            --exclude 'backups' \
+            --exclude 'docker-compose.override.yml' \
+            --exclude '__pycache__' \
+            --exclude '.pytest_cache' \
+            --exclude 'web/staticfiles' \
+            ./ "$ALVO:~/amazon_pay/"
+
+      - name: Build e subida
+        env:
+          ALVO: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy -o BatchMode=yes "$ALVO" bash -euo pipefail <<'REMOTO'
+          cd ~/amazon_pay
+
+          # O overlay de 2 GB está nos excludes do rsync porque é um symlink
+          # que só existe no servidor. Recriado aqui de forma idempotente: sem
+          # ele, os cinco containers não cabem na máquina.
+          ln -sfn docker-compose.vps-2gb.yml docker-compose.override.yml
+
+          # Build antes de mexer no que está no ar. As camadas de pip vêm do
+          # cache quando requirements.txt não mudou, então o pico costuma ser
+          # só o collectstatic -- cabe na folga da máquina sem derrubar nada.
+          docker compose build
+
+          # `up -d` recria só o que mudou de imagem. O bot e o site
+          # compartilham a mesma imagem e reiniciam juntos; a coleta retoma no
+          # próximo intervalo e a fila é persistente.
+          docker compose up -d
+
+          # Imagem antiga sem tag acumula a cada deploy, e disco cheio derruba
+          # os cinco containers de uma vez. Só imagens penduradas: volume e
+          # container em uso não são tocados.
+          docker image prune -f
+          REMOTO
+
+      - name: Conferir se subiu de pé
+        env:
+          ALVO: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy -o BatchMode=yes "$ALVO" bash -euo pipefail <<'REMOTO'
+          cd ~/amazon_pay
+
+          # O healthcheck do compose leva até um minuto para virar. Espera
+          # ativa, com teto: deploy que "passou" com o site fora do ar é pior
+          # do que deploy vermelho.
+          for tentativa in $(seq 1 24); do
+            saude=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+              http://127.0.0.1:8000/health || true)
+            site=$(docker compose exec -T web python -c \
+              'import urllib.request;print(urllib.request.urlopen("http://127.0.0.1:8001/saude/",timeout=10).status)' \
+              2>/dev/null || true)
+            if [ "$saude" = "200" ] && [ "$site" = "200" ]; then
+              echo "API e site respondendo (tentativa $tentativa)."
+              docker compose ps
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "Deploy subiu, mas API ou site não responderam em 2 minutos." >&2
+          docker compose ps >&2
+          docker compose logs --no-color --tail 40 web amazon_pay >&2
+          exit 1
+          REMOTO
