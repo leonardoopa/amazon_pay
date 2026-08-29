@@ -48,15 +48,17 @@ echo 'DPkg::Lock::Timeout "600";' \
 # espera os quatro locks explicitamente antes de cada bloco que chama apt --
 # inclusive antes do get.docker.com, que roda o próprio apt-get lá dentro.
 #
-# `pgrep -f`, e não `-x`: "unattended-upgrade" tem 18 caracteres e o -x só casa
-# nomes de até 15.
+# A espera olha só os arquivos de lock, nunca a lista de processos. Procurar por
+# "unattended-upgrade" com pgrep casa com o `unattended-upgrade-shutdown
+# --wait-for-signal`, que fica vivo o tempo todo esperando o desligamento da
+# máquina -- e aí a espera nunca termina. O lock é o sinal verdadeiro: quem o
+# segura está mexendo no apt agora.
 esperar_apt() {
 	local limite=$((SECONDS + 900)) avisou=0
 	while sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock \
-		/var/lib/apt/lists/lock /var/cache/apt/archives/lock \
-		>/dev/null 2>&1 || pgrep -f unattended-upgrade >/dev/null 2>&1; do
+		/var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1; do
 		if [ "$avisou" -eq 0 ]; then
-			echo "    aguardando o unattended-upgrades liberar o apt..."
+			echo "    aguardando outro processo liberar o apt..."
 			avisou=1
 		fi
 		if [ "$SECONDS" -gt "$limite" ]; then
