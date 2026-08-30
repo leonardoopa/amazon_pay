@@ -188,6 +188,150 @@
     {
       "term": "meia kit",
       "max_price": 100
+    },
+    {
+      "term": "garrafa termica",
+      "max_price": 150
+    },
+    {
+      "term": "panela antiaderente",
+      "max_price": 250
+    },
+    {
+      "term": "jogo de lencol",
+      "max_price": 200
+    },
+    {
+      "term": "toalha de banho",
+      "max_price": 120
+    },
+    {
+      "term": "escova alisadora",
+      "max_price": 200
+    },
+    {
+      "term": "aparador de pelos",
+      "max_price": 200
+    },
+    {
+      "term": "sanduicheira",
+      "max_price": 200
+    },
+    {
+      "term": "ventilador",
+      "max_price": 250
+    },
+    {
+      "term": "luminaria led",
+      "max_price": 150
+    },
+    {
+      "term": "caixa organizadora",
+      "max_price": 120
+    },
+    {
+      "term": "racao para cachorro",
+      "max_price": 250
+    },
+    {
+      "term": "brinquedo para gato",
+      "max_price": 100
+    },
+    {
+      "term": "fralda descartavel",
+      "max_price": 150
+    },
+    {
+      "term": "mamadeira",
+      "max_price": 100
+    },
+    {
+      "term": "pen drive",
+      "max_price": 120
+    },
+    {
+      "term": "cartao de memoria",
+      "max_price": 150
+    },
+    {
+      "term": "filtro de linha",
+      "max_price": 120
+    },
+    {
+      "term": "lanterna recarregavel",
+      "max_price": 120
+    },
+    {
+      "term": "trena",
+      "max_price": 100
+    },
+    {
+      "term": "chave de fenda kit",
+      "max_price": 150
+    },
+    {
+      "term": "tapete para carro",
+      "max_price": 200
+    },
+    {
+      "term": "capa de volante",
+      "max_price": 100
+    },
+    {
+      "term": "vestido feminino",
+      "max_price": 300
+    },
+    {
+      "term": "calca feminina",
+      "max_price": 250
+    },
+    {
+      "term": "saia feminina",
+      "max_price": 200
+    },
+    {
+      "term": "conjunto feminino",
+      "max_price": 300
+    },
+    {
+      "term": "cropped",
+      "max_price": 150
+    },
+    {
+      "term": "macacao feminino",
+      "max_price": 300
+    },
+    {
+      "term": "sandalia feminina",
+      "max_price": 250
+    },
+    {
+      "term": "pijama feminino",
+      "max_price": 200
+    },
+    {
+      "term": "bota feminina",
+      "max_price": 300
+    },
+    {
+      "term": "sapatilha feminina",
+      "max_price": 200
+    },
+    {
+      "term": "oculos de sol feminino",
+      "max_price": 250
+    },
+    {
+      "term": "colar feminino",
+      "max_price": 200
+    },
+    {
+      "term": "relogio feminino",
+      "max_price": 300
+    },
+    {
+      "term": "chinelo feminino",
+      "max_price": 150
     }
   ],
   "_comment_coupon": "Cupom de campanha do ML (vale no site todo, por alguns dias). A API nao expoe cupom, entao esse e o unico jeito. `ate` e obrigatorio na pratica: cupom vencido no post faz a pessoa clicar, falhar e desconfiar do grupo. Deixe code vazio pra sair sem cupom.",
@@ -231,6 +375,56 @@
       "id": "MLB1430",
       "name": "Calcados, Roupas e Bolsas",
       "max_price": 400
+    },
+    {
+      "id": "MLB5726",
+      "name": "Eletrodomesticos",
+      "max_price": 300
+    },
+    {
+      "id": "MLB1384",
+      "name": "Bebes",
+      "max_price": 250
+    },
+    {
+      "id": "MLB1071",
+      "name": "Animais",
+      "max_price": 200
+    },
+    {
+      "id": "MLB1132",
+      "name": "Brinquedos e Hobbies",
+      "max_price": 250
+    },
+    {
+      "id": "MLB264586",
+      "name": "Saude",
+      "max_price": 250
+    },
+    {
+      "id": "MLB5672",
+      "name": "Acessorios para Veiculos",
+      "max_price": 300
+    },
+    {
+      "id": "MLB1500",
+      "name": "Construcao",
+      "max_price": 300
+    },
+    {
+      "id": "MLB1039",
+      "name": "Cameras e Acessorios",
+      "max_price": 400
+    },
+    {
+      "id": "MLB1196",
+      "name": "Livros, Revistas e Comics",
+      "max_price": 150
+    },
+    {
+      "id": "MLB1431",
+      "name": "Joias e Bijuterias",
+      "max_price": 250
     }
   ]
 }
