@@ -287,6 +287,20 @@ def post_max_age_minutes() -> int:
     return _int("POST_MAX_AGE_MINUTES", 60)
 
 
+def max_price() -> float:
+    """Teto de preco do produto que vira post. 0 desliga.
+
+    Produto caro converte menos: quem le um grupo de ofertas decide um sanduiche
+    na hora e um notebook em dias, e nesse meio tempo sai do grupo, pesquisa e
+    compra por outro link. A comissao de afiliado e percentual, mas o que ela
+    multiplica e a venda que acontece.
+
+    Nao e regra de qualidade -- e de publico. Uma queda real num produto de
+    R$ 3.000 continua sendo uma queda real; ela so nao e para este grupo.
+    """
+    return float(_optional("MAX_PRICE", "0"))
+
+
 def post_cooldown_minutes() -> int:
     """Silencio minimo entre dois posts do MESMO produto.
 
