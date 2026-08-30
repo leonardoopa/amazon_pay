@@ -285,6 +285,14 @@ def hot_products(
     colado na minima, sim. Sao esses que vale reconsultar com frequencia.
 
     `margin_pct` e a folga sobre a minima: 10 significa "ate 10% acima dela".
+
+    O desempate por `last_seen_at` nao e detalhe. Produto com uma observacao so
+    tem preco atual IGUAL a propria minima, e a razao da 1.0 exata -- entao numa
+    carteira jovem quase tudo empata no topo: medido em producao, 903 dos 904
+    produtos. Ordenar so pela razao devolvia as mesmas 25 linhas a cada ciclo,
+    e reconsultar o mesmo produto de 15 em 15 minutos nao descobre queda em
+    lugar nenhum. Com o desempate, quem acabou de ser visto vai para o fim da
+    fila e o ciclo roda a carteira inteira.
     """
     rows = conn.execute(
         """
@@ -299,7 +307,7 @@ def hot_products(
         WHERE p.source = ?
           AND h.minimo > 0
           AND atual.price <= h.minimo * (1 + ? / 100.0)
-        ORDER BY atual.price / h.minimo ASC
+        ORDER BY atual.price / h.minimo ASC, p.last_seen_at ASC
         LIMIT ?
         """,
         (source, margin_pct, limit),

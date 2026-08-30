@@ -201,6 +201,73 @@ def test_respeita_o_teto_da_fatia_quente():
     assert len(hot_products(conn, "mercadolivre", 10, 3)) == 3
 
 
+# ---------- o empate no topo ----------
+#
+# Produto com uma observacao so tem preco atual IGUAL a propria minima: a razao
+# da 1.0 exata. Numa carteira jovem isso nao e caso de borda, e a maioria --
+# medido em producao, 903 dos 904 produtos empatados. Sem desempate, o ciclo
+# rapido devolvia as mesmas 25 linhas a cada 15 minutos, para sempre.
+
+
+def visto_em(conn: sqlite3.Connection, external_id: str, quando: str) -> None:
+    conn.execute(
+        "UPDATE products SET last_seen_at = ? WHERE external_id = ?",
+        (quando, external_id),
+    )
+
+
+def test_empatados_saem_do_mais_antigo_para_o_mais_novo():
+    from promo.db import hot_products
+
+    conn = make_conn()
+    for nome in ("MLB_novo", "MLB_velho", "MLB_meio"):
+        add_history(conn, nome, [100.0])  # uma observacao: razao 1.0 nos tres
+    visto_em(conn, "MLB_novo", "2026-08-30T18:00:00+00:00")
+    visto_em(conn, "MLB_meio", "2026-08-30T12:00:00+00:00")
+    visto_em(conn, "MLB_velho", "2026-08-29T06:00:00+00:00")
+
+    assert [p[0] for p in hot_products(conn, "mercadolivre", 10, 25)] == [
+        "MLB_velho",
+        "MLB_meio",
+        "MLB_novo",
+    ]
+
+
+def test_o_ciclo_roda_a_carteira_em_vez_de_repetir():
+    """Reconsultar carimba `last_seen_at`, e quem foi visto vai para o fim da
+    fila. Duas passadas de teto 2 tem que cobrir quatro produtos, nao dois."""
+    from promo.db import hot_products
+
+    conn = make_conn()
+    for i in range(4):
+        add_history(conn, f"MLB{i}", [100.0])
+        visto_em(conn, f"MLB{i}", f"2026-08-30T0{i}:00:00+00:00")
+
+    primeira = [p[0] for p in hot_products(conn, "mercadolivre", 10, 2)]
+    for external_id in primeira:
+        visto_em(conn, external_id, "2026-08-30T23:00:00+00:00")
+    segunda = [p[0] for p in hot_products(conn, "mercadolivre", 10, 2)]
+
+    assert set(primeira) | set(segunda) == {"MLB0", "MLB1", "MLB2", "MLB3"}
+
+
+def test_a_razao_ainda_manda_quando_nao_ha_empate():
+    """O desempate e desempate: com historico de verdade, quem esta colado na
+    minima continua na frente de quem foi visto ha mais tempo."""
+    from promo.db import hot_products
+
+    conn = make_conn()
+    add_history(conn, "MLB_colado", [100.0, 90.0, 90.0])  # na minima
+    add_history(conn, "MLB_acima", [100.0, 90.0, 98.0])  # 9% acima
+    visto_em(conn, "MLB_colado", "2026-08-30T18:00:00+00:00")  # visto agora
+    visto_em(conn, "MLB_acima", "2026-08-01T00:00:00+00:00")  # esquecido ha um mes
+
+    assert [p[0] for p in hot_products(conn, "mercadolivre", 10, 25)] == [
+        "MLB_colado",
+        "MLB_acima",
+    ]
+
+
 def test_nao_mistura_fontes():
     from promo.db import hot_products
 

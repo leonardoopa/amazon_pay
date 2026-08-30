@@ -379,7 +379,15 @@ def hot_interval_minutes() -> float:
 
 
 def hot_track_limit() -> int:
-    """Quantos produtos quentes reconsultar. E o custo por ciclo rapido."""
+    """Quantos produtos quentes reconsultar. E o custo por ciclo rapido.
+
+    Tambem e o que o ciclo rapido oferece de candidato a rodada que nao tem
+    reconsulta completa nem descoberta. Isso pesa mais do que parece: a vitrine
+    do ML repete os mesmos itens todo dia, e com `REPOST_COOLDOWN_DAYS` de 3 ela
+    esgota -- medido em producao, 88 das 89 ofertas da vitrine ja tinham post, e
+    a rodada selecionou zero. Nessas rodadas o unico catalogo disponivel e este
+    teto, entao 25 numa carteira de 900 e o que faz o grupo emudecer.
+    """
     return _int("HOT_TRACK_LIMIT", 25)
 
 
