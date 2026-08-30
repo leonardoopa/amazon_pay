@@ -416,6 +416,118 @@
     {
       "term": "ampola capilar",
       "max_price": 100
+    },
+    {
+      "term": "shampoo wella",
+      "max_price": 400
+    },
+    {
+      "term": "mascara wella",
+      "max_price": 400
+    },
+    {
+      "term": "mascara capilar wella",
+      "max_price": 400
+    },
+    {
+      "term": "wella oil reflections",
+      "max_price": 400
+    },
+    {
+      "term": "wella oleo capilar",
+      "max_price": 400
+    },
+    {
+      "term": "wella professionals",
+      "max_price": 400
+    },
+    {
+      "term": "condicionador wella",
+      "max_price": 400
+    },
+    {
+      "term": "kit truss",
+      "max_price": 400
+    },
+    {
+      "term": "truss shampoo",
+      "max_price": 400
+    },
+    {
+      "term": "condicionador truss",
+      "max_price": 400
+    },
+    {
+      "term": "mascara truss",
+      "max_price": 400
+    },
+    {
+      "term": "truss net",
+      "max_price": 400
+    },
+    {
+      "term": "cerave",
+      "max_price": 300
+    },
+    {
+      "term": "cerave creme",
+      "max_price": 300
+    },
+    {
+      "term": "cerave hidratante",
+      "max_price": 300
+    },
+    {
+      "term": "cicaplast baume",
+      "max_price": 300
+    },
+    {
+      "term": "hidratante corporal",
+      "max_price": 200
+    },
+    {
+      "term": "protetor solar",
+      "max_price": 250
+    },
+    {
+      "term": "protetor solar facial",
+      "max_price": 250
+    },
+    {
+      "term": "protetor solar corporal",
+      "max_price": 250
+    },
+    {
+      "term": "protetor solar la roche posay",
+      "max_price": 250
+    },
+    {
+      "term": "protetor solar anthelios",
+      "max_price": 250
+    },
+    {
+      "term": "protetor solar isdin",
+      "max_price": 250
+    },
+    {
+      "term": "melatonina",
+      "max_price": 200
+    },
+    {
+      "term": "melatonina gomas",
+      "max_price": 200
+    },
+    {
+      "term": "shampoo antiqueda",
+      "max_price": 250
+    },
+    {
+      "term": "shampoo anticaspa",
+      "max_price": 250
+    },
+    {
+      "term": "creme para pentear",
+      "max_price": 150
     }
   ],
   "_comment_coupon": "Cupom de campanha do ML (vale no site todo, por alguns dias). A API nao expoe cupom, entao esse e o unico jeito. `ate` e obrigatorio na pratica: cupom vencido no post faz a pessoa clicar, falhar e desconfiar do grupo. Deixe code vazio pra sair sem cupom.",
@@ -509,6 +621,46 @@
       "id": "MLB1431",
       "name": "Joias e Bijuterias",
       "max_price": 250
+    },
+    {
+      "id": "MLB199407",
+      "name": "Cuidados com a Pele",
+      "max_price": 300
+    },
+    {
+      "id": "MLB1263",
+      "name": "Cuidados com o Cabelo",
+      "max_price": 400
+    },
+    {
+      "id": "MLB264751",
+      "name": "Artigos para Cabeleireiros",
+      "max_price": 300
+    },
+    {
+      "id": "MLB455174",
+      "name": "Artefatos para Cabelo",
+      "max_price": 400
+    },
+    {
+      "id": "MLB278194",
+      "name": "Tratamentos de Beleza",
+      "max_price": 300
+    },
+    {
+      "id": "MLB264201",
+      "name": "Suplementos Alimentares",
+      "max_price": 300
+    },
+    {
+      "id": "MLB264192",
+      "name": "Cuidado da Saude",
+      "max_price": 300
+    },
+    {
+      "id": "MLB198312",
+      "name": "Higiene Pessoal",
+      "max_price": 150
     }
   ]
 }
