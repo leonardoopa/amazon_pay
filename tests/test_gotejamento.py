@@ -91,6 +91,12 @@ def enfileira(banco, quantos: int) -> None:
 
 
 def flush(monkeypatch, entrega, relogio, budget=None):
+    """Drena a fila com o relogio do teste.
+
+    A janela de silencio fica desligada pela fixture `sem_janela_de_silencio`
+    no conftest -- estes testes medem o intervalo CONFIGURADO, e nao a hora do
+    relogio de quem roda a suite.
+    """
     monkeypatch.setattr(pipeline, "build_delivery", lambda: entrega)
     pipeline.flush_pending(
         budget_seconds=budget, sleep=relogio.sleep, monotonic=relogio.monotonic

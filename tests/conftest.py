@@ -46,3 +46,23 @@ def banco_em_memoria(monkeypatch) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     monkeypatch.setattr("promo.pipeline.connect", lambda: ContextoDeConexao(conn))
     return conn
+
+
+@pytest.fixture(autouse=True)
+def sem_janela_de_silencio(monkeypatch):
+    """Desliga a janela de silencio em toda a suite, por padrao.
+
+    `_drip_gap()` multiplica o intervalo por `QUIET_DRIP_MULTIPLIER` entre
+    23:30 e 07:30. Sem esta fixture, qualquer teste que meca ritmo de entrega
+    passa de dia e falha de madrugada -- ele estaria medindo a hora do relogio
+    em vez do codigo.
+
+    Nao e hipotese: o runner do GitHub roda em UTC, entrou na janela, e dois
+    testes de gotejamento vieram com intervalos 6x maiores (500s a 780s para
+    100s configurados), barrando o deploy.
+
+    Quem testa a janela em si sobrescreve com `monkeypatch.setenv`, que vale
+    por ser aplicado depois desta fixture.
+    """
+    monkeypatch.setenv("QUIET_START", "")
+    monkeypatch.setenv("QUIET_END", "")
