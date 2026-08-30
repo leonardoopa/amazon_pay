@@ -466,11 +466,20 @@ def familia_do_titulo(titulo: str, palavras: int = 3) -> str:
     Numero sai fora: e ele que varia entre "UV 50+" e "UV50+", e entre
     tamanhos do mesmo modelo.
     """
-    sem_acento = unicodedata.normalize("NFKD", titulo)
-    sem_acento = "".join(c for c in sem_acento if not unicodedata.combining(c))
-    tokens = re.findall(r"[a-z]+", sem_acento.casefold())
+    tokens = re.findall(r"[a-z]+", sem_acento(titulo))
     significativas = [t for t in tokens if t not in _VAZIAS and len(t) > 1]
     return " ".join(significativas[:palavras])
+
+
+def sem_acento(texto: str) -> str:
+    """Minusculo e sem diacritico, para comparar titulo com termo escrito a mao.
+
+    Quem edita o `watchlist.json` escreve "protetor solar"; o ML devolve
+    "Protetor Solar Facial FPS 70". Sem normalizar os dois lados a comparacao
+    depende de como o vendedor digitou o anuncio.
+    """
+    decomposto = unicodedata.normalize("NFKD", texto)
+    return "".join(c for c in decomposto if not unicodedata.combining(c)).casefold()
 
 
 def families_in_cooldown(

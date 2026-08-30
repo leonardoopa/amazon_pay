@@ -28,6 +28,7 @@ from .config import (
     post_max_age_minutes,
     price_focus_max,
     price_focus_reserve,
+    priority_reserve,
     quiet_drip_multiplier,
     quiet_max_offers_per_run,
     quiet_window,
@@ -49,6 +50,7 @@ from .db import (
     products_in_cooldown,
     recent_headlines,
     record_offer,
+    sem_acento,
     set_meta,
     tracked_products,
 )
@@ -104,6 +106,18 @@ def load_coupon(path: Path | None = None) -> str | None:
         log.info("Cupom %s venceu em %s; post sai sem cupom.", codigo, ate)
         return None
     return codigo
+
+
+def load_priority(path: Path | None = None) -> list[str]:
+    """Temas com vaga garantida na rodada, normalizados. Campo opcional.
+
+    Sao pedacos de titulo, nao termos de busca: o mesmo shampoo Wella entra na
+    carteira pela busca por termo, pelos mais vendidos de `MLB1263` e pela
+    vitrine, e a oferta nao carrega qual das tres a trouxe. O titulo carrega.
+    """
+    path = path or ROOT / "watchlist.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return [sem_acento(tema) for tema in data.get("priority", []) if tema.strip()]
 
 
 def load_categories(path: Path | None = None) -> list[Category]:
@@ -348,6 +362,52 @@ def _uma_por_familia(escolhidas: list[ScoredOffer]) -> list[ScoredOffer]:
         if familia:
             vistas.add(familia)
         saida.append(scored)
+    return saida
+
+
+def e_prioritaria(offer: Offer, temas: list[str]) -> bool:
+    """O titulo cita algum dos temas que o grupo pediu."""
+    titulo = sem_acento(offer.title)
+    return any(tema in titulo for tema in temas)
+
+
+def _priorizar_temas(
+    escolhidas: list[ScoredOffer], limite: int, temas: list[str] | None = None
+) -> list[ScoredOffer]:
+    """Vagas guardadas para os temas do `priority`, antes do resto da fila.
+
+    Desconto e preco sozinhos decidem por numero, e o numero maior costuma vir
+    de outra categoria: na primeira rodada com a watchlist de 132 termos os 252
+    produtos novos de cabelo e pele nao pegaram nenhuma das 5 vagas -- elas
+    ficaram com -72%, -67% e -54%. Nao havia nada errado com essas ofertas; o
+    que faltava era publico, e publico nao aparece na ordenacao.
+
+    A reserva e teto, nao piso: sem candidato prioritario na rodada, nenhuma
+    vaga fica vazia -- o resto da fila preenche na ordem de sempre. E dentro da
+    reserva vale a mesma regra de preco e de rodizio por fonte do resto, entao
+    isto muda quem concorre por uma vaga, nao o criterio que decide.
+    """
+    reserva = min(priority_reserve(), limite)
+    if reserva <= 0:
+        return _priorizar_baratos(escolhidas, limite)
+
+    temas = load_priority() if temas is None else temas
+    if not temas:
+        return _priorizar_baratos(escolhidas, limite)
+
+    prioritarias = [s for s in escolhidas if e_prioritaria(s.offer, temas)]
+    resto = [s for s in escolhidas if not e_prioritaria(s.offer, temas)]
+
+    saida = _priorizar_baratos(prioritarias, reserva)
+    if saida:
+        log.info("%d vaga(s) desta rodada foram para tema prioritario.", len(saida))
+    saida += _priorizar_baratos(resto, limite - len(saida))
+    # Reserva sobrando nao pode virar vaga perdida nem no outro sentido: se o
+    # resto nao encheu, o prioritario que ficou de fora volta a concorrer.
+    if len(saida) < limite:
+        ja = {id(s) for s in saida}
+        sobra = [s for s in prioritarias if id(s) not in ja]
+        saida += _priorizar_baratos(sobra, limite - len(saida))
     return saida
 
 
@@ -615,7 +675,8 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # uma e de qual fonte vem cada vaga.
     # Uma por familia antes de cortar a cota: assim o anuncio repetido nao
     # ocupa vaga que outro produto poderia usar.
-    picked = _priorizar_baratos(_uma_por_familia(picked), espaco)
+    temas = load_priority()
+    picked = _priorizar_temas(_uma_por_familia(picked), espaco, temas)
     if len(picked) < espaco:
         familias_usadas = {familia_do_titulo(s.offer.title) for s in picked}
         restantes = [
@@ -623,7 +684,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             for s in _uma_por_familia(repasses)
             if familia_do_titulo(s.offer.title) not in familias_usadas
         ]
-        picked += _priorizar_baratos(restantes, espaco - len(picked))
+        picked += _priorizar_temas(restantes, espaco - len(picked), temas)
     verificadas = sum(1 for s in picked if s.verified)
     log.info(
         "%d ofertas selecionadas (%d verificadas, %d repasse da vitrine)",
