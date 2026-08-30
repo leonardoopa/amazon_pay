@@ -10,12 +10,18 @@ from __future__ import annotations
 
 import logging
 import threading
+from time import monotonic
 from typing import Callable
 
 from .config import MissingConfig
 from .db import connect, now, set_meta
 
 log = logging.getLogger("promo")
+
+# Piso de espera entre rodadas. Existe so para o caso de a rodada falhar em
+# menos de um segundo (config quebrada, rede fora): sem ele o laco bateria nas
+# APIs sem pausa nenhuma ate alguem notar.
+PAUSA_MINIMA = 30.0
 
 # Carimbos lidos pelo /health. Ficam no banco e nao em memoria porque o
 # processo reinicia, e um contador em memoria zeraria junto -- mesmo motivo
@@ -44,13 +50,25 @@ def loop(
     interval: float,
     task: Callable[[], object],
 ) -> int:
-    """Executa `task` a cada `interval` segundos ate `stop` ser sinalizado.
+    """Executa `task` a CADA `interval` segundos ate `stop` ser sinalizado.
+
+    "A cada", e nao "com `interval` de pausa entre uma e outra" -- a diferenca
+    custava metade do volume do grupo. A rodada leva de 10 a 15 minutos (a
+    coleta chama o Gemini uma vez por oferta, e a entrega goteja com intervalo
+    proposital), e dormir `interval` DEPOIS disso fazia o ciclo real ser
+    rodada + 900s, perto de 30 minutos. O gotejamento entregava o que cabia no
+    orcamento e o grupo ficava mudo o resto do tempo.
+
+    O orcamento de drenagem em `deliver()` e `interval * 0.8`, ou seja, ele ja
+    assumia que `interval` era o periodo do ciclo. As duas pontas agora
+    concordam: descontar o tempo gasto faz o ciclo durar `interval` de verdade.
 
     Devolve 2 se faltar configuracao -- nao adianta tentar de novo, o .env nao
     se preenche sozinho. Qualquer outra excecao vira log e a proxima rodada
     acontece normalmente: queda de rede nao pode parar o bot ate alguem notar.
     """
     while not stop.is_set():
+        inicio = monotonic()
         try:
             task()
             stamp_run()
@@ -61,6 +79,18 @@ def loop(
             log.exception("Rodada falhou: %s", exc)
             stamp_run(str(exc))
 
-        stop.wait(interval)
+        gasto = monotonic() - inicio
+        # Piso de espera para rodada que falha rapido: sem ele, um erro
+        # imediato e repetido viraria laco quente batendo nas APIs sem pausa.
+        espera = max(PAUSA_MINIMA, interval - gasto)
+        if gasto > interval:
+            log.info(
+                "Rodada levou %.0fs, acima do intervalo de %.0fs; "
+                "a proxima comeca em %.0fs.",
+                gasto,
+                interval,
+                espera,
+            )
+        stop.wait(espera)
 
     return 0

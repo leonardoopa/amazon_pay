@@ -17,7 +17,11 @@ dois esta rodando.
 
 from __future__ import annotations
 
+import logging
+
 import httpx
+
+log = logging.getLogger("promo")
 
 # Mesmo teto da Cloud API. O WhatsApp corta legenda de imagem por volta disso
 # nos dois caminhos, entao o limite nao e da API oficial -- e do app.
@@ -173,10 +177,26 @@ class Evolution:
         instancia caida.
         """
         if image_url and len(text) <= CAPTION_LIMIT:
-            try:
-                return self.send_image(image_url, text)
-            except NotConnected:
-                raise  # instancia caida nao e problema da imagem
-            except Exception:  # noqa: BLE001 - qualquer recusa da midia vira texto
-                pass
+            # Duas tentativas antes de desistir da imagem.
+            #
+            # Quem baixa a foto e a Evolution, do lado dela, e a falha vista em
+            # producao foi `getaddrinfo EAI_AGAIN http2.mlstatic.com`: DNS
+            # temporariamente indisponivel dentro do container. Nao ha nada de
+            # errado com a URL, e a segunda tentativa resolve.
+            #
+            # Sem o retry, um soluco de DNS de meio segundo custava a foto do
+            # post -- e post de oferta sem imagem no WhatsApp passa despercebido
+            # na rolagem, que e o mesmo que nao ter sido enviado.
+            for tentativa in range(2):
+                try:
+                    return self.send_image(image_url, text)
+                except NotConnected:
+                    raise  # instancia caida nao e problema da imagem
+                except Exception as exc:  # noqa: BLE001 - recusa da midia vira texto
+                    log.warning(
+                        "Envio da imagem falhou (tentativa %d/2): %s",
+                        tentativa + 1,
+                        exc,
+                    )
+            log.warning("Post sai sem imagem: a Evolution recusou a midia duas vezes.")
         return self.send_text(text)

@@ -287,6 +287,32 @@ def post_max_age_minutes() -> int:
     return _int("POST_MAX_AGE_MINUTES", 60)
 
 
+def price_focus_max() -> float:
+    """Preco ate onde esta o foco do grupo. 0 desliga o foco.
+
+    Nao e teto: produto caro continua entrando. E prioridade -- as vagas da
+    rodada vao primeiro para o que esta ate aqui, e o que passa disso entra
+    com o que sobrar.
+
+    O motivo e de publico, nao de qualidade. Uma queda real num notebook de
+    R$ 3.000 continua sendo real, mas quem le grupo de oferta decide um item de
+    R$ 100 na hora e um de R$ 1.000 em dias -- e nesses dias sai do grupo,
+    pesquisa e compra por outro link. A comissao e percentual, mas o que ela
+    multiplica e a venda que acontece.
+    """
+    return float(_optional("PRICE_FOCUS_MAX", "0"))
+
+
+def price_focus_reserve() -> int:
+    """Quantas vagas da rodada ficam abertas a QUALQUER preco.
+
+    Sem isto, um dia com muitos candidatos baratos empurraria o produto caro
+    para fora todas as vezes, e o grupo perderia a variedade que faz alguem
+    ficar. Uma vaga aberta garante que a oferta grande apareca sem dominar.
+    """
+    return _int("PRICE_FOCUS_RESERVE", 1)
+
+
 def post_cooldown_minutes() -> int:
     """Silencio minimo entre dois posts do MESMO produto.
 
