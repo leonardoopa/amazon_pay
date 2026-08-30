@@ -34,6 +34,7 @@ from ..db import (
     load_token,
     now,
     save_token,
+    tem_tema,
 )
 from ..models import Offer
 
@@ -96,8 +97,13 @@ def new_pkce_pair() -> tuple[str, str]:
 class MercadoLivre:
     name = PROVIDER
 
-    def __init__(self, config: MercadoLivreConfig) -> None:
+    def __init__(
+        self, config: MercadoLivreConfig, temas_oficiais: list[str] | None = None
+    ) -> None:
         self.config = config
+        # Temas em que a oferta sai da loja oficial e nao do vendedor mais
+        # barato. Vazio (o padrao) mantem o comportamento antigo em tudo.
+        self.temas_oficiais = temas_oficiais or []
         self._client = httpx.Client(timeout=20.0)
         self._builder = None  # LinkBuilder, criado sob demanda
 
@@ -333,7 +339,7 @@ class MercadoLivre:
         if not candidatos:
             return None
 
-        melhor = min(candidatos, key=lambda listing: listing["price"])
+        melhor = self._melhor_anuncio(candidatos, title)
         shipping = melhor.get("shipping") or {}
         return Offer(
             source=PROVIDER,
@@ -353,6 +359,30 @@ class MercadoLivre:
             free_shipping=bool(shipping.get("free_shipping")),
             official_store=bool(melhor.get("official_store_id")),
         )
+
+    def _melhor_anuncio(self, candidatos: list[dict], title: str) -> dict:
+        """Qual dos anuncios do produto vira a oferta.
+
+        Regra geral: o mais barato. O mesmo produto tem dezenas de vendedores e
+        o que importa pro grupo e o menor preco disponivel.
+
+        Nos temas prioritarios a regra muda para "o mais barato ENTRE as lojas
+        oficiais". Sao produtos de marca -- shampoo de salao, dermocosmetico --
+        onde o vendedor avulso barato e onde mora a falsificacao, e o grupo
+        responde pelo link que manda. O custo disso foi medido em 13 produtos
+        dos temas: 12 tem anuncio de loja oficial, e o sobrepreco mediano do
+        oficial e ZERO -- em 8 dos 12 o mais barato ja era o oficial. A cauda
+        existe (+53% numa mascara Truss), mas e cauda.
+
+        Produto sem loja oficial cai na regra geral em vez de sumir: uma vaga
+        vazia nao protege ninguem.
+        """
+        if self.temas_oficiais and tem_tema(title, self.temas_oficiais):
+            oficiais = [c for c in candidatos if c.get("official_store_id")]
+            if oficiais:
+                return min(oficiais, key=lambda listing: listing["price"])
+            log.info("Sem loja oficial para '%s'; vai o anuncio mais barato.", title[:60])
+        return min(candidatos, key=lambda listing: listing["price"])
 
     # ---------- Afiliado ----------
 

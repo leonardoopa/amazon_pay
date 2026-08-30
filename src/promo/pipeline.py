@@ -7,7 +7,7 @@ import logging
 import random
 import time
 from datetime import date, datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .config import (
@@ -27,7 +27,10 @@ from .config import (
     post_cooldown_minutes,
     post_max_age_minutes,
     price_focus_max,
+    prefer_official_store,
     price_focus_reserve,
+    priority_ignores_price_focus,
+    priority_min_discount_pct,
     priority_reserve,
     quiet_drip_multiplier,
     quiet_max_offers_per_run,
@@ -52,6 +55,7 @@ from .db import (
     record_offer,
     sem_acento,
     set_meta,
+    tem_tema,
     tracked_products,
 )
 from .delivery import NotConnected, WindowClosed, build_delivery
@@ -137,8 +141,12 @@ def load_categories(path: Path | None = None) -> list[Category]:
 def build_sources() -> list:
     """Amazon e opcional: sem credencial (ou sem as 3 vendas), segue so com o ML."""
     sources: list = []
+    # Os temas prioritarios vao junto porque mudam de qual ANUNCIO a oferta
+    # sai (loja oficial em vez do vendedor mais barato), e isso e decidido na
+    # fonte, na hora de escolher entre os dezenas de anuncios do produto.
+    oficiais = load_priority() if prefer_official_store() else []
     try:
-        sources.append(MercadoLivre(MercadoLivreConfig.load()))
+        sources.append(MercadoLivre(MercadoLivreConfig.load(), oficiais))
     except MissingConfig as exc:
         log.warning("Mercado Livre desativado: %s", exc)
 
@@ -367,8 +375,7 @@ def _uma_por_familia(escolhidas: list[ScoredOffer]) -> list[ScoredOffer]:
 
 def e_prioritaria(offer: Offer, temas: list[str]) -> bool:
     """O titulo cita algum dos temas que o grupo pediu."""
-    titulo = sem_acento(offer.title)
-    return any(tema in titulo for tema in temas)
+    return tem_tema(offer.title, temas)
 
 
 def _priorizar_temas(
@@ -398,7 +405,13 @@ def _priorizar_temas(
     prioritarias = [s for s in escolhidas if e_prioritaria(s.offer, temas)]
     resto = [s for s in escolhidas if not e_prioritaria(s.offer, temas)]
 
-    saida = _priorizar_baratos(prioritarias, reserva)
+    # Dentro da reserva o foco em preco pode ser desligado: quando o tema
+    # inteiro foi escolhido por converter, o item caro dele nao deve perder a
+    # vaga para o barato do mesmo tema. O rodizio por fonte continua valendo.
+    if priority_ignores_price_focus():
+        saida = _intercalar_por_fonte(prioritarias, reserva)
+    else:
+        saida = _priorizar_baratos(prioritarias, reserva)
     if saida:
         log.info("%d vaga(s) desta rodada foram para tema prioritario.", len(saida))
     saida += _priorizar_baratos(resto, limite - len(saida))
@@ -409,6 +422,19 @@ def _priorizar_temas(
         sobra = [s for s in prioritarias if id(s) not in ja]
         saida += _priorizar_baratos(sobra, limite - len(saida))
     return saida
+
+
+def regras_do_tema(offer: Offer, rules: Rules, temas: list[str]) -> Rules:
+    """As regras que valem para esta oferta: o piso do tema, ou o geral.
+
+    So o piso de desconto muda. O cooldown de repeticao continua o mesmo de
+    proposito -- "sempre que aparecer" nao pode virar o mesmo shampoo a cada
+    rodada, que e o que faz sair do grupo justamente quem o tema queria trazer.
+    """
+    piso = priority_min_discount_pct()
+    if piso is None or not e_prioritaria(offer, temas):
+        return rules
+    return replace(rules, min_discount_pct=piso)
 
 
 def _priorizar_baratos(
@@ -580,8 +606,9 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
 
         # Verificadas primeiro: sao as unicas que podem afirmar que o preco
         # caiu de verdade, e sao o motivo de alguem preferir este grupo.
+        temas = load_priority()
         for offer in unique.values():
-            scored = score(conn, offer, rules)
+            scored = score(conn, offer, regras_do_tema(offer, rules, temas))
             if scored is not None:
                 picked.append(scored)
 
@@ -607,7 +634,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         for offer in unique.values():
             if offer.product_id in ja_escolhido:
                 continue
-            scored = score_campaign(conn, offer, rules)
+            scored = score_campaign(conn, offer, regras_do_tema(offer, rules, temas))
             if scored is not None:
                 repasses.append(scored)
 
@@ -675,7 +702,6 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # uma e de qual fonte vem cada vaga.
     # Uma por familia antes de cortar a cota: assim o anuncio repetido nao
     # ocupa vaga que outro produto poderia usar.
-    temas = load_priority()
     picked = _priorizar_temas(_uma_por_familia(picked), espaco, temas)
     if len(picked) < espaco:
         familias_usadas = {familia_do_titulo(s.offer.title) for s in picked}
