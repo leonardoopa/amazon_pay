@@ -26,6 +26,8 @@ from .config import (
     ofertas_pages,
     post_cooldown_minutes,
     post_max_age_minutes,
+    price_focus_max,
+    price_focus_reserve,
     quiet_drip_multiplier,
     quiet_max_offers_per_run,
     quiet_window,
@@ -325,6 +327,42 @@ def _time_to_discover() -> bool:
     return False
 
 
+def _priorizar_baratos(
+    escolhidas: list[ScoredOffer], limite: int
+) -> list[ScoredOffer]:
+    """Vagas primeiro para o que esta na faixa de foco, sem excluir o resto.
+
+    Produto caro nao e barrado -- e uma queda real num item de R$ 3.000
+    continua sendo real. O que muda e a ordem de servico: quem le grupo de
+    oferta decide um item de R$ 100 na hora e um de R$ 1.000 em dias, e nesses
+    dias sai do grupo, pesquisa e compra por outro link.
+
+    `PRICE_FOCUS_RESERVE` guarda vagas abertas a qualquer preco. Sem elas, um
+    dia com muitos candidatos baratos empurraria o produto caro para fora
+    todas as vezes, e o grupo perderia justamente a variedade que segura
+    audiencia.
+
+    Dentro de cada faixa o rodizio por fonte continua valendo.
+    """
+    teto = price_focus_max()
+    if teto <= 0:
+        return _intercalar_por_fonte(escolhidas, limite)
+
+    dentro = [s for s in escolhidas if s.offer.price <= teto]
+    fora = [s for s in escolhidas if s.offer.price > teto]
+
+    reserva = min(price_focus_reserve(), limite) if fora else 0
+    saida = _intercalar_por_fonte(dentro, limite - reserva)
+    # A reserva nao pode virar vaga perdida: sobrou espaco, o caro completa, e
+    # se nao houver caro suficiente o barato volta a preencher.
+    saida += _intercalar_por_fonte(fora, limite - len(saida))
+    if len(saida) < limite:
+        ja = {id(s) for s in saida}
+        resto = [s for s in dentro if id(s) not in ja]
+        saida += _intercalar_por_fonte(resto, limite - len(saida))
+    return saida
+
+
 def _intercalar_por_fonte(
     escolhidas: list[ScoredOffer], limite: int
 ) -> list[ScoredOffer]:
@@ -539,9 +577,9 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # Repasse preenche o que sobrou da cota, nunca desloca uma verificada. A
     # ordem entre as duas listas continua sendo essa; o que muda dentro de cada
     # uma e de qual fonte vem cada vaga.
-    picked = _intercalar_por_fonte(picked, espaco)
+    picked = _priorizar_baratos(picked, espaco)
     if len(picked) < espaco:
-        picked += _intercalar_por_fonte(repasses, espaco - len(picked))
+        picked += _priorizar_baratos(repasses, espaco - len(picked))
     verificadas = sum(1 for s in picked if s.verified)
     log.info(
         "%d ofertas selecionadas (%d verificadas, %d repasse da vitrine)",
