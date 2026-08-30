@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
+import unicodedata
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Iterator
@@ -432,6 +434,74 @@ def create_post(
         ),
     )
     return int(cursor.lastrowid)
+
+
+# Palavras que nao ajudam a distinguir um produto de outro.
+_VAZIAS = {
+    "a", "as", "com", "cor", "da", "das", "de", "do", "dos", "e", "em", "kit",
+    "na", "no", "o", "os", "para", "por", "pra", "um", "uma",
+}
+
+
+def familia_do_titulo(titulo: str, palavras: int = 3) -> str:
+    """Assinatura grosseira do produto, para pegar anuncio repetido.
+
+    O mesmo produto fisico aparece no ML como dezenas de anuncios de vendedores
+    diferentes -- `external_id` diferente, e portanto `product_id` diferente.
+    O cooldown por produto nao ve isso, e o grupo recebeu em quinze minutos:
+
+        Short Saia Esportivo Feminino Ausare de Lycra...      R$  95,00
+        Short Saia Esportivo Feminino Ausare com Protecao...  R$  99,90
+        Short Saia Esportivo Feminino Ausare com Protecao...  R$ 126,51
+        Short Saia Esportivo Ausare Feminino, para Treino...  R$  89,90
+
+    Quatro anuncios, quatro precos, o mesmo short. Com precos diferentes fica
+    pior do que a repeticao simples: parece que o grupo nao sabe o preco.
+
+    As tres primeiras palavras significativas bastam para juntar as quatro
+    ("short saia esportivo") e continuam separando o que e de fato diferente:
+    "mochila notebook ntesx" nao colide com "mochila jiesipote prova", nem
+    "smart tv samsung" com "smart tv philco".
+
+    Numero sai fora: e ele que varia entre "UV 50+" e "UV50+", e entre
+    tamanhos do mesmo modelo.
+    """
+    sem_acento = unicodedata.normalize("NFKD", titulo)
+    sem_acento = "".join(c for c in sem_acento if not unicodedata.combining(c))
+    tokens = re.findall(r"[a-z]+", sem_acento.casefold())
+    significativas = [t for t in tokens if t not in _VAZIAS and len(t) > 1]
+    return " ".join(significativas[:palavras])
+
+
+def families_in_cooldown(
+    conn: sqlite3.Connection, cooldown_minutes: int | None = None
+) -> set[str]:
+    """Familias de titulo que acabaram de ir para o grupo.
+
+    Mesma regra de `products_in_cooldown`, um nivel acima: la o alvo e o
+    anuncio, aqui e o produto que o leitor reconhece.
+    """
+    if cooldown_minutes is None:
+        cooldown_minutes = post_cooldown_minutes()
+
+    if cooldown_minutes <= 0:
+        condicao, args = "po.status = 'pending'", ()
+    else:
+        condicao = (
+            "po.status = 'pending' "
+            "OR (po.status = 'sent' AND COALESCE(po.sent_at, po.created_at) >= ?)"
+        )
+        args = (_iso(now() - timedelta(minutes=cooldown_minutes)),)
+
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT p.title FROM posts po
+        JOIN products p ON p.id = po.product_id
+        WHERE {condicao}
+        """,
+        args,
+    ).fetchall()
+    return {f for row in rows if (f := familia_do_titulo(row["title"]))}
 
 
 def products_in_cooldown(

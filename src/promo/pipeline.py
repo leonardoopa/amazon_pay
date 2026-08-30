@@ -39,6 +39,8 @@ from .db import (
     connect,
     create_post,
     expire_stale_posts,
+    familia_do_titulo,
+    families_in_cooldown,
     mark_post_failed,
     mark_post_sent,
     hot_products,
@@ -327,6 +329,28 @@ def _time_to_discover() -> bool:
     return False
 
 
+def _uma_por_familia(escolhidas: list[ScoredOffer]) -> list[ScoredOffer]:
+    """Deixa so a melhor oferta de cada familia de produto na rodada.
+
+    O cooldown por familia olha o que ja foi para o grupo; isto olha o que esta
+    sendo escolhido agora. Sem os dois, os quatro anuncios do mesmo short
+    entravam juntos na mesma rodada e o cooldown so pegava a partir da segunda.
+
+    A lista chega ordenada por desconto, entao ficar com a primeira de cada
+    familia e ficar com a melhor.
+    """
+    vistas: set[str] = set()
+    saida: list[ScoredOffer] = []
+    for scored in escolhidas:
+        familia = familia_do_titulo(scored.offer.title)
+        if familia and familia in vistas:
+            continue
+        if familia:
+            vistas.add(familia)
+        saida.append(scored)
+    return saida
+
+
 def _priorizar_baratos(
     escolhidas: list[ScoredOffer], limite: int
 ) -> list[ScoredOffer]:
@@ -540,6 +564,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         expire_stale_posts(conn)
         na_fila = len(pending_posts(conn))
         bloqueados = products_in_cooldown(conn)
+        familias_bloqueadas = families_in_cooldown(conn)
 
     # Fora antes de escolher, e nao depois: assim o produto repetido nao ocupa
     # uma vaga da cota que outra oferta poderia usar, e nao gasta chamada do
@@ -548,10 +573,21 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # A vitrine devolve o mesmo item rodada apos rodada enquanto ele seguir em
     # promocao, e o filtro aprova de novo -- o desconto continua real. Quem le
     # o grupo, porem, ve a mesma oferta duas vezes em quinze minutos.
-    if bloqueados:
+    #
+    # A familia entra junto porque o mesmo produto fisico aparece no ML como
+    # dezenas de anuncios de vendedores diferentes: `product_id` distinto,
+    # produto igual. O grupo recebeu quatro "Short Saia Esportivo Ausare" em
+    # quinze minutos, cada um de um anuncio, cada um com um preco.
+    if bloqueados or familias_bloqueadas:
         antes = len(picked) + len(repasses)
-        picked = [s for s in picked if s.offer.product_id not in bloqueados]
-        repasses = [s for s in repasses if s.offer.product_id not in bloqueados]
+
+        def passa(s: ScoredOffer) -> bool:
+            if s.offer.product_id in bloqueados:
+                return False
+            return familia_do_titulo(s.offer.title) not in familias_bloqueadas
+
+        picked = [s for s in picked if passa(s)]
+        repasses = [s for s in repasses if passa(s)]
         repetidos = antes - len(picked) - len(repasses)
         if repetidos:
             log.info(
@@ -577,9 +613,17 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # Repasse preenche o que sobrou da cota, nunca desloca uma verificada. A
     # ordem entre as duas listas continua sendo essa; o que muda dentro de cada
     # uma e de qual fonte vem cada vaga.
-    picked = _priorizar_baratos(picked, espaco)
+    # Uma por familia antes de cortar a cota: assim o anuncio repetido nao
+    # ocupa vaga que outro produto poderia usar.
+    picked = _priorizar_baratos(_uma_por_familia(picked), espaco)
     if len(picked) < espaco:
-        picked += _priorizar_baratos(repasses, espaco - len(picked))
+        familias_usadas = {familia_do_titulo(s.offer.title) for s in picked}
+        restantes = [
+            s
+            for s in _uma_por_familia(repasses)
+            if familia_do_titulo(s.offer.title) not in familias_usadas
+        ]
+        picked += _priorizar_baratos(restantes, espaco - len(picked))
     verificadas = sum(1 for s in picked if s.verified)
     log.info(
         "%d ofertas selecionadas (%d verificadas, %d repasse da vitrine)",
