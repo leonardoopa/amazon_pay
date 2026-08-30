@@ -490,6 +490,12 @@ def sem_acento(texto: str) -> str:
     return "".join(c for c in decomposto if not unicodedata.combining(c)).casefold()
 
 
+def tem_tema(titulo: str, temas: list[str]) -> bool:
+    """O titulo cita algum dos temas, ja normalizados por `sem_acento`."""
+    normalizado = sem_acento(titulo)
+    return any(tema in normalizado for tema in temas)
+
+
 def families_in_cooldown(
     conn: sqlite3.Connection, cooldown_minutes: int | None = None
 ) -> set[str]:

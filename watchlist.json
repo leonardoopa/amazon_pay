@@ -395,15 +395,15 @@
     },
     {
       "term": "shampoo",
-      "max_price": 150
+      "max_price": null
     },
     {
       "term": "progressiva",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "oleo capilar",
-      "max_price": 150
+      "max_price": null
     },
     {
       "term": "chapinha",
@@ -415,119 +415,119 @@
     },
     {
       "term": "ampola capilar",
-      "max_price": 100
+      "max_price": null
     },
     {
       "term": "shampoo wella",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "mascara wella",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "mascara capilar wella",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "wella oil reflections",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "wella oleo capilar",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "wella professionals",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "condicionador wella",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "kit truss",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "truss shampoo",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "condicionador truss",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "mascara truss",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "truss net",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "cerave",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "cerave creme",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "cerave hidratante",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "cicaplast baume",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "hidratante corporal",
-      "max_price": 200
+      "max_price": null
     },
     {
       "term": "protetor solar",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "protetor solar facial",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "protetor solar corporal",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "protetor solar la roche posay",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "protetor solar anthelios",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "protetor solar isdin",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "melatonina",
-      "max_price": 200
+      "max_price": null
     },
     {
       "term": "melatonina gomas",
-      "max_price": 200
+      "max_price": null
     },
     {
       "term": "shampoo antiqueda",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "shampoo anticaspa",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "creme para pentear",
-      "max_price": 150
+      "max_price": null
     }
   ],
   "_comment_coupon": "Cupom de campanha do ML (vale no site todo, por alguns dias). A API nao expoe cupom, entao esse e o unico jeito. `ate` e obrigatorio na pratica: cupom vencido no post faz a pessoa clicar, falhar e desconfiar do grupo. Deixe code vazio pra sair sem cupom.",

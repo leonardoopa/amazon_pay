@@ -205,3 +205,179 @@ def test_priority_ausente_e_o_normal(tmp_path):
     caminho.write_text(json.dumps({"keywords": [{"term": "x"}]}), encoding="utf-8")
 
     assert load_priority(caminho) == []
+
+
+# ---------- preco e desconto nao barram o tema ----------
+#
+# "esses produtos podemos deixar com preco alto, nao tem nenhum problema. O
+# ideal e que sempre que eles aparecerem, independente de preco ou desconto,
+# eles tem que ser enviados no grupo -- esses sao os que mais convertem."
+#
+# A conta e outra nesses temas: -9% num shampoo de salao de R$ 400 e mais
+# dinheiro que -60% num item de R$ 25, e a pessoa que entrou no grupo pelo
+# nome do produto ja quer o produto.
+
+
+def test_o_foco_em_barato_pode_ser_desligado_dentro_da_reserva(monkeypatch):
+    monkeypatch.setenv("PRIORITY_IGNORES_PRICE_FOCUS", "1")
+    monkeypatch.setenv("PRICE_FOCUS_MAX", "300")
+    monkeypatch.setenv("PRICE_FOCUS_RESERVE", "0")
+    candidatas = [
+        oferta("Kit Wella Oil Reflections Profissional", 612.0, 55),
+        oferta("Máscara Wella Oil Reflections 150ml", 116.0, 47),
+    ]
+
+    saida = _priorizar_temas(candidatas, 1, TEMAS)
+
+    assert saida[0].offer.price == 612.0  # o caro nao perde mais a vaga
+
+
+def test_desligar_o_foco_nao_afeta_o_resto_da_fila(monkeypatch):
+    """Fora da reserva, produto caro continua cedendo vez ao barato."""
+    monkeypatch.setenv("PRIORITY_IGNORES_PRICE_FOCUS", "1")
+    monkeypatch.setenv("PRICE_FOCUS_MAX", "300")
+    monkeypatch.setenv("PRICE_FOCUS_RESERVE", "0")
+    monkeypatch.setenv("PRIORITY_RESERVE", "0")
+    candidatas = [
+        oferta("Smart Tv Philco 50", 1200.0, 60),
+        oferta("Fone Bluetooth JBL", 99.0, 20),
+    ]
+
+    saida = _priorizar_temas(candidatas, 1, TEMAS)
+
+    assert saida[0].offer.price == 99.0
+
+
+# ---------- piso de desconto proprio ----------
+
+
+def regras(min_discount: float = 5.0):
+    from promo.config import Rules
+
+    return Rules(
+        min_discount_pct=min_discount,
+        baseline_window_days=60,
+        min_observations=4,
+        repost_cooldown_days=3,
+        max_offers_per_run=5,
+    )
+
+
+def anuncio(titulo: str, preco: float, riscado: float | None = None) -> Offer:
+    return Offer(
+        source="mercadolivre",
+        external_id="MLB1",
+        title=titulo,
+        price=preco,
+        url="https://mercadolivre.com.br/p/MLB1",
+        original_price=riscado,
+    )
+
+
+def test_o_tema_usa_o_piso_proprio(monkeypatch):
+    from promo.pipeline import regras_do_tema
+
+    monkeypatch.setenv("PRIORITY_MIN_DISCOUNT_PCT", "0")
+    wella = anuncio("Shampoo Wella Invigo Nutri-Enrich", 399.90, 441.80)
+
+    assert regras_do_tema(wella, regras(), TEMAS).min_discount_pct == 0
+
+
+def test_fora_do_tema_o_piso_geral_continua(monkeypatch):
+    from promo.pipeline import regras_do_tema
+
+    monkeypatch.setenv("PRIORITY_MIN_DISCOUNT_PCT", "0")
+    tv = anuncio("Smart Tv Philco 50", 1200.0, 1300.0)
+
+    assert regras_do_tema(tv, regras(), TEMAS).min_discount_pct == 5.0
+
+
+def test_sem_piso_configurado_nada_muda(monkeypatch):
+    """Vazio e o padrao: quem nao configurou usa o piso geral nos dois casos."""
+    from promo.pipeline import regras_do_tema
+
+    monkeypatch.delenv("PRIORITY_MIN_DISCOUNT_PCT", raising=False)
+    wella = anuncio("Shampoo Wella Invigo", 399.90, 441.80)
+
+    assert regras_do_tema(wella, regras(), TEMAS).min_discount_pct == 5.0
+
+
+def test_o_piso_zero_deixa_passar_o_desconto_de_9_por_cento(monkeypatch, tmp_path):
+    """O caso real: -9% num Wella de R$ 400, recusado pelo piso de 5%... nao,
+    aceito -- mas -2% seria recusado, e e esse que o piso do tema libera."""
+    import sqlite3
+
+    from promo.db import SCHEMA
+    from promo.pipeline import regras_do_tema
+    from promo.scoring import score_campaign
+
+    monkeypatch.setenv("PRIORITY_MIN_DISCOUNT_PCT", "0")
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA)
+    quase_nada = anuncio("Shampoo Wella Invigo", 435.00, 441.80)  # -1,5%
+
+    geral = score_campaign(conn, quase_nada, regras())
+    tema = score_campaign(conn, quase_nada, regras_do_tema(quase_nada, regras(), TEMAS))
+
+    assert geral is None
+    assert tema is not None
+
+
+def test_o_piso_do_tema_nao_inventa_desconto(monkeypatch):
+    """Piso 0 nao e "sem desconto": sem preco riscado maior que o atual nao ha
+    o que anunciar, e o post nunca afirma uma queda que nao existe."""
+    import sqlite3
+
+    from promo.db import SCHEMA
+    from promo.pipeline import regras_do_tema
+    from promo.scoring import score_campaign
+
+    monkeypatch.setenv("PRIORITY_MIN_DISCOUNT_PCT", "0")
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA)
+    sem_queda = anuncio("Shampoo Wella Invigo", 441.80, None)
+
+    assert score_campaign(conn, sem_queda, regras_do_tema(sem_queda, regras(), TEMAS)) is None
+
+
+def test_o_cooldown_de_repeticao_continua_valendo_no_tema(monkeypatch):
+    """"Sempre que aparecer" nao pode virar o mesmo shampoo a cada rodada --
+    e isso que faz sair do grupo justamente quem o tema queria trazer."""
+    from promo.pipeline import regras_do_tema
+
+    monkeypatch.setenv("PRIORITY_MIN_DISCOUNT_PCT", "0")
+    wella = anuncio("Shampoo Wella Invigo", 399.90, 441.80)
+
+    assert regras_do_tema(wella, regras(), TEMAS).repost_cooldown_days == 3
+
+
+# ---------- watchlist: teto de preco dos termos do tema ----------
+
+
+def test_os_termos_do_tema_nao_tem_teto_de_preco():
+    """Teto de R$ 400 no termo cortava o kit Wella de R$ 612 antes de ele
+    chegar a pontuacao -- o filtro corria na coleta, nao na selecao."""
+    from promo.pipeline import load_priority, load_watchlist
+
+    temas = load_priority()
+    com_teto = [
+        w.term
+        for w in load_watchlist()
+        if w.max_price is not None
+        and any(tema in w.term for tema in temas)
+    ]
+
+    assert com_teto == []
+
+
+def test_os_termos_fora_do_tema_mantem_teto():
+    """Soltar o teto e para o tema, nao para a watchlist inteira: sem teto,
+    'notebook' traz servidor de R$ 40 mil."""
+    from promo.pipeline import load_watchlist
+
+    tetos = {w.term: w.max_price for w in load_watchlist()}
+
+    assert tetos["notebook"] == 5000
+    assert tetos["smartphone"] == 3000

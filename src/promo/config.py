@@ -332,6 +332,57 @@ def priority_reserve() -> int:
     return _int("PRIORITY_RESERVE", 0)
 
 
+def priority_min_discount_pct() -> float | None:
+    """Piso de desconto so para os temas do `priority`. Vazio usa o piso geral.
+
+    Existe porque a conta e outra nesses temas. No geral, desconto pequeno e
+    oferta fraca e o piso de 5% esta certo em recusar. Num shampoo de salao que
+    o grupo pediu pelo nome, a pessoa ja quer o produto, e -9% num item de
+    R$ 400 e mais dinheiro do que -60% num de R$ 25.
+
+    Zero deixa passar qualquer desconto, mas nao "nenhum desconto": o
+    `score_campaign` ainda exige preco riscado maior que o atual, entao o post
+    nunca inventa uma queda que nao existe.
+    """
+    bruto = _optional("PRIORITY_MIN_DISCOUNT_PCT", "")
+    return float(bruto) if bruto else None
+
+
+def prefer_official_store() -> bool:
+    """Nos temas do `priority`, a oferta sai da loja oficial do ML?
+
+    O mesmo produto tem dezenas de vendedores, e a regra geral -- o mais barato
+    -- e a certa quase sempre. Nos temas prioritarios ela e a errada: sao marcas
+    de salao e dermocosmetico, o vendedor avulso barato e onde mora a
+    falsificacao, e quem responde pelo link e o grupo.
+
+    O custo foi medido em 13 produtos dos temas: 12 tem anuncio de loja oficial
+    e o sobrepreco mediano do oficial e ZERO -- em 8 dos 12 o mais barato ja era
+    o oficial. Produto sem loja oficial cai na regra geral, nao some.
+    """
+    return _optional("PREFER_OFFICIAL_STORE", "0").strip().lower() in {
+        "1",
+        "true",
+        "sim",
+        "yes",
+    }
+
+
+def priority_ignores_price_focus() -> bool:
+    """O foco em preco barato vale dentro da reserva dos temas?
+
+    Desligado, o item caro do tema deixa de perder a vaga para o barato do
+    mesmo tema -- que e o que se quer quando o tema inteiro foi escolhido por
+    converter, nao por caber no bolso.
+    """
+    return _optional("PRIORITY_IGNORES_PRICE_FOCUS", "0").strip().lower() in {
+        "1",
+        "true",
+        "sim",
+        "yes",
+    }
+
+
 def post_cooldown_minutes() -> int:
     """Silencio minimo entre dois posts do MESMO produto.
 
