@@ -59,7 +59,14 @@ DISCLOSURES = {
         "Como participante do Programa de Associados da Amazon, "
         "sou remunerado pelas compras qualificadas efetuadas"
     ),
-    "mercadolivre": "Link de afiliado - o preco pra voce nao muda.",
+    # Encurtada de "Link de afiliado - o preco pra voce nao muda." a pedido:
+    # ocupava tres linhas no celular e quase ninguem lia a segunda metade.
+    #
+    # O que NAO pode sair e a identificacao em si. Publicidade tem que ser
+    # reconhecivel como tal (CDC art. 36), e o programa de afiliados do ML
+    # exige a divulgacao -- some ela e o risco nao e um post feio, e a conta
+    # encerrada, que leva junto a unica receita do projeto.
+    "mercadolivre": "Link de afiliado.",
 }
 
 SYSTEM = """Voce escreve posts de oferta para um grupo de WhatsApp brasileiro.

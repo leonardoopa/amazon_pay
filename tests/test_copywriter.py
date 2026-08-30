@@ -13,6 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from promo.copywriter import (  # noqa: E402
+    DISCLOSURES,
     SYSTEM,
     Copywriter,
     _enforce_disclosure,
@@ -127,7 +128,7 @@ def test_fallback_tem_disclosure_e_numeros():
 
     assert "De R$ 200,00 por *R$ 150,00*" in text
     assert LINK in text
-    assert text.endswith("Link de afiliado - o preco pra voce nao muda.")
+    assert text.endswith(DISCLOSURES["mercadolivre"])
 
 
 def test_recusa_loja_oficial_inventada():
@@ -299,7 +300,7 @@ def test_texto_honesto_passa():
     scored = make_scored(lowest_ever=False)
     _reject_unfounded_claims(
         "Achadinho bom 🎧\nFone Redmi\n*R$ 27,00* — 32% abaixo da média de R$ 39,90\n"
-        "https://meli.la/x\nLink de afiliado - o preco pra voce nao muda.",
+        f"https://meli.la/x\n{DISCLOSURES['mercadolivre']}",
         scored,
     )
 
@@ -420,7 +421,7 @@ def test_loja_bate_com_a_divulgacao():
 
     for source in ("mercadolivre", "ml_ofertas", "demo"):
         assert store_name(source) == "Mercado Livre"
-        assert disclosure_for(source) == "Link de afiliado - o preco pra voce nao muda."
+        assert disclosure_for(source) == DISCLOSURES["mercadolivre"]
     assert store_name("amazon") == "Amazon"
     assert "Programa de Associados" in disclosure_for("amazon")
 
@@ -493,22 +494,33 @@ def test_intervalo_zero_desliga_o_espacamento(monkeypatch):
 # comparacao literal nao achou e ANEXOU a canonica. Post saiu com a divulgacao
 # duplicada, uma acentuada e outra nao -- e foi pro grupo assim.
 
-DISCLOSURE_ML = "Link de afiliado - o preco pra voce nao muda."
+# Lida do modulo, e nao escrita a mao: o texto da divulgacao ja mudou uma vez
+# (encurtado), e literal repetido em sete lugares transforma um ajuste de uma
+# linha em sete testes vermelhos que nao testam o texto.
+DISCLOSURE_ML = DISCLOSURES["mercadolivre"]
 
 
 def test_variante_acentuada_nao_duplica():
-    texto = "POST\nlink\nLink de afiliado - o preço pra voce nao muda."
-    resultado = _enforce_disclosure(texto, "mercadolivre")
+    """O acento e injetado, e nao escrito a mao.
 
-    assert resultado.count("Link de afiliado") == 1
+    A frase canonica ja mudou uma vez e hoje nao tem acento nenhum. O que este
+    teste protege e o normalizador -- se ele parar de ignorar acento, a
+    divulgacao sai duplicada no post. Derivar a variante da constante mantem o
+    teste valido qualquer que seja a frase.
+    """
+    com_acento = DISCLOSURE_ML.replace("afiliado", "afiliádo")
+    resultado = _enforce_disclosure(f"POST\nlink\n{com_acento}", "mercadolivre")
+
+    assert resultado.count("afili") == 1
     assert resultado.endswith(DISCLOSURE_ML)
 
 
 def test_variante_em_caixa_alta_nao_duplica():
-    texto = "POST\nlink\nLINK DE AFILIADO - O PREÇO PRA VOCÊ NÃO MUDA."
-    resultado = _enforce_disclosure(texto, "mercadolivre")
+    resultado = _enforce_disclosure(
+        f"POST\nlink\n{DISCLOSURE_ML.upper()}", "mercadolivre"
+    )
 
-    assert resultado.count("Link de afiliado") == 1
+    assert resultado.lower().count("link de afiliado") == 1
 
 
 def test_variante_e_trocada_pela_canonica():
