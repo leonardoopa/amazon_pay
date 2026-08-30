@@ -535,6 +535,26 @@
     "code": "",
     "ate": ""
   },
+  "_comment_priority": "Temas com vaga garantida por rodada (PRIORITY_RESERVE no .env diz quantas). Sao pedacos de TITULO, nao termos de busca: a mesma oferta chega pela busca por termo, pelos mais vendidos da categoria e pela vitrine, e nao carrega qual das tres a trouxe -- o titulo carrega. Comparacao sem acento e em minusculo. Cuidado com pedaco curto demais: 'oleo' pegaria oleo de motor.",
+  "priority": [
+    "wella",
+    "truss",
+    "cerave",
+    "cicaplast",
+    "la roche",
+    "protetor solar",
+    "melatonina",
+    "shampoo",
+    "condicionador",
+    "mascara capilar",
+    "oleo capilar",
+    "hidratante",
+    "serum facial",
+    "protetor labial",
+    "creme para pentear",
+    "progressiva",
+    "ampola capilar"
+  ],
   "_comment_categories": "Mais vendidos por categoria. Cada categoria custa ~21 chamadas POR DESCOBERTA (a lista + 2 por produto) -- e a descoberta agora roda a cada DISCOVERY_INTERVAL_HOURS, nao em toda rodada. Rode `promo ml-categories` pra ver os IDs.",
   "categories": [
     {

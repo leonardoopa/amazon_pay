@@ -313,6 +313,25 @@ def price_focus_reserve() -> int:
     return _int("PRICE_FOCUS_RESERVE", 1)
 
 
+def priority_reserve() -> int:
+    """Quantas vagas da rodada ficam guardadas para os temas prioritarios.
+
+    Ranquear so por desconto e por preco entrega a rodada a quem tem o maior
+    numero, e o maior numero costuma ser eletronico de nicho: com 132 termos na
+    watchlist, cabelo e pele competem contra tudo e perdem quase sempre. Foi o
+    que aconteceu na primeira rodada depois de a watchlist crescer -- 252
+    produtos novos de beleza entraram na carteira e nenhum apareceu entre as 5
+    vagas, que ficaram com -72%, -67% e -54% de outras categorias.
+
+    Publico nao e desconto. As mulheres que entraram no grupo pediram cabelo,
+    pele e suplemento; guardar vaga e o que faz o pedido virar post sem ter que
+    inflar o desconto de nada.
+
+    0 desliga a reserva. Os temas saem de `priority` no watchlist.json.
+    """
+    return _int("PRIORITY_RESERVE", 0)
+
+
 def post_cooldown_minutes() -> int:
     """Silencio minimo entre dois posts do MESMO produto.
 
