@@ -332,6 +332,90 @@
     {
       "term": "chinelo feminino",
       "max_price": 150
+    },
+    {
+      "term": "legging academia",
+      "max_price": 200
+    },
+    {
+      "term": "top fitness",
+      "max_price": 150
+    },
+    {
+      "term": "conjunto fitness feminino",
+      "max_price": 300
+    },
+    {
+      "term": "short academia feminino",
+      "max_price": 150
+    },
+    {
+      "term": "regata academia feminina",
+      "max_price": 150
+    },
+    {
+      "term": "tenis academia feminino",
+      "max_price": 350
+    },
+    {
+      "term": "garrafa academia",
+      "max_price": 120
+    },
+    {
+      "term": "camiseta adidas",
+      "max_price": 250
+    },
+    {
+      "term": "tenis puma feminino",
+      "max_price": 400
+    },
+    {
+      "term": "batom",
+      "max_price": 100
+    },
+    {
+      "term": "base maquiagem",
+      "max_price": 200
+    },
+    {
+      "term": "paleta de sombra",
+      "max_price": 200
+    },
+    {
+      "term": "rimel mascara cilios",
+      "max_price": 150
+    },
+    {
+      "term": "pincel maquiagem",
+      "max_price": 150
+    },
+    {
+      "term": "kit maquiagem",
+      "max_price": 250
+    },
+    {
+      "term": "shampoo",
+      "max_price": 150
+    },
+    {
+      "term": "progressiva",
+      "max_price": 300
+    },
+    {
+      "term": "oleo capilar",
+      "max_price": 150
+    },
+    {
+      "term": "chapinha",
+      "max_price": 300
+    },
+    {
+      "term": "escova secadora",
+      "max_price": 300
+    },
+    {
+      "term": "ampola capilar",
+      "max_price": 100
     }
   ],
   "_comment_coupon": "Cupom de campanha do ML (vale no site todo, por alguns dias). A API nao expoe cupom, entao esse e o unico jeito. `ate` e obrigatorio na pratica: cupom vencido no post faz a pessoa clicar, falhar e desconfiar do grupo. Deixe code vazio pra sair sem cupom.",
