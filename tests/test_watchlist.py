@@ -210,6 +210,7 @@ def test_nao_entrou_termo_que_devolve_outra_coisa():
         "calcinha",
         "cafe termogenico",
         "mochila impermeavel",
+        "kit capsulas de cafe",
     }
 
     assert termos() & mortos == set()

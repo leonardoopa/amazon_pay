@@ -232,6 +232,9 @@ def test_os_temas_de_moda_e_corrida_continuam():
         "mochila",
         "principia",
         "pele sensivel",
+        "capsula",
+        "nespresso",
+        "dolce gusto",
     } - set(load_priority())
 
     assert faltando == set()
