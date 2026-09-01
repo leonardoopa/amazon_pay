@@ -224,6 +224,14 @@ def test_os_temas_de_moda_e_corrida_continuam():
         "omega 3",
         "lupo",
         "legging",
+        "supercoffee",
+        "caffeine army",
+        "perfume",
+        "calcinha",
+        "cueca",
+        "mochila",
+        "principia",
+        "pele sensivel",
     } - set(load_priority())
 
     assert faltando == set()

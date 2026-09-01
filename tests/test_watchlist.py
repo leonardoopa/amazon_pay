@@ -17,7 +17,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from promo.pipeline import load_categories, load_watchlist  # noqa: E402
+from promo.pipeline import (  # noqa: E402
+    load_categories,
+    load_priority,
+    load_watchlist,
+)
 
 ARQUIVO = Path(__file__).resolve().parents[1] / "watchlist.json"
 DADOS = json.loads(ARQUIVO.read_text(encoding="utf-8"))
@@ -185,3 +189,39 @@ def test_celular_saiu_das_categorias():
     ids = {c["id"] for c in DADOS["categories"]}
 
     assert "MLB1051" not in ids
+
+
+def test_nao_entrou_termo_que_devolve_outra_coisa():
+    """Estes devolvem produto, mas nao o produto pedido -- pior que zero,
+    porque gastam vaga da rodada com o item errado. Medido em 31/08/2026:
+
+        "principia"            8 produtos, e o primeiro e o livro "Onze Reis"
+        "top puma"             2 produtos, e o com desconto e bola de basquete
+        "calcinha"             0 produtos
+        "cafe termogenico"     0 produtos
+        "mochila impermeavel"  0 produtos
+
+    O produto certo chega pelo termo mais especifico ("principia skincare",
+    "kit pele sensivel") ou pelo tema, que casa no titulo.
+    """
+    mortos = {
+        "principia",
+        "top puma",
+        "calcinha",
+        "cafe termogenico",
+        "mochila impermeavel",
+    }
+
+    assert termos() & mortos == set()
+
+
+def test_a_reserva_ainda_discrimina():
+    """Tema demais e o mesmo que tema nenhum: se quase tudo casar, a reserva
+    para de escolher e o ranking normal volta na pratica.
+
+    Medido na carteira de producao em 31/08/2026, com 49 temas: 358 de 1.862
+    produtos casam, 19%. Com 3 vagas reservadas de 5, a reserva escolhe entre
+    um quinto da carteira -- ainda e escolha. Se essa fatia passar de metade,
+    o conserto e cortar tema, nao subir a reserva.
+    """
+    assert len(load_priority()) <= 80

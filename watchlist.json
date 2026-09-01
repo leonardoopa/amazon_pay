@@ -115,11 +115,11 @@
     },
     {
       "term": "perfume masculino",
-      "max_price": 500
+      "max_price": null
     },
     {
       "term": "perfume feminino",
-      "max_price": 500
+      "max_price": null
     },
     {
       "term": "tenis corrida",
@@ -127,7 +127,7 @@
     },
     {
       "term": "mochila notebook",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "whey protein",
@@ -183,7 +183,7 @@
     },
     {
       "term": "mochila escolar",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "meia kit",
@@ -660,6 +660,70 @@
     {
       "term": "meia lupo",
       "max_price": null
+    },
+    {
+      "term": "supercoffee",
+      "max_price": null
+    },
+    {
+      "term": "super coffee",
+      "max_price": null
+    },
+    {
+      "term": "perfume importado",
+      "max_price": null
+    },
+    {
+      "term": "perfume yves saint laurent",
+      "max_price": null
+    },
+    {
+      "term": "perfume dolce gabbana",
+      "max_price": null
+    },
+    {
+      "term": "perfume edp feminino",
+      "max_price": null
+    },
+    {
+      "term": "perfume edt masculino",
+      "max_price": null
+    },
+    {
+      "term": "perfume 100ml",
+      "max_price": null
+    },
+    {
+      "term": "calcinha sem costura",
+      "max_price": null
+    },
+    {
+      "term": "kit calcinha",
+      "max_price": null
+    },
+    {
+      "term": "cueca lupo",
+      "max_price": null
+    },
+    {
+      "term": "cueca masculina",
+      "max_price": null
+    },
+    {
+      "term": "kit cueca boxer",
+      "max_price": null
+    },
+    {
+      "term": "principia skincare",
+      "max_price": null
+    },
+    {
+      "term": "kit pele sensivel",
+      "max_price": null
+    },
+    {
+      "term": "gel de limpeza facial",
+      "max_price": null
     }
   ],
   "_comment_coupon": "Cupom de campanha do ML (vale no site todo, por alguns dias). A API nao expoe cupom, entao esse e o unico jeito. `ate` e obrigatorio na pratica: cupom vencido no post faz a pessoa clicar, falhar e desconfiar do grupo. Deixe code vazio pra sair sem cupom.",
@@ -709,7 +773,15 @@
     "dux human",
     "omega 3",
     "lupo",
-    "legging"
+    "legging",
+    "supercoffee",
+    "caffeine army",
+    "perfume",
+    "calcinha",
+    "cueca",
+    "mochila",
+    "principia",
+    "pele sensivel"
   ],
   "_comment_categories": "Mais vendidos por categoria. Cada categoria custa ~21 chamadas POR DESCOBERTA (a lista + 2 por produto) -- e a descoberta agora roda a cada DISCOVERY_INTERVAL_HOURS, nao em toda rodada. Rode `promo ml-categories` pra ver os IDs.",
   "categories": [
