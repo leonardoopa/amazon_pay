@@ -325,7 +325,7 @@ def test_repasse_chega_ao_banco_como_nao_verificado(tmp_path, monkeypatch):
     conn.close()
 
     repasse = score_campaign(make_conn(), vitrine_offer(), rules())
-    monkeypatch.setattr(pipeline, "flush_pending", lambda: None)
+    monkeypatch.setattr(pipeline, "flush_pending", lambda orcamento=None: 0.0)
     pipeline.deliver([(repasse, "texto do repasse")])
 
     conn = sqlite3.connect(caminho)

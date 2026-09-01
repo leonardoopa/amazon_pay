@@ -142,44 +142,72 @@ class MLOfertas:
         )
         self._builder = link_builder
 
-    def fetch(self, pages: int = 1) -> list[Offer]:
+    def fetch(
+        self, pages: int = 1, categories: list[tuple[str, int]] | None = None
+    ) -> list[Offer]:
         """Ofertas da vitrine. Cada pagina custa UMA requisicao e da ~45 itens.
 
         Compare com a coleta por catalogo, que gasta uma chamada por produto:
         aqui 45 produtos custam 1. E por isso que da pra rodar de minuto em
         minuto sem estourar nada.
+
+        `categories` sao pares (id da categoria, paginas). A vitrine crua e uma
+        fatia so do topo, e marca de roupa nao chega la: medido em 01/09/2026,
+        a pagina sem filtro trouxe 1.621 precos e ZERO ocorrencia de Nike,
+        adidas, Puma, Hering, Lupo ou New Balance, enquanto `?category=MLB23262`
+        (Calcados) trouxe 422 precos e 36 de adidas. O produto estava na
+        campanha o tempo todo -- so nao estava nas duas primeiras paginas.
+
+        Esta e a unica via que resta para anuncio de vendedor. A busca por
+        anuncio da API (`/sites/MLB/search`) responde 403 desde 2025, e a
+        pagina de busca publica redireciona servidor para verificacao de conta.
+        A vitrine por categoria e a mesma pagina que ja liamos, com um
+        parametro.
         """
         offers: list[Offer] = []
         for pagina in range(1, max(1, pages) + 1):
-            response = self._client.get(
-                OFERTAS_URL, params={"page": pagina} if pagina > 1 else None
-            )
-            response.raise_for_status()
-
-            items = (
-                _payload(response.text)
-                .get("appProps", {})
-                .get("pageProps", {})
-                .get("data", {})
-                .get("items")
-            )
-            if items is None:
-                raise ParseFailed(
-                    "appProps.pageProps.data.items sumiu do payload -- layout mudou."
-                )
-
-            da_pagina = [o for item in items if (o := _offer(item.get("card") or {}))]
-            log.info(
-                "ofertas: %d de %d cards na pagina %d",
-                len(da_pagina),
-                len(items),
-                pagina,
-            )
-            offers.extend(da_pagina)
-
-            if not da_pagina:
+            offers.extend(self._pagina({"page": pagina} if pagina > 1 else None, None))
+            if not offers and pagina > 1:
                 break  # pagina vazia: nao adianta pedir a proxima
+
+        for categoria, paginas in categories or []:
+            for pagina in range(1, max(1, paginas) + 1):
+                params = {"category": categoria}
+                if pagina > 1:
+                    params["page"] = pagina
+                da_pagina = self._pagina(params, categoria)
+                offers.extend(da_pagina)
+                if not da_pagina:
+                    break
         return offers
+
+    def _pagina(self, params: dict | None, categoria: str | None) -> list[Offer]:
+        """Uma requisicao da vitrine, ja parseada."""
+        response = self._client.get(OFERTAS_URL, params=params)
+        response.raise_for_status()
+
+        items = (
+            _payload(response.text)
+            .get("appProps", {})
+            .get("pageProps", {})
+            .get("data", {})
+            .get("items")
+        )
+        if items is None:
+            raise ParseFailed(
+                "appProps.pageProps.data.items sumiu do payload -- layout mudou."
+            )
+
+        achadas = [o for item in items if (o := _offer(item.get("card") or {}))]
+        log.info(
+            "ofertas: %d de %d cards em %s",
+            len(achadas),
+            len(items),
+            f"{categoria} pagina {(params or {}).get('page', 1)}"
+            if categoria
+            else f"pagina {(params or {}).get('page', 1)}",
+        )
+        return achadas
 
     # A vitrine nao tem "reconsulta por ID": ela e uma foto do momento. Produto
     # que saiu dela some sozinho, e o historico dele continua sendo mantido

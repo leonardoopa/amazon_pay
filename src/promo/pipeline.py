@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import random
@@ -124,6 +125,26 @@ def load_priority(path: Path | None = None) -> list[str]:
     return [sem_acento(tema) for tema in data.get("priority", []) if tema.strip()]
 
 
+def load_vitrine_categories(path: Path | None = None) -> list[tuple[str, int]]:
+    """Categorias a pedir da vitrine /ofertas, como (id, paginas).
+
+    Diferente de `load_categories`, que consulta os mais vendidos pela API e
+    custa duas chamadas POR PRODUTO. Aqui e uma requisicao por pagina, ~45
+    produtos cada, com o "de" e o "por" prontos -- e a fonte mais barata que
+    existe no projeto.
+
+    Existe porque a vitrine crua e so o topo da campanha, e marca de roupa nao
+    chega la. Ver `MLOfertas.fetch`.
+    """
+    path = path or ROOT / "watchlist.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return [
+        (entry["id"], int(entry.get("pages", 1)))
+        for entry in data.get("vitrine_categories", [])
+        if entry.get("id")
+    ]
+
+
 def load_categories(path: Path | None = None) -> list[Category]:
     """Categorias do watchlist.json. Ausente e o normal -- o campo e opcional."""
     path = path or ROOT / "watchlist.json"
@@ -183,6 +204,7 @@ def collect(
     pensaria em procurar. As duas alimentam o mesmo historico de precos.
     """
     rules = rules or Rules.load()
+    vitrine = load_vitrine_categories()
     descobrir = _time_to_discover()
     # Descoberta que so levantou excecao nao pode contar como descoberta feita.
     # Ver o carimbo no fim desta funcao.
@@ -222,7 +244,7 @@ def collect(
             achados, respondeu = collect_categories(source, categories or [])
             offers.extend(achados)
             descoberta_respondeu = descoberta_respondeu or respondeu
-        offers.extend(collect_vitrine(source))
+        offers.extend(collect_vitrine(source, vitrine))
         if _due("last_full_refetch", full_refetch_interval_hours()):
             offers.extend(refetch_tracked(source, rules))
             _stamp("last_full_refetch")
@@ -258,7 +280,7 @@ def _iso_now() -> str:
     return now().isoformat()
 
 
-def collect_vitrine(source) -> list[Offer]:
+def collect_vitrine(source, categories: list[tuple[str, int]] | None = None) -> list[Offer]:
     """Ofertas do dia do ML. Uma requisicao traz ~45 produtos.
 
     Roda em toda rodada de proposito: e a fonte mais barata que temos, e a
@@ -270,8 +292,13 @@ def collect_vitrine(source) -> list[Offer]:
     if fetch is None:
         return []
 
+    # Assinatura inspecionada em vez de `except TypeError`: aquele engoliria um
+    # TypeError vindo de DENTRO do fetch e reexecutaria a chamada sem
+    # categoria, escondendo o defeito atras de uma coleta pela metade.
+    aceita = "categories" in inspect.signature(fetch).parameters
+
     try:
-        found = fetch(ofertas_pages())
+        found = fetch(ofertas_pages(), categories) if aceita else fetch(ofertas_pages())
     except Exception as exc:  # noqa: BLE001 - HTML muda; nao derruba a rodada
         log.warning("%s falhou na vitrine: %s", source.name, exc)
         return []
@@ -590,6 +617,32 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     sources = build_sources()
     by_name = {source.name: source for source in sources}
 
+    # Drenar ANTES de coletar, e nao so no fim da rodada.
+    #
+    # A coleta e a entrega sao seriais dentro da rodada, entao o tempo de
+    # coleta e silencio no grupo quando a fila ja tem post pronto. Medido em
+    # 01/09/2026, numa rodada que fez descoberta completa mais reconsulta da
+    # carteira inteira: 191 termos em 14 min, 34 categorias em 2,5 min, 900
+    # produtos reconsultados em 3,5 min -- 22 minutos ate a primeira mensagem,
+    # com a fila esperando o tempo todo.
+    #
+    # O orcamento de gotejamento continua sendo um so para a rodada inteira; o
+    # que a drenagem de agora gastar sai do que a do fim tem para gastar.
+    orcamento = run_interval_seconds() * 0.8
+    gasto = 0.0
+    if not dry_run:
+        try:
+            gasto = flush_pending(orcamento)
+        except MissingConfig:
+            # Entrega mal configurada tem que parar o daemon alto, e nao virar
+            # coleta que roda para sempre sem nunca postar. O worker trata.
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # Qualquer outra falha na entrega nao pode custar a coleta: o
+            # historico de preco continua valendo mesmo com o WhatsApp fora, e
+            # e ele que faz a oferta virar verificada depois.
+            log.warning("Drenagem antes da coleta falhou: %s", exc)
+
     offers = collect(sources, load_watchlist(), rules, load_categories())
 
     picked: list[ScoredOffer] = []
@@ -720,6 +773,13 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     )
 
     if not picked:
+        # Nada novo nao quer dizer nada a enviar: a fila e persistente, e o que
+        # sobrou da rodada anterior continua valendo. Sair aqui deixava post
+        # pronto parado ate alguma rodada futura selecionar alguma coisa -- e
+        # rodada sem selecao e comum, acontece toda vez que a vitrine esgota no
+        # cooldown de repeticao.
+        if not dry_run:
+            deliver([], max(0.0, orcamento - gasto))
         return []
 
     copywriter = Copywriter()
@@ -761,8 +821,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             print("\n" + "-" * 40 + "\n" + text)
         return picked
 
-    if drafts:
-        deliver(drafts)
+    deliver(drafts, max(0.0, orcamento - gasto))
     return picked
 
 
@@ -809,8 +868,15 @@ def _drip_gap() -> float:
 DRIP_JITTER = 0.4
 
 
-def deliver(drafts: list[tuple[ScoredOffer, str]]) -> None:
-    """Enfileira os posts novos e drena a fila (incluindo o que sobrou de antes)."""
+def deliver(
+    drafts: list[tuple[ScoredOffer, str]], budget_seconds: float | None = None
+) -> float:
+    """Enfileira os posts novos e drena a fila (incluindo o que sobrou de antes).
+
+    Chamada mesmo com `drafts` vazio, de proposito: sem isso uma rodada que nao
+    selecionou nada deixava a fila anterior parada ate alguma rodada selecionar
+    -- o grupo mudo com post pronto esperando.
+    """
     with connect() as conn:
         for scored, text in drafts:
             create_post(
@@ -825,14 +891,14 @@ def deliver(drafts: list[tuple[ScoredOffer, str]]) -> None:
                 # vitrine como desconto medido por nos.
                 verified=scored.verified,
             )
-    flush_pending()
+    return flush_pending(budget_seconds)
 
 
 def flush_pending(
     budget_seconds: float | None = None,
     sleep=time.sleep,
     monotonic=time.monotonic,
-) -> None:
+) -> float:
     """Drena a fila aos poucos, um post de cada vez.
 
     Nao e enfeite. Dez mensagens seguidas no mesmo segundo tem dois problemas:
@@ -846,7 +912,13 @@ def flush_pending(
     minutos em vez de a cada 2 horas.
 
     sleep/monotonic sao injetaveis pra o teste nao dormir de verdade.
+
+    Devolve os segundos gastos gotejando. Quem chama duas vezes na mesma
+    rodada precisa disso para dividir um orcamento so entre as duas: sem a
+    conta, drenar antes E depois da coleta dobraria o tempo de gotejamento e a
+    rodada invadiria a seguinte.
     """
+    inicio = monotonic()
     delivery = build_delivery()
 
     with connect() as conn:
@@ -868,13 +940,12 @@ def flush_pending(
 
     if not queue:
         log.info("Nada pendente na fila.")
-        return
+        return monotonic() - inicio
 
     if budget_seconds is None:
         # Sobra de proposito: a drenagem nao pode invadir a proxima rodada.
         budget_seconds = run_interval_seconds() * 0.8
 
-    inicio = monotonic()
     enviados = 0
 
     for index, (post_id, text, image_url) in enumerate(queue):
@@ -889,7 +960,7 @@ def flush_pending(
                     budget_seconds,
                     len(queue) - index,
                 )
-                return
+                return monotonic() - inicio
             log.info("Aguardando %.0fs antes do proximo post.", espera)
             sleep(espera)
 
@@ -904,7 +975,7 @@ def flush_pending(
                 "Janela de 24h fechada, %d na fila. Enviando template.", remaining
             )
             delivery.send_ping_template(remaining)
-            return
+            return monotonic() - inicio
         except NotConnected as exc:
             # So o backend 'evolution'. Reparar exige o QR na mao, entao insistir
             # nos outros posts da fila so gastaria tentativa a toa -- eles ficam
@@ -914,7 +985,7 @@ def flush_pending(
                 len(queue) - index,
                 exc,
             )
-            return
+            return monotonic() - inicio
         except Exception as exc:  # noqa: BLE001
             log.error("Falha ao enviar post %d: %s", post_id, exc)
             with connect() as conn:
@@ -924,3 +995,5 @@ def flush_pending(
         with connect() as conn:
             mark_post_sent(conn, post_id)
         enviados += 1
+
+    return monotonic() - inicio

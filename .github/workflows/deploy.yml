@@ -111,6 +111,18 @@ jobs:
           # `sed -i` recria o defeito, e ele é invisível. Comparar o que o
           # container LÊ com o que está no disco é a única checagem que pega
           # isso; se divergir, recria o container e confere de novo.
+          # `--inplace` escreve direto no arquivo, sem o rename atomico. Isso e
+          # o que preserva o inode do bind mount, mas troca um risco por
+          # outro: transferencia interrompida deixa o arquivo pela metade, e a
+          # comparacao de md5 abaixo nao ve isso -- disco e container ficam
+          # igualmente corrompidos. Validar o JSON e o que pega esse caso, e
+          # aqui e barato: um `json.loads` contra o mesmo arquivo que a rodada
+          # vai ler.
+          python3 -c 'import json,sys; json.load(open("watchlist.json"))' || {
+            echo "watchlist.json chegou corrompido no servidor. Abortando."
+            exit 1
+          }
+
           soma_no_disco() { md5sum watchlist.json | cut -d' ' -f1; }
           soma_no_container() {
             docker compose exec -T amazon_pay python -c \
