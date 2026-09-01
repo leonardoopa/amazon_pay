@@ -174,10 +174,53 @@ def test_o_foco_em_barato_continua_valendo_dentro_da_reserva(monkeypatch):
 # ---------- o arquivo de verdade ----------
 
 
-def test_o_watchlist_traz_os_temas_pedidos():
-    temas = load_priority()
+# Os temas chegaram em duas levas e a segunda nao pode custar a primeira: sao
+# publicos diferentes no mesmo grupo. Um caso por leva, para o teste dizer QUAL
+# some em vez de so acusar que a lista encolheu.
 
-    assert {"wella", "truss", "cerave", "protetor solar", "melatonina"} <= set(temas)
+
+def test_os_temas_de_cabelo_pele_e_suplemento_continuam():
+    """Primeira leva, 30/08/2026: o que as mulheres que entraram pediram."""
+    faltando = {
+        "wella",
+        "truss",
+        "cerave",
+        "cicaplast",
+        "protetor solar",
+        "melatonina",
+        "shampoo",
+        "oleo capilar",
+        "hidratante",
+        "progressiva",
+    } - set(load_priority())
+
+    assert faltando == set()
+
+
+def test_os_temas_de_moda_e_corrida_continuam():
+    """Segunda leva, 31/08/2026. Nike, adidas, Hering, Osklen e Vivara nao tem
+    termo de busca correspondente -- o catalogo do ML nao os tem, e o tema e a
+    UNICA via deles ate o grupo. Tirar daqui e apaga-los."""
+    faltando = {
+        "nike",
+        "adidas",
+        "puma",
+        "hering",
+        "osklen",
+        "casio",
+        "vivara",
+        "occitane",
+        "tree hut",
+        "body splash",
+        "pistola de massagem",
+        "cadeira gamer",
+        "yopro",
+        "isotonico",
+        "barra de proteina",
+        "carboidrato",
+    } - set(load_priority())
+
+    assert faltando == set()
 
 
 def test_os_temas_ja_vem_normalizados():
