@@ -246,8 +246,35 @@ def test_entrada_sem_id_e_ignorada(tmp_path):
     assert load_vitrine_categories(caminho) == []
 
 
-def test_calcados_esta_configurado():
-    """MLB23262 e a categoria onde a medicao achou 36 ocorrencias de adidas
-    numa pagina em que a vitrine crua tinha zero. Tirar daqui apaga a unica
-    via que resta para tenis de marca."""
-    assert "MLB23262" in {cid for cid, _ in load_vitrine_categories()}
+def test_as_categorias_onde_a_marca_aparece_estao_configuradas():
+    """Contado nos TITULOS da vitrine em 01/09/2026, nao no HTML cru:
+
+        MLB23262  Calcados             adidas 19, puma 3
+        MLB1457   Malas e Bolsas       adidas 11, puma 2
+        MLB188064 Bermudas e Shorts    adidas  9, puma 1
+        MLB31447  Camisetas e Regatas  adidas  8, puma 1, new balance 2
+        MLB270215 Moda Fitness         adidas  7, puma 6
+        MLB455528 Agasalhos            adidas  4, puma 2
+        MLB107292 Camisas              hering  3
+
+    Cada uma e a unica via de uma dessas marcas ate o grupo: elas nao existem
+    no catalogo, entao tirar a categoria daqui apaga a marca.
+    """
+    faltando = {
+        "MLB23262",
+        "MLB1457",
+        "MLB188064",
+        "MLB31447",
+        "MLB270215",
+        "MLB455528",
+        "MLB107292",
+    } - {cid for cid, _ in load_vitrine_categories()}
+
+    assert faltando == set()
+
+
+def test_o_custo_por_rodada_continua_baixo():
+    """Cada pagina e UMA requisicao com ~45 produtos prontos, contra uma
+    chamada POR PRODUTO no catalogo. Barato e o motivo de rodar toda rodada --
+    se virar dezenas de requisicoes, deixa de ser."""
+    assert sum(paginas for _, paginas in load_vitrine_categories()) <= 20
