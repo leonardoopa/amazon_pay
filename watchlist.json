@@ -839,11 +839,6 @@
       "pages": 2
     },
     {
-      "id": "MLB1457",
-      "name": "Malas e Bolsas",
-      "pages": 1
-    },
-    {
       "id": "MLB188064",
       "name": "Bermudas e Shorts",
       "pages": 2
@@ -1025,11 +1020,6 @@
       "id": "MLB1339",
       "name": "Moda Fitness Esportes",
       "max_price": 250
-    },
-    {
-      "id": "MLB1457",
-      "name": "Malas e Bolsas",
-      "max_price": 400
     },
     {
       "id": "MLB1451",
