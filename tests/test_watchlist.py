@@ -165,6 +165,14 @@ def test_nao_entrou_termo_de_roupa_de_marca():
         "regata hering",
         "vivara",
         "relogio vivara",
+        # New Balance: a marca existe no catalogo, o tenis nao.
+        "tenis new balance",
+        "new balance rebel",
+        "tenis new balance masculino",
+        # Nenhuma variante de tenis de corrida casa no catalogo.
+        "tenis de corrida",
+        "tenis running",
+        "suplemento corrida",
     }
 
     assert termos() & mortos == set()

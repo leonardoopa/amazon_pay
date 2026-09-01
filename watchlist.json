@@ -163,7 +163,7 @@
     },
     {
       "term": "legging fitness",
-      "max_price": 150
+      "max_price": null
     },
     {
       "term": "short esportivo",
@@ -335,7 +335,7 @@
     },
     {
       "term": "legging academia",
-      "max_price": 200
+      "max_price": null
     },
     {
       "term": "top fitness",
@@ -600,6 +600,66 @@
     {
       "term": "meia esportiva",
       "max_price": 100
+    },
+    {
+      "term": "new balance",
+      "max_price": null
+    },
+    {
+      "term": "dux nutrition",
+      "max_price": null
+    },
+    {
+      "term": "dux human health",
+      "max_price": null
+    },
+    {
+      "term": "dux omega 3",
+      "max_price": null
+    },
+    {
+      "term": "creatina dux",
+      "max_price": null
+    },
+    {
+      "term": "whey dux",
+      "max_price": null
+    },
+    {
+      "term": "omega 3",
+      "max_price": null
+    },
+    {
+      "term": "oleo de peixe omega 3",
+      "max_price": null
+    },
+    {
+      "term": "gel carboidrato corrida",
+      "max_price": null
+    },
+    {
+      "term": "beta alanina",
+      "max_price": null
+    },
+    {
+      "term": "lupo",
+      "max_price": null
+    },
+    {
+      "term": "legging lupo",
+      "max_price": null
+    },
+    {
+      "term": "calca legging lupo",
+      "max_price": null
+    },
+    {
+      "term": "lupo fitness",
+      "max_price": null
+    },
+    {
+      "term": "meia lupo",
+      "max_price": null
     }
   ],
   "_comment_coupon": "Cupom de campanha do ML (vale no site todo, por alguns dias). A API nao expoe cupom, entao esse e o unico jeito. `ate` e obrigatorio na pratica: cupom vencido no post faz a pessoa clicar, falhar e desconfiar do grupo. Deixe code vazio pra sair sem cupom.",
@@ -643,7 +703,13 @@
     "yopro",
     "isotonico",
     "barra de proteina",
-    "carboidrato"
+    "carboidrato",
+    "new balance",
+    "dux nutrition",
+    "dux human",
+    "omega 3",
+    "lupo",
+    "legging"
   ],
   "_comment_categories": "Mais vendidos por categoria. Cada categoria custa ~21 chamadas POR DESCOBERTA (a lista + 2 por produto) -- e a descoberta agora roda a cada DISCOVERY_INTERVAL_HOURS, nao em toda rodada. Rode `promo ml-categories` pra ver os IDs.",
   "categories": [
