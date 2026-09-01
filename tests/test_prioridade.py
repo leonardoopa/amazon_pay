@@ -186,8 +186,14 @@ def test_os_temas_ja_vem_normalizados():
 
 
 def test_tema_curto_demais_nao_entra():
-    """"oleo" sozinho pegaria oleo de motor, "kit" pegaria a watchlist inteira."""
-    assert all(len(t) >= 5 for t in load_priority())
+    """"oleo" sozinho pegaria oleo de motor, "kit" pegaria a watchlist inteira.
+
+    Quatro e o piso porque "nike" e "puma" tem quatro letras e sao marcas que
+    o grupo pediu pelo nome. Nao ha palavra comum de produto em portugues que
+    as contenha, entao o falso positivo que o piso de cinco evitava nao existe
+    para essas duas.
+    """
+    assert all(len(t) >= 4 for t in load_priority())
 
 
 def test_tema_vazio_e_ignorado(tmp_path):
@@ -380,4 +386,4 @@ def test_os_termos_fora_do_tema_mantem_teto():
     tetos = {w.term: w.max_price for w in load_watchlist()}
 
     assert tetos["notebook"] == 5000
-    assert tetos["smartphone"] == 3000
+    assert tetos["monitor gamer"] == 3000
