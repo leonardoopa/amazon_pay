@@ -59,7 +59,19 @@ jobs:
         env:
           ALVO: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
         run: |
-          rsync -az --delete \
+          # `--inplace` por causa do bind mount de ARQUIVO do watchlist.json.
+          # Sem ele o rsync escreve num temporário e renomeia, o rename troca o
+          # inode, e o mount do container continua apontando para o inode
+          # antigo -- que agora não tem mais nome. O resultado é silencioso: o
+          # arquivo no servidor está novo, o container lê o anterior, e o
+          # deploy passa verde. Medido em 01/09/2026: host inode 358, container
+          # inode 594, md5 diferentes, container rodando com 181 termos
+          # enquanto o servidor já tinha 191.
+          #
+          # Só se via quando o deploy trocava a imagem também: aí o container
+          # era recriado e o mount refeito. Deploy que só mexe na watchlist não
+          # troca imagem, e era exatamente o caso mais comum.
+          rsync -az --delete --inplace \
             -e "ssh -i ~/.ssh/deploy -o BatchMode=yes" \
             --exclude '.git' \
             --exclude '.env' \
@@ -92,6 +104,29 @@ jobs:
           # compartilham a mesma imagem e reiniciam juntos; a coleta retoma no
           # próximo intervalo e a fila é persistente.
           docker compose up -d
+
+          # A watchlist entra por bind mount de arquivo, que é frágil a
+          # qualquer coisa que troque o inode -- `--inplace` no rsync resolve o
+          # caso conhecido, mas uma edição manual no servidor com `vim` ou
+          # `sed -i` recria o defeito, e ele é invisível. Comparar o que o
+          # container LÊ com o que está no disco é a única checagem que pega
+          # isso; se divergir, recria o container e confere de novo.
+          soma_no_disco() { md5sum watchlist.json | cut -d' ' -f1; }
+          soma_no_container() {
+            docker compose exec -T amazon_pay python -c \
+              'import hashlib,pathlib;print(hashlib.md5(pathlib.Path("/app/watchlist.json").read_bytes()).hexdigest())'
+          }
+
+          if [ "$(soma_no_disco)" != "$(soma_no_container)" ]; then
+            echo "O container lê uma watchlist diferente da que está no disco."
+            echo "Recriando o serviço para refazer o bind mount."
+            docker compose up -d --force-recreate amazon_pay
+            sleep 5
+            if [ "$(soma_no_disco)" != "$(soma_no_container)" ]; then
+              echo "Continua divergindo depois de recriar. Abortando o deploy."
+              exit 1
+            fi
+          fi
 
           # Imagem antiga sem tag acumula a cada deploy, e disco cheio derruba
           # os cinco containers de uma vez. Só imagens penduradas: volume e
