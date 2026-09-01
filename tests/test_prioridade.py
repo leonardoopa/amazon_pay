@@ -218,6 +218,12 @@ def test_os_temas_de_moda_e_corrida_continuam():
         "isotonico",
         "barra de proteina",
         "carboidrato",
+        "new balance",
+        "dux nutrition",
+        "dux human",
+        "omega 3",
+        "lupo",
+        "legging",
     } - set(load_priority())
 
     assert faltando == set()
