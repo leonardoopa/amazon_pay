@@ -629,7 +629,19 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # O orcamento de gotejamento continua sendo um so para a rodada inteira; o
     # que a drenagem de agora gastar sai do que a do fim tem para gastar.
     orcamento = run_interval_seconds() * 0.8
-    gasto = 0.0 if dry_run else flush_pending(orcamento)
+    gasto = 0.0
+    if not dry_run:
+        try:
+            gasto = flush_pending(orcamento)
+        except MissingConfig:
+            # Entrega mal configurada tem que parar o daemon alto, e nao virar
+            # coleta que roda para sempre sem nunca postar. O worker trata.
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # Qualquer outra falha na entrega nao pode custar a coleta: o
+            # historico de preco continua valendo mesmo com o WhatsApp fora, e
+            # e ele que faz a oferta virar verificada depois.
+            log.warning("Drenagem antes da coleta falhou: %s", exc)
 
     offers = collect(sources, load_watchlist(), rules, load_categories())
 

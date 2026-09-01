@@ -198,3 +198,59 @@ def test_dry_run_nao_envia_nada(monkeypatch, banco_em_memoria):
     pipeline.run(dry_run=True)
 
     assert chamadas == []
+
+
+# ---------- a entrega quebrada nao pode custar a coleta ----------
+
+
+def test_falha_na_drenagem_nao_impede_a_coleta(monkeypatch, banco_em_memoria, caplog):
+    """O historico de preco continua valendo com o WhatsApp fora -- e e ele que
+    faz a oferta virar verificada depois. Perder a coleta por causa da entrega
+    seria pagar duas vezes pela mesma queda."""
+    import logging
+
+    coletou: list[bool] = []
+
+    monkeypatch.setattr(pipeline, "build_sources", lambda: [])
+    monkeypatch.setattr(pipeline, "load_watchlist", lambda: [])
+    monkeypatch.setattr(pipeline, "load_categories", lambda: [])
+    monkeypatch.setattr(pipeline, "load_priority", lambda: [])
+    monkeypatch.setattr(
+        pipeline, "collect", lambda *a, **k: coletou.append(True) or []
+    )
+
+    chamadas = []
+
+    def drena(orcamento=None):
+        chamadas.append(orcamento)
+        if len(chamadas) == 1:
+            raise RuntimeError("Evolution fora do ar")
+        return 0.0
+
+    monkeypatch.setattr(pipeline, "flush_pending", drena)
+
+    with caplog.at_level(logging.WARNING):
+        pipeline.run()
+
+    assert coletou == [True]
+    assert "Evolution fora do ar" in caplog.text
+
+
+def test_configuracao_faltando_ainda_para_o_daemon(monkeypatch, banco_em_memoria):
+    """Entrega mal configurada nao pode virar coleta rodando para sempre sem
+    nunca postar. O worker trata `MissingConfig` saindo com codigo 2."""
+    from promo.config import MissingConfig
+
+    monkeypatch.setattr(pipeline, "build_sources", lambda: [])
+    monkeypatch.setattr(pipeline, "load_watchlist", lambda: [])
+    monkeypatch.setattr(pipeline, "load_categories", lambda: [])
+    monkeypatch.setattr(pipeline, "load_priority", lambda: [])
+    monkeypatch.setattr(pipeline, "collect", lambda *a, **k: [])
+
+    def drena(orcamento=None):
+        raise MissingConfig("Falta EVOLUTION_API_KEY no .env")
+
+    monkeypatch.setattr(pipeline, "flush_pending", drena)
+
+    with pytest.raises(MissingConfig):
+        pipeline.run()
