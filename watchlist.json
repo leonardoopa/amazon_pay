@@ -15,7 +15,7 @@
     },
     {
       "term": "smartphone",
-      "max_price": 3000
+      "max_price": 1000
     },
     {
       "term": "monitor gamer",
@@ -35,7 +35,7 @@
     },
     {
       "term": "cadeira gamer",
-      "max_price": 2500
+      "max_price": null
     },
     {
       "term": "cadeira de escritorio",
@@ -363,11 +363,11 @@
     },
     {
       "term": "camiseta adidas",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "tenis puma feminino",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "batom",
@@ -528,6 +528,78 @@
     {
       "term": "creme para pentear",
       "max_price": null
+    },
+    {
+      "term": "osklen",
+      "max_price": null
+    },
+    {
+      "term": "tenis osklen",
+      "max_price": null
+    },
+    {
+      "term": "tenis puma",
+      "max_price": null
+    },
+    {
+      "term": "loccitane",
+      "max_price": null
+    },
+    {
+      "term": "creme loccitane",
+      "max_price": null
+    },
+    {
+      "term": "l occitane au bresil",
+      "max_price": null
+    },
+    {
+      "term": "esfoliante tree hut",
+      "max_price": null
+    },
+    {
+      "term": "tree hut esfoliante corporal",
+      "max_price": null
+    },
+    {
+      "term": "body splash",
+      "max_price": null
+    },
+    {
+      "term": "relogio casio digital",
+      "max_price": null
+    },
+    {
+      "term": "pistola de massagem",
+      "max_price": null
+    },
+    {
+      "term": "pistola massageadora",
+      "max_price": null
+    },
+    {
+      "term": "gel de carboidrato",
+      "max_price": null
+    },
+    {
+      "term": "carboidrato em gel",
+      "max_price": null
+    },
+    {
+      "term": "yopro whey",
+      "max_price": null
+    },
+    {
+      "term": "barra de proteina",
+      "max_price": null
+    },
+    {
+      "term": "isotonico",
+      "max_price": null
+    },
+    {
+      "term": "meia esportiva",
+      "max_price": 100
     }
   ],
   "_comment_coupon": "Cupom de campanha do ML (vale no site todo, por alguns dias). A API nao expoe cupom, entao esse e o unico jeito. `ate` e obrigatorio na pratica: cupom vencido no post faz a pessoa clicar, falhar e desconfiar do grupo. Deixe code vazio pra sair sem cupom.",
@@ -553,15 +625,28 @@
     "protetor labial",
     "creme para pentear",
     "progressiva",
-    "ampola capilar"
+    "ampola capilar",
+    "nike",
+    "adidas",
+    "puma",
+    "hering",
+    "osklen",
+    "casio",
+    "vivara",
+    "occitane",
+    "tree hut",
+    "esfoliante",
+    "body splash",
+    "pistola de massagem",
+    "massageador",
+    "cadeira gamer",
+    "yopro",
+    "isotonico",
+    "barra de proteina",
+    "carboidrato"
   ],
   "_comment_categories": "Mais vendidos por categoria. Cada categoria custa ~21 chamadas POR DESCOBERTA (a lista + 2 por produto) -- e a descoberta agora roda a cada DISCOVERY_INTERVAL_HOURS, nao em toda rodada. Rode `promo ml-categories` pra ver os IDs.",
   "categories": [
-    {
-      "id": "MLB1051",
-      "name": "Celulares e Telefones",
-      "max_price": 3000
-    },
     {
       "id": "MLB1648",
       "name": "Informatica",
@@ -681,6 +766,56 @@
       "id": "MLB198312",
       "name": "Higiene Pessoal",
       "max_price": 150
+    },
+    {
+      "id": "MLB23262",
+      "name": "Calcados",
+      "max_price": 600
+    },
+    {
+      "id": "MLB438178",
+      "name": "Suplementos e Shakers",
+      "max_price": 300
+    },
+    {
+      "id": "MLB1338",
+      "name": "Fitness e Musculacao",
+      "max_price": 400
+    },
+    {
+      "id": "MLB123103",
+      "name": "Monitores Esportivos",
+      "max_price": 600
+    },
+    {
+      "id": "MLB1339",
+      "name": "Moda Fitness Esportes",
+      "max_price": 250
+    },
+    {
+      "id": "MLB1457",
+      "name": "Malas e Bolsas",
+      "max_price": 400
+    },
+    {
+      "id": "MLB1451",
+      "name": "Acessorios de Moda",
+      "max_price": 250
+    },
+    {
+      "id": "MLB1434",
+      "name": "Pulseiras e Braceletes",
+      "max_price": 300
+    },
+    {
+      "id": "MLB7017",
+      "name": "Pingentes",
+      "max_price": 300
+    },
+    {
+      "id": "MLB1438",
+      "name": "Aneis",
+      "max_price": 300
     }
   ]
 }

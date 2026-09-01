@@ -133,3 +133,47 @@ def test_nao_entrou_termo_que_a_busca_nao_responde():
     }
 
     assert termos() & mortos == set()
+
+
+def test_nao_entrou_termo_de_roupa_de_marca():
+    """Medidos em 31/08/2026: `/products/search` devolveu ZERO para TODA
+    variante de Nike e adidas -- "tenis nike", "nike air max", "nike
+    revolution", "bermuda adidas", "adidas runfalcon", entre outras.
+
+    Nao e termo mal escolhido, e limite da via: roupa e calcado de marca no ML
+    sao anuncio de vendedor, nao produto de catalogo, e `/products/{id}/items`
+    nao responde por eles. As subcategorias de roupa confirmam pelo outro lado
+    -- Camisas, Bermudas, Blusas, Camisetas e Leggings tem 20 destaques cada e
+    ZERO de catalogo.
+
+    Essas marcas chegam ao grupo pelo `priority`, que casa no TITULO e vale
+    para a vitrine tambem. Termo de busca so gastaria chamada por rodada para
+    voltar vazio.
+    """
+    mortos = {
+        "short nike",
+        "tenis nike",
+        "camiseta nike",
+        "camisa nike",
+        "bermuda nike",
+        "nike air max",
+        "tenis adidas",
+        "camisa adidas",
+        "bermuda adidas",
+        "camisa hering",
+        "camiseta hering",
+        "regata hering",
+        "vivara",
+        "relogio vivara",
+    }
+
+    assert termos() & mortos == set()
+
+
+def test_celular_saiu_das_categorias():
+    """58 dos 629 posts enviados eram celular (9%), e o top de mais vendidos
+    de MLB1051 e literalmente Celulares e Smartphones. Convertem pior que o
+    resto -- ticket alto e decisao longa."""
+    ids = {c["id"] for c in DADOS["categories"]}
+
+    assert "MLB1051" not in ids
