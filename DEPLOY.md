@@ -541,7 +541,7 @@ Em *Settings → Rules → Rulesets → New branch ruleset*:
 |---|---|
 | Ruleset Name | `main protegida` |
 | Enforcement status | **Active** |
-| Bypass list | *Actors → **Users** → sua conta*, modo **Pull request** |
+| Bypass list | *Actors → Roles → **Repository admin***, modo **Pull request** |
 | Target branches | *Add target → Include default branch* |
 
 Rules a marcar:
@@ -568,10 +568,18 @@ Sobre a bypass list, três escolhas que parecem detalhe e não são.
 próprio PR. Com a lista vazia e uma pessoa a mais no projeto, todo PR seu
 passaria a depender da aprovação dela — o contrário do que se quer.
 
-**`Users → sua conta`, e não `Roles → Repository admin`.** O papel isenta
-*quem tiver o papel*. Hoje é só você; no dia em que a pessoa nova virar admin,
-ela entra na isenção junto, em silêncio e sem ninguém tocar na ruleset. A
-isenção tem que estar amarrada à pessoa, não ao nível de permissão.
+**Só há papéis para escolher, e isso muda onde mora a segurança.** Repositório
+pessoal não oferece `Users` na bypass list — a opção existe só em organização.
+Sobram `Repository admin`, `Maintain`, `Write` e deploy keys. Use
+`Repository admin` **sozinho**: `Maintain` e `Write` na lista anulariam a
+ruleset inteira, porque é esse o nível que a pessoa nova tem.
+
+A consequência é que a isenção fica amarrada ao papel, e não à pessoa. Quem
+garante que "Repository admin" quer dizer "só eu" é o nível de acesso da outra
+pessoa em *Settings → Collaborators*: dê **Write**, nunca `Maintain` nem
+`Admin`. Promover a pessoa depois a isenta da ruleset em silêncio, sem
+ninguém tocar nesta tela — e é por isso que a promoção, aqui, é uma decisão de
+segurança e não de conveniência.
 
 **Modo `Pull request`, e não `Always allow`.** Com `Always allow` um
 `git push origin main` publica direto em produção, sem PR e sem passar pelo
