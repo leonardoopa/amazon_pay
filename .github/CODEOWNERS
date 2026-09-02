@@ -1,0 +1,19 @@
+# Dono de tudo. O GitHub pede revisao de @leonardoopa automaticamente em todo
+# PR, e com "Require review from Code Owners" ligado na protecao da main, a
+# aprovacao dele passa a ser a unica que destrava o merge.
+#
+# Este arquivo sozinho nao protege nada -- ele so diz DE QUEM e a revisao. Quem
+# obriga a revisao a existir e a regra de protecao da branch, que mora nas
+# configuracoes do repositorio e nao no codigo. Ver DEPLOY.md.
+#
+# A ultima regra que casar com o arquivo e a que vale, entao a linha coringa
+# fica em cima e as especificas embaixo.
+* @leonardoopa
+
+# Estes derrubam producao quando saem errados, e o historico desta sessao tem
+# exemplo de cada um: o rsync trocando o inode do bind mount e a watchlist
+# viajando para o servidor sem passar por revisao.
+/.github/           @leonardoopa
+/docker-compose.yml @leonardoopa
+/scripts/           @leonardoopa
+/watchlist.json     @leonardoopa

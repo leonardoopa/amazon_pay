@@ -524,6 +524,43 @@ caso mais comum, que é a VPS sumir.
 
 ## 9. Operação
 
+### Proteger a `main`
+
+Push em `main` publica em produção sozinho. Enquanto a branch estiver
+desprotegida, qualquer pessoa com acesso de escrita ao repositório publica
+sem revisão — inclusive por engano, com um `git push` no terminal errado.
+
+O `.github/CODEOWNERS` diz **de quem** é a revisão. Ele não obriga revisão
+nenhuma sozinho: quem obriga é a regra de proteção, que mora nas
+configurações do repositório e não no código. Por isso este passo é manual e
+não dá para versionar.
+
+Em *Settings → Branches → Add branch protection rule*, com
+`main` no **Branch name pattern**:
+
+| Opção | Estado | Por quê |
+|---|---|---|
+| Require a pull request before merging | ligado | fecha o push direto |
+| ↳ Require approvals (1) | ligado | ninguém faz merge sozinho |
+| ↳ Require review from Code Owners | ligado | a aprovação tem que ser sua, não de qualquer um |
+| ↳ Dismiss stale pull request approvals | ligado | commit novo depois da aprovação apaga a aprovação |
+| Require status checks to pass | ligado | |
+| ↳ marque o check **`testes`** | ligado | é o job do `testes.yml`, que já roda em `pull_request` |
+| ↳ Require branches to be up to date | ligado | evita o merge verde que quebra por conflito semântico |
+| Do not allow bypassing the above settings | **ligado** | sem isso, admin (você) continua podendo empurrar direto |
+
+A última linha é a que costuma ficar de fora. Deixá-la desligada mantém a
+proteção contra a pessoa nova e não contra o dono do repositório — que é
+justamente quem mais mexe e quem mais tem oportunidade de errar às duas da
+manhã.
+
+Uma consequência a aceitar de propósito: com ela ligada, você também passa a
+precisar de PR. Para o fluxo que já é usado aqui — trabalhar em `staging` e
+abrir PR para `main` — não muda nada, porque é exatamente o que já acontece.
+
+A `staging` fica desprotegida de propósito: é onde a pessoa nova precisa poder
+empurrar sem cerimônia, e nada nela vai para produção sem passar pela `main`.
+
 ### Deploy automático
 
 Todo push em `main` publica sozinho, pelo `.github/workflows/deploy.yml`. A
