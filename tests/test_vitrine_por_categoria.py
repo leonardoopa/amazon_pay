@@ -250,7 +250,6 @@ def test_as_categorias_onde_a_marca_aparece_estao_configuradas():
     """Contado nos TITULOS da vitrine em 01/09/2026, nao no HTML cru:
 
         MLB23262  Calcados             adidas 19, puma 3
-        MLB1457   Malas e Bolsas       adidas 11, puma 2
         MLB188064 Bermudas e Shorts    adidas  9, puma 1
         MLB31447  Camisetas e Regatas  adidas  8, puma 1, new balance 2
         MLB270215 Moda Fitness         adidas  7, puma 6
@@ -259,10 +258,13 @@ def test_as_categorias_onde_a_marca_aparece_estao_configuradas():
 
     Cada uma e a unica via de uma dessas marcas ate o grupo: elas nao existem
     no catalogo, entao tirar a categoria daqui apaga a marca.
+
+    MLB1457 (Malas e Bolsas) tinha adidas 11 e puma 2, e saiu mesmo assim em
+    01/09/2026: o grupo estava recebendo bolsa demais, e onze adidas nao
+    pagavam o custo de uma pagina inteira de mochila.
     """
     faltando = {
         "MLB23262",
-        "MLB1457",
         "MLB188064",
         "MLB31447",
         "MLB270215",

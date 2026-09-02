@@ -444,6 +444,28 @@ def create_post(
     return int(cursor.lastrowid)
 
 
+# Palavras que descrevem a VARIANTE, nao o produto: cor, genero, tamanho.
+#
+# Sem elas fora da assinatura, o mesmo tenis vira seis produtos. Medido em
+# 01/09/2026, nos ultimos 120 posts: 63 pares de titulos quase iguais que a
+# familia nao pegava, e o campeao era o Questar 4 da adidas saindo em preto,
+# branco, cinza, masculino e feminino -- "tenis corrida masculino" e "tenis
+# corrida feminino" divergem na TERCEIRA palavra, que e onde a assinatura
+# corta. O leitor ve o mesmo tenis quatro vezes; a regra ve quatro produtos.
+_VARIANTES = {
+    # genero e faixa etaria
+    "masculino", "masculina", "feminino", "feminina", "unissex", "infantil",
+    "adulto", "menino", "menina",
+    # cor
+    "branco", "branca", "preto", "preta", "cinza", "azul", "vermelho",
+    "vermelha", "verde", "amarelo", "amarela", "rosa", "roxo", "roxa", "bege",
+    "marrom", "dourado", "dourada", "prateado", "prateada", "violeta", "vinho",
+    "laranja", "nude", "colorido", "colorida",
+    # tamanho e acabamento
+    "liso", "lisa", "estampado", "estampada", "grande", "pequeno", "pequena",
+    "medio", "media", "br", "un", "gg", "pp",
+}
+
 # Palavras que nao ajudam a distinguir um produto de outro.
 _VAZIAS = {
     "a", "as", "com", "cor", "da", "das", "de", "do", "dos", "e", "em", "kit",
@@ -475,8 +497,15 @@ def familia_do_titulo(titulo: str, palavras: int = 3) -> str:
     tamanhos do mesmo modelo.
     """
     tokens = re.findall(r"[a-z]+", sem_acento(titulo))
-    significativas = [t for t in tokens if t not in _VAZIAS and len(t) > 1]
-    return " ".join(significativas[:palavras])
+    significativas = [
+        t
+        for t in tokens
+        if t not in _VAZIAS and t not in _VARIANTES and len(t) > 1
+    ]
+    # Ordenado, e nao na ordem do titulo: o mesmo produto aparece como
+    # "Camiseta Feminina Adizero Essentials" e "Camiseta Feminina Essentials
+    # Adizero", e sem ordenar essas duas viravam familias diferentes.
+    return " ".join(sorted(significativas[:palavras]))
 
 
 def sem_acento(texto: str) -> str:

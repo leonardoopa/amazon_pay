@@ -79,7 +79,7 @@
     },
     {
       "term": "cafeteira",
-      "max_price": 1200
+      "max_price": null
     },
     {
       "term": "liquidificador",
@@ -127,11 +127,11 @@
     },
     {
       "term": "mochila notebook",
-      "max_price": null
+      "max_price": 250
     },
     {
       "term": "whey protein",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "creatina",
@@ -180,10 +180,6 @@
     {
       "term": "bone",
       "max_price": 120
-    },
-    {
-      "term": "mochila escolar",
-      "max_price": null
     },
     {
       "term": "meia kit",
@@ -819,12 +815,27 @@
     "perfume",
     "calcinha",
     "cueca",
-    "mochila",
+    "whey",
     "principia",
     "pele sensivel",
-    "capsula",
     "nespresso",
-    "dolce gusto"
+    "dolce gusto",
+    "cafe",
+    "capsula de cafe",
+    "capsula compativel",
+    "cafe em capsula",
+    "the north face",
+    "north face",
+    "capsula"
+  ],
+  "_comment_exclude": "O oposto de priority: titulo que casa aqui NAO vira post. Para o produto que sai bem no ranking e ainda assim nao serve ao grupo -- mochila e barata e tem desconto alto, entao ganhava vaga toda rodada (10 dos ultimos 80 posts). A barra nao e absoluta: titulo que tambem casa em priority passa, e e assim que 'Mochila adidas' fica e 'Mochila de Viagem 50L' sai. Comparacao sem acento e em minusculo, igual a de priority.",
+  "exclude": [
+    "mochila",
+    "bolsa",
+    "mala de viagem",
+    "mala rodinha",
+    "necessaire",
+    "pochete"
   ],
   "_comment_vitrine": "Categorias pedidas da vitrine /ofertas (a pagina publica, nao a API). Uma requisicao por pagina, ~45 produtos cada, com o 'de' e o 'por' prontos -- e a fonte mais barata do projeto. Existe porque a vitrine crua e so o topo da campanha: medido em 01/09/2026, a pagina sem filtro trouxe 1.621 precos e ZERO Nike, adidas, Puma, Hering, Lupo ou New Balance, enquanto ?category=MLB23262 trouxe 422 precos e 36 de adidas. Esta e a UNICA via que resta para anuncio de vendedor: /sites/MLB/search responde 403 desde 2025 e a busca publica redireciona servidor para verificacao de conta.",
   "vitrine_categories": [
@@ -837,11 +848,6 @@
       "id": "MLB23262",
       "name": "Calcados",
       "pages": 2
-    },
-    {
-      "id": "MLB1457",
-      "name": "Malas e Bolsas",
-      "pages": 1
     },
     {
       "id": "MLB188064",
@@ -1025,11 +1031,6 @@
       "id": "MLB1339",
       "name": "Moda Fitness Esportes",
       "max_price": 250
-    },
-    {
-      "id": "MLB1457",
-      "name": "Malas e Bolsas",
-      "max_price": 400
     },
     {
       "id": "MLB1451",

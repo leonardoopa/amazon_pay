@@ -229,15 +229,38 @@ def test_os_temas_de_moda_e_corrida_continuam():
         "perfume",
         "calcinha",
         "cueca",
-        "mochila",
         "principia",
         "pele sensivel",
-        "capsula",
         "nespresso",
         "dolce gusto",
+        "whey",
+        "cafe",
+        "capsula",
     } - set(load_priority())
 
     assert faltando == set()
+
+
+def test_mochila_nao_e_mais_tema():
+    """Saiu em 01/09/2026: o grupo estava recebendo mochila demais. Sao 87
+    produtos na carteira casando em "mochila", todos disputando as vagas
+    reservadas -- e o tema existe para dar vaga a quem NAO ganharia sozinho,
+    nao para quem ja ganha.
+
+    Nao resolve sozinho: 8 das 10 bolsas dos ultimos 80 posts vieram da
+    vitrine crua, onde nao ha filtro. Tirar do `priority` corta a vaga
+    garantida, nao a fonte.
+    """
+    assert "mochila" not in load_priority()
+
+
+def test_capsula_pega_suplemento_e_esta_certo_assim():
+    """Eu tinha tirado "capsula" por achar que era tema de cafe mal escolhido:
+    medido, 84 produtos, e os primeiros eram Testo Essencial, Vitamina D3+K2,
+    Omega 3 e Curcuma. Errei o julgamento, nao a medicao -- capsula de
+    suplemento converte, e o tema existe para isso. Cafe em capsula continua
+    entrando pelos termos proprios e por nespresso/dolce gusto."""
+    assert "capsula" in load_priority()
 
 
 def test_os_temas_ja_vem_normalizados():
