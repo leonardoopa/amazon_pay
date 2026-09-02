@@ -131,3 +131,61 @@ def test_preco_de_hoje_nao_entra_na_baseline(conn):
 
     assert scored is not None
     assert scored.baseline == 200.0
+
+
+# ---------- piso zero nao pode virar "sem desconto" ----------
+#
+# `PRIORITY_MIN_DISCOUNT_PCT=0` liberou o piso nos temas prioritarios, e isso
+# estava certo para o repasse: `score_campaign` ainda exige preco riscado MAIOR
+# que o atual, entao sempre ha alguma queda.
+#
+# No `score` a baseline e calculada, e nada impedia que ela fosse IGUAL ao
+# preco. Custou um post real em 01/09/2026:
+#
+#     TESTO ESSENCIAL  R$ 56,77 (baseline 56,77)  -0%   marcado VERIFICADA
+#
+# Anunciar preco de sempre como oferta e o oposto do que a medicao existe para
+# provar.
+
+SEM_PISO = Rules(
+    min_discount_pct=0,
+    baseline_window_days=60,
+    min_observations=3,
+    repost_cooldown_days=3,
+    max_offers_per_run=5,
+)
+
+
+def test_preco_igual_a_baseline_nao_e_oferta(conn):
+    seed_history(conn, [100.0, 100.0, 100.0])
+
+    assert score(conn, make_offer(100.0), SEM_PISO) is None
+
+
+def test_preco_acima_da_baseline_nao_e_oferta(conn):
+    seed_history(conn, [100.0, 100.0, 100.0])
+
+    assert score(conn, make_offer(120.0), SEM_PISO) is None
+
+
+def test_queda_minuscula_passa_com_piso_zero(conn):
+    """Piso zero continua querendo dizer "qualquer queda" -- so nao "nenhuma"."""
+    seed_history(conn, [100.0, 100.0, 100.0])
+
+    scored = score(conn, make_offer(99.0), SEM_PISO)
+
+    assert scored is not None and scored.discount_pct == 1.0
+
+
+def test_o_piso_normal_continua_valendo(conn):
+    regras = Rules(
+        min_discount_pct=15,
+        baseline_window_days=60,
+        min_observations=3,
+        repost_cooldown_days=3,
+        max_offers_per_run=5,
+    )
+    seed_history(conn, [100.0, 100.0, 100.0])
+
+    assert score(conn, make_offer(95.0), regras) is None
+    assert score(conn, make_offer(80.0), regras) is not None
