@@ -42,6 +42,8 @@ def score(conn: sqlite3.Connection, offer: Offer, rules: Rules) -> ScoredOffer |
         return None
     if discount_pct < rules.min_discount_pct:
         return None
+    if baseline - offer.price < rules.min_discount_brl:
+        return None
 
     if _in_cooldown(conn, offer, discount_pct, rules):
         return None
@@ -91,6 +93,8 @@ def score_campaign(
 
     desconto = (offer.original_price - offer.price) / offer.original_price * 100
     if desconto < rules.min_discount_pct:
+        return None
+    if offer.original_price - offer.price < rules.min_discount_brl:
         return None
 
     if _in_cooldown(conn, offer, desconto, rules):

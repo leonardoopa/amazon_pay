@@ -189,3 +189,80 @@ def test_o_piso_normal_continua_valendo(conn):
 
     assert score(conn, make_offer(95.0), regras) is None
     assert score(conn, make_offer(80.0), regras) is not None
+
+
+# ---------- porcentagem nao ve dinheiro ----------
+#
+# Dois posts reais em 02/09/2026, ambos passando o filtro:
+#
+#     Tasty Whey 3w Gourmet 912g   de R$ 239,00 por R$ 237,00   -0,8%
+#     Perfume Club De Nuit Armaf   de R$ 197,34 por R$ 197,34    0,0%
+#
+# O segundo o `price >= baseline` ja pega. O primeiro nao: R$ 237 e menor que
+# R$ 239, entao houve queda -- de DOIS REAIS num produto de duzentos e trinta.
+# Piso em porcentagem nao enxerga isso, e com `PRIORITY_MIN_DISCOUNT_PCT=0`
+# nos temas prioritarios ele nao enxerga nada.
+
+DEZ_REAIS = Rules(
+    min_discount_pct=0,
+    baseline_window_days=60,
+    min_observations=3,
+    repost_cooldown_days=3,
+    max_offers_per_run=5,
+    min_discount_brl=10.0,
+)
+
+
+def test_dois_reais_de_queda_nao_e_oferta(conn):
+    """O caso literal do Tasty Whey."""
+    seed_history(conn, [239.0, 239.0, 239.0])
+
+    assert score(conn, make_offer(237.0), DEZ_REAIS) is None
+
+
+def test_queda_acima_do_piso_em_reais_passa(conn):
+    seed_history(conn, [239.0, 239.0, 239.0])
+
+    assert score(conn, make_offer(220.0), DEZ_REAIS) is not None
+
+
+def test_o_piso_em_reais_tambem_vale_no_repasse(conn):
+    """A vitrine tem o mesmo problema: riscado de R$ 239 por R$ 237 e queda de
+    verdade pelo criterio antigo, e dois reais pelo criterio do leitor."""
+    from promo.models import Offer
+    from promo.scoring import score_campaign
+
+    magra = Offer(
+        source="ml_ofertas", external_id="MLB9", title="Whey",
+        price=237.0, url="https://x", original_price=239.0,
+    )
+    gorda = Offer(
+        source="ml_ofertas", external_id="MLB9", title="Whey",
+        price=200.0, url="https://x", original_price=239.0,
+    )
+
+    assert score_campaign(conn, magra, DEZ_REAIS) is None
+    assert score_campaign(conn, gorda, DEZ_REAIS) is not None
+
+
+def test_o_piso_em_reais_e_zero_por_padrao(conn):
+    """Quem nao configurar `MIN_DISCOUNT_BRL` nao muda de comportamento."""
+    padrao = Rules(
+        min_discount_pct=0,
+        baseline_window_days=60,
+        min_observations=3,
+        repost_cooldown_days=3,
+        max_offers_per_run=5,
+    )
+    seed_history(conn, [239.0, 239.0, 239.0])
+
+    assert padrao.min_discount_brl == 0.0
+    assert score(conn, make_offer(237.0), padrao) is not None
+
+
+def test_produto_barato_com_desconto_alto_continua_passando(conn):
+    """O piso em reais nao pode virar teto de preco pelo avesso: item de R$ 30
+    a -40% economiza R$ 12 e e oferta boa."""
+    seed_history(conn, [30.0, 30.0, 30.0])
+
+    assert score(conn, make_offer(18.0), DEZ_REAIS) is not None

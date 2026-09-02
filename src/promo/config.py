@@ -132,6 +132,12 @@ class Rules:
     min_observations: int
     repost_cooldown_days: int
     max_offers_per_run: int
+    # Economia minima em reais. Porcentagem sozinha nao ve dinheiro: num
+    # produto de R$ 237 um desconto de 0,8% e uma promocao de DOIS REAIS, e o
+    # grupo recebeu exatamente isso -- "Tasty Whey 3w Gourmet, de R$ 239,00 por
+    # R$ 237,00". Este piso e absoluto e NAO e afrouxado por tema prioritario:
+    # e justamente com `PRIORITY_MIN_DISCOUNT_PCT=0` que o caso passou.
+    min_discount_brl: float = 0.0
 
     @classmethod
     def load(cls) -> "Rules":
@@ -141,6 +147,7 @@ class Rules:
             min_observations=_int("MIN_OBSERVATIONS", 7),
             repost_cooldown_days=_int("REPOST_COOLDOWN_DAYS", 14),
             max_offers_per_run=_int("MAX_OFFERS_PER_RUN", 5),
+            min_discount_brl=float(_optional("MIN_DISCOUNT_BRL", "0")),
         )
 
 
