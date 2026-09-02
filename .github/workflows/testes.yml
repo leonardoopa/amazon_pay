@@ -1,6 +1,6 @@
 # Os testes existem desde o começo do projeto, mas nada os executava fora da
 # máquina de quem escreveu. Este workflow fecha isso: as duas suítes rodam em
-# todo push e em todo pull request.
+# todo pull request e em todo push nas duas branches que importam.
 #
 # São duas porque são dois runners diferentes -- o bot é pytest, o site é o
 # runner do Django (ele precisa do settings e do banco de teste). Rodar as
@@ -8,8 +8,16 @@
 name: testes
 
 on:
+  # `main` e `staging` explícitas, e não `["**"]`. Com o coringa, todo PR
+  # gastava DOIS runners para o mesmo commit -- um pelo `push` da branch, outro
+  # pelo `pull_request` -- e o PR mostrava "testes (push)" e "testes
+  # (pull_request)" lado a lado, ambos verdes, dizendo a mesma coisa.
+  #
+  # Branch de trabalho continua coberta: ela chega na `main` por PR, e o PR
+  # dispara a suíte. O que se perde é o sinal antes de abrir o PR, e esse
+  # custava o dobro de runner em todo PR aberto.
   push:
-    branches: ["**"]
+    branches: [main, staging]
   pull_request:
   # Chamado por deploy.yml antes de publicar. É o mesmo job, e não uma cópia:
   # suíte duplicada envelhece em ritmos diferentes, e a que roda antes do
