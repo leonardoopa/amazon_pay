@@ -498,6 +498,42 @@ def discovery_interval_hours() -> int:
     return _int("DISCOVERY_INTERVAL_HOURS", 12)
 
 
+def discovery_terms_per_round() -> int:
+    """Termos da watchlist consultados por rodada de descoberta. 0 = todos.
+
+    Existe porque a rodada de descoberta virou silencio no grupo. Medido em
+    02/09/2026: 190 termos a 20 candidatos cada, mais 33 categorias, deram
+    4.822 chamadas a ~4 por segundo -- 21 minutos entre o inicio da rodada e a
+    primeira mensagem, com a fila vazia esperando o tempo todo.
+
+    Fatiar troca "tudo de tres em tres horas" por "um pedaco a cada rodada", o
+    que e melhor nas duas pontas: nenhuma rodada passa de poucos minutos, e
+    com a descoberta rodando em toda rodada a carteira e reciclada MAIS rapido
+    do que antes, nao menos.
+    """
+    return _int("DISCOVERY_TERMS_PER_ROUND", 0)
+
+
+def discovery_categories_per_round() -> int:
+    """Categorias consultadas por rodada de descoberta. 0 = todas.
+
+    Cada uma custa ~21 chamadas (a lista mais duas por produto), entao 33
+    categorias sao 693 chamadas -- quase 3 minutos sozinhas.
+    """
+    return _int("DISCOVERY_CATEGORIES_PER_ROUND", 0)
+
+
+def discovery_priority_share() -> float:
+    """Fracao da fatia reservada aos termos que casam num tema do `priority`.
+
+    Sao 95 termos prioritarios contra 95 gerais, e sem isto a fatia trataria os
+    dois pocos igual. O pedido e o oposto: produto prioritario tem que aparecer
+    no grupo com mais frequencia, e frequencia de post comeca em frequencia de
+    coleta -- oferta que ninguem reconsultou nao tem como ser escolhida.
+    """
+    return float(_optional("DISCOVERY_PRIORITY_SHARE", "0.5"))
+
+
 def track_limit() -> int:
     """Teto de produtos reconsultados por rodada, por fonte.
 
