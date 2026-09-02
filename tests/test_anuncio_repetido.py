@@ -187,3 +187,63 @@ def test_outra_familia_nao_e_bloqueada():
 
     bloqueadas = families_in_cooldown(conn, 60)
     assert familia_do_titulo("Mochila Notebook Ntesx Grande") not in bloqueadas
+
+
+# ---------- variante nao e produto novo ----------
+#
+# O mesmo tenis saiu seis vezes no grupo. Medido em 01/09/2026, nos ultimos
+# 120 posts: 63 pares de titulos quase iguais que a familia nao pegava.
+#
+#     Tenis De Corrida Masculino Questar 4 adidas Branco Liso 42 Br
+#     Tenis De Corrida Feminino Questar 4 adidas Branco Liso 38 Br
+#     Tenis De Corrida Masculino Questar 4 adidas Cinza  Liso 42 Br
+#     Tenis De Corrida Feminino Questar 4 adidas Preto  Liso 39 Br
+#
+# "tenis corrida masculino" e "tenis corrida feminino" divergem na TERCEIRA
+# palavra, que e onde a assinatura corta. O leitor ve o mesmo tenis; a regra
+# via quatro produtos.
+
+QUESTAR = [
+    "Tênis De Corrida Masculino Questar 4 adidas Branco Liso 42 Br",
+    "Tênis De Corrida Feminino Questar 4 adidas Branco Liso 38 Br",
+    "Tênis De Corrida Masculino Questar 4 adidas Cinza Liso 42 Br",
+    "Tênis De Corrida Feminino Questar 4 adidas Preto Liso 39 Br",
+]
+
+
+def test_genero_nao_separa_o_mesmo_tenis():
+    assert len({familia_do_titulo(t) for t in QUESTAR}) == 1
+
+
+def test_cor_nao_separa():
+    assert familia_do_titulo("Camiseta Dry Fit Preto") == familia_do_titulo(
+        "Camiseta Dry Fit Vermelho"
+    )
+
+
+def test_ordem_das_palavras_nao_separa():
+    """O ML devolve o mesmo produto com o nome do modelo em posicoes
+    diferentes; sem ordenar, viravam familias distintas."""
+    assert familia_do_titulo(
+        "Camiseta Feminina Adizero Essentials adidas Preto Liso Gg"
+    ) == familia_do_titulo("Camiseta Feminina Essentials Adizero adidas Branco Liso M")
+
+
+def test_modelo_diferente_continua_separado():
+    """A regra nao pode ficar tao larga que junte dois tenis da mesma marca."""
+    assert familia_do_titulo(
+        "Tênis Masculino Questar 3 adidas Cblack Liso 40 Br"
+    ) != familia_do_titulo("Tênis Masculino Duramo Rc 2 adidas Cblack Liso 41 Br")
+
+
+def test_produto_de_outra_categoria_continua_separado():
+    assert familia_do_titulo("Whey Protein Growth 1kg") != familia_do_titulo(
+        "Creatina Monohidratada Growth 300g"
+    )
+    assert familia_do_titulo("Perfume Masculino Invictus Rabanne") != familia_do_titulo(
+        "Perfume Feminino Libre Yves Saint Laurent"
+    )
+
+
+def test_titulo_so_de_variante_nao_estoura():
+    assert familia_do_titulo("Preto Branco Grande") == ""

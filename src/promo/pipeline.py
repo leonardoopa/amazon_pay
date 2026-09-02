@@ -125,6 +125,23 @@ def load_priority(path: Path | None = None) -> list[str]:
     return [sem_acento(tema) for tema in data.get("priority", []) if tema.strip()]
 
 
+def load_exclude(path: Path | None = None) -> list[str]:
+    """Temas BARRADOS na selecao, normalizados. Campo opcional.
+
+    O oposto de `priority`, e nao um teto de preco: e para o produto que sai
+    bem no ranking e ainda assim nao serve ao grupo. Mochila e o caso que criou
+    isto -- barata, desconto alto, ganha vaga toda rodada, e o grupo recebeu
+    dez em oitenta posts.
+
+    A barra nao e absoluta: titulo que tambem casa num tema do `priority`
+    passa. E o que separa "Mochila de Viagem 50L" de "Mochila adidas" sem
+    precisar de duas listas concorrentes.
+    """
+    path = path or ROOT / "watchlist.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return [sem_acento(tema) for tema in data.get("exclude", []) if tema.strip()]
+
+
 def load_vitrine_categories(path: Path | None = None) -> list[tuple[str, int]]:
     """Categorias a pedir da vitrine /ofertas, como (id, paginas).
 
@@ -403,6 +420,18 @@ def _uma_por_familia(escolhidas: list[ScoredOffer]) -> list[ScoredOffer]:
 def e_prioritaria(offer: Offer, temas: list[str]) -> bool:
     """O titulo cita algum dos temas que o grupo pediu."""
     return tem_tema(offer.title, temas)
+
+
+def e_barrada(offer: Offer, barrados: list[str], temas: list[str]) -> bool:
+    """O titulo cai na lista de exclusao -- e nao e salvo por um tema.
+
+    A ordem importa: barrar primeiro e perguntar pela marca depois faria
+    "Mochila adidas" sumir junto com "Mochila de Viagem". A marca tem
+    precedencia porque a exclusao e sobre o TIPO de produto, nao sobre a peca.
+    """
+    if not barrados or not tem_tema(offer.title, barrados):
+        return False
+    return not tem_tema(offer.title, temas)
 
 
 def _priorizar_temas(
@@ -718,6 +747,15 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # dezenas de anuncios de vendedores diferentes: `product_id` distinto,
     # produto igual. O grupo recebeu quatro "Short Saia Esportivo Ausare" em
     # quinze minutos, cada um de um anuncio, cada um com um preco.
+    barrados = load_exclude()
+    if barrados:
+        antes = len(picked) + len(repasses)
+        picked = [s for s in picked if not e_barrada(s.offer, barrados, temas)]
+        repasses = [s for s in repasses if not e_barrada(s.offer, barrados, temas)]
+        fora = antes - len(picked) - len(repasses)
+        if fora:
+            log.info("%d oferta(s) fora pela lista de exclusao.", fora)
+
     if bloqueados or familias_bloqueadas:
         antes = len(picked) + len(repasses)
 
