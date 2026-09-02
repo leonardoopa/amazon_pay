@@ -541,7 +541,7 @@ Em *Settings → Rules → Rulesets → New branch ruleset*:
 |---|---|
 | Ruleset Name | `main protegida` |
 | Enforcement status | **Active** |
-| Bypass list | **adicione você** em *Actors → Users* |
+| Bypass list | *Actors → **Users** → sua conta*, modo **Pull request** |
 | Target branches | *Add target → Include default branch* |
 
 Rules a marcar:
@@ -562,15 +562,27 @@ Deixe **desmarcadas** *Require linear history* (o merge de PR cria commit de
 merge, e ela recusaria exatamente isso), *Require signed commits* e *Restrict
 creations/updates*.
 
-Sobre a bypass list: o GitHub não deixa ninguém aprovar o próprio PR. Com a
-lista vazia e uma pessoa a mais no projeto, todo PR seu passaria a depender da
-aprovação dela — o contrário do que se quer. Você na bypass list dá
-exatamente a regra pedida: você publica direto, e a outra pessoa só publica
-com a sua aprovação.
+Sobre a bypass list, três escolhas que parecem detalhe e não são.
 
-O custo é real e vale saber: a proteção deixa de valer para você. Se a rede
-de segurança tiver que valer para os dois, esvazie a bypass list e aceite que
-seus PRs também vão precisar do aval da outra pessoa.
+**Por que alguém precisa estar nela.** O GitHub não deixa ninguém aprovar o
+próprio PR. Com a lista vazia e uma pessoa a mais no projeto, todo PR seu
+passaria a depender da aprovação dela — o contrário do que se quer.
+
+**`Users → sua conta`, e não `Roles → Repository admin`.** O papel isenta
+*quem tiver o papel*. Hoje é só você; no dia em que a pessoa nova virar admin,
+ela entra na isenção junto, em silêncio e sem ninguém tocar na ruleset. A
+isenção tem que estar amarrada à pessoa, não ao nível de permissão.
+
+**Modo `Pull request`, e não `Always allow`.** Com `Always allow` um
+`git push origin main` publica direto em produção, sem PR e sem passar pelo
+check `testes` — que é exatamente o buraco que a ruleset existe para tapar. No
+modo `Pull request` você continua abrindo PR (a suíte roda e o resultado
+aparece antes do merge), mas pode fazer o merge sem esperar aprovação de
+ninguém. É a regra pedida com a rede de testes intacta.
+
+O custo, mesmo assim: a proteção deixa de valer para você no que diz respeito
+à revisão. Se a rede tiver que valer para os dois, esvazie a bypass list e
+aceite que seus PRs também vão precisar do aval da outra pessoa.
 
 Ordem importa: o `CODEOWNERS` precisa já estar na `main` quando a ruleset for
 criada, senão *Require review from Code Owners* não tem de quem cobrar.
