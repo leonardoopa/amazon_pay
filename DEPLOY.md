@@ -524,6 +524,80 @@ caso mais comum, que é a VPS sumir.
 
 ## 9. Operação
 
+### Proteger a `main`
+
+Push em `main` publica em produção sozinho. Enquanto a branch estiver
+desprotegida, qualquer pessoa com acesso de escrita ao repositório publica
+sem revisão — inclusive por engano, com um `git push` no terminal errado.
+
+O `.github/CODEOWNERS` diz **de quem** é a revisão. Ele não obriga revisão
+nenhuma sozinho: quem obriga é a regra de proteção, que mora nas
+configurações do repositório e não no código. Por isso este passo é manual e
+não dá para versionar.
+
+Em *Settings → Rules → Rulesets → New branch ruleset*:
+
+| Campo | Valor |
+|---|---|
+| Ruleset Name | `main protegida` |
+| Enforcement status | **Active** |
+| Bypass list | *Actors → Roles → **Repository admin***, modo **Pull request** |
+| Target branches | *Add target → Include default branch* |
+
+Rules a marcar:
+
+| Regra | Por quê |
+|---|---|
+| Restrict deletions | ninguém apaga a `main` |
+| Block force pushes | ninguém reescreve o histórico de produção |
+| Require a pull request before merging | fecha o push direto |
+| ↳ Required approvals: **1** | |
+| ↳ Require review from Code Owners | a aprovação tem que ser sua, e não de qualquer um |
+| ↳ Dismiss stale pull request approvals | commit novo depois da aprovação apaga a aprovação |
+| Require status checks to pass | |
+| ↳ adicione o check **`testes`** | é o job do `testes.yml`, que já roda em `pull_request` |
+| ↳ Require branches to be up to date | evita o merge verde que quebra por conflito semântico |
+
+Deixe **desmarcadas** *Require linear history* (o merge de PR cria commit de
+merge, e ela recusaria exatamente isso), *Require signed commits* e *Restrict
+creations/updates*.
+
+Sobre a bypass list, três escolhas que parecem detalhe e não são.
+
+**Por que alguém precisa estar nela.** O GitHub não deixa ninguém aprovar o
+próprio PR. Com a lista vazia e uma pessoa a mais no projeto, todo PR seu
+passaria a depender da aprovação dela — o contrário do que se quer.
+
+**Só há papéis para escolher, e isso muda onde mora a segurança.** Repositório
+pessoal não oferece `Users` na bypass list — a opção existe só em organização.
+Sobram `Repository admin`, `Maintain`, `Write` e deploy keys. Use
+`Repository admin` **sozinho**: `Maintain` e `Write` na lista anulariam a
+ruleset inteira, porque é esse o nível que a pessoa nova tem.
+
+A consequência é que a isenção fica amarrada ao papel, e não à pessoa. Quem
+garante que "Repository admin" quer dizer "só eu" é o nível de acesso da outra
+pessoa em *Settings → Collaborators*: dê **Write**, nunca `Maintain` nem
+`Admin`. Promover a pessoa depois a isenta da ruleset em silêncio, sem
+ninguém tocar nesta tela — e é por isso que a promoção, aqui, é uma decisão de
+segurança e não de conveniência.
+
+**Modo `Pull request`, e não `Always allow`.** Com `Always allow` um
+`git push origin main` publica direto em produção, sem PR e sem passar pelo
+check `testes` — que é exatamente o buraco que a ruleset existe para tapar. No
+modo `Pull request` você continua abrindo PR (a suíte roda e o resultado
+aparece antes do merge), mas pode fazer o merge sem esperar aprovação de
+ninguém. É a regra pedida com a rede de testes intacta.
+
+O custo, mesmo assim: a proteção deixa de valer para você no que diz respeito
+à revisão. Se a rede tiver que valer para os dois, esvazie a bypass list e
+aceite que seus PRs também vão precisar do aval da outra pessoa.
+
+Ordem importa: o `CODEOWNERS` precisa já estar na `main` quando a ruleset for
+criada, senão *Require review from Code Owners* não tem de quem cobrar.
+
+A `staging` fica desprotegida de propósito: é onde a pessoa nova precisa poder
+empurrar sem cerimônia, e nada nela vai para produção sem passar pela `main`.
+
 ### Deploy automático
 
 Todo push em `main` publica sozinho, pelo `.github/workflows/deploy.yml`. A
