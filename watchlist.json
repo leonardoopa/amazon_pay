@@ -825,7 +825,8 @@
     "capsula compativel",
     "cafe em capsula",
     "the north face",
-    "north face"
+    "north face",
+    "capsula"
   ],
   "_comment_exclude": "O oposto de priority: titulo que casa aqui NAO vira post. Para o produto que sai bem no ranking e ainda assim nao serve ao grupo -- mochila e barata e tem desconto alto, entao ganhava vaga toda rodada (10 dos ultimos 80 posts). A barra nao e absoluta: titulo que tambem casa em priority passa, e e assim que 'Mochila adidas' fica e 'Mochila de Viagem 50L' sai. Comparacao sem acento e em minusculo, igual a de priority.",
   "exclude": [

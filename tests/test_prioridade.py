@@ -235,6 +235,7 @@ def test_os_temas_de_moda_e_corrida_continuam():
         "dolce gusto",
         "whey",
         "cafe",
+        "capsula",
     } - set(load_priority())
 
     assert faltando == set()
@@ -253,11 +254,13 @@ def test_mochila_nao_e_mais_tema():
     assert "mochila" not in load_priority()
 
 
-def test_capsula_sozinha_nao_e_tema():
-    """"capsula" pegava suplemento, nao cafe: medido, 84 produtos, e os
-    primeiros eram Testo Essencial, Vitamina D3+K2, Omega 3 e Curcuma. Cafe em
-    capsula entra pelos termos especificos e por nespresso/dolce gusto."""
-    assert "capsula" not in load_priority()
+def test_capsula_pega_suplemento_e_esta_certo_assim():
+    """Eu tinha tirado "capsula" por achar que era tema de cafe mal escolhido:
+    medido, 84 produtos, e os primeiros eram Testo Essencial, Vitamina D3+K2,
+    Omega 3 e Curcuma. Errei o julgamento, nao a medicao -- capsula de
+    suplemento converte, e o tema existe para isso. Cafe em capsula continua
+    entrando pelos termos proprios e por nespresso/dolce gusto."""
+    assert "capsula" in load_priority()
 
 
 def test_os_temas_ja_vem_normalizados():
