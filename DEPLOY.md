@@ -535,28 +535,45 @@ nenhuma sozinho: quem obriga é a regra de proteção, que mora nas
 configurações do repositório e não no código. Por isso este passo é manual e
 não dá para versionar.
 
-Em *Settings → Branches → Add branch protection rule*, com
-`main` no **Branch name pattern**:
+Em *Settings → Rules → Rulesets → New branch ruleset*:
 
-| Opção | Estado | Por quê |
-|---|---|---|
-| Require a pull request before merging | ligado | fecha o push direto |
-| ↳ Require approvals (1) | ligado | ninguém faz merge sozinho |
-| ↳ Require review from Code Owners | ligado | a aprovação tem que ser sua, não de qualquer um |
-| ↳ Dismiss stale pull request approvals | ligado | commit novo depois da aprovação apaga a aprovação |
-| Require status checks to pass | ligado | |
-| ↳ marque o check **`testes`** | ligado | é o job do `testes.yml`, que já roda em `pull_request` |
-| ↳ Require branches to be up to date | ligado | evita o merge verde que quebra por conflito semântico |
-| Do not allow bypassing the above settings | **ligado** | sem isso, admin (você) continua podendo empurrar direto |
+| Campo | Valor |
+|---|---|
+| Ruleset Name | `main protegida` |
+| Enforcement status | **Active** |
+| Bypass list | **adicione você** em *Actors → Users* |
+| Target branches | *Add target → Include default branch* |
 
-A última linha é a que costuma ficar de fora. Deixá-la desligada mantém a
-proteção contra a pessoa nova e não contra o dono do repositório — que é
-justamente quem mais mexe e quem mais tem oportunidade de errar às duas da
-manhã.
+Rules a marcar:
 
-Uma consequência a aceitar de propósito: com ela ligada, você também passa a
-precisar de PR. Para o fluxo que já é usado aqui — trabalhar em `staging` e
-abrir PR para `main` — não muda nada, porque é exatamente o que já acontece.
+| Regra | Por quê |
+|---|---|
+| Restrict deletions | ninguém apaga a `main` |
+| Block force pushes | ninguém reescreve o histórico de produção |
+| Require a pull request before merging | fecha o push direto |
+| ↳ Required approvals: **1** | |
+| ↳ Require review from Code Owners | a aprovação tem que ser sua, e não de qualquer um |
+| ↳ Dismiss stale pull request approvals | commit novo depois da aprovação apaga a aprovação |
+| Require status checks to pass | |
+| ↳ adicione o check **`testes`** | é o job do `testes.yml`, que já roda em `pull_request` |
+| ↳ Require branches to be up to date | evita o merge verde que quebra por conflito semântico |
+
+Deixe **desmarcadas** *Require linear history* (o merge de PR cria commit de
+merge, e ela recusaria exatamente isso), *Require signed commits* e *Restrict
+creations/updates*.
+
+Sobre a bypass list: o GitHub não deixa ninguém aprovar o próprio PR. Com a
+lista vazia e uma pessoa a mais no projeto, todo PR seu passaria a depender da
+aprovação dela — o contrário do que se quer. Você na bypass list dá
+exatamente a regra pedida: você publica direto, e a outra pessoa só publica
+com a sua aprovação.
+
+O custo é real e vale saber: a proteção deixa de valer para você. Se a rede
+de segurança tiver que valer para os dois, esvazie a bypass list e aceite que
+seus PRs também vão precisar do aval da outra pessoa.
+
+Ordem importa: o `CODEOWNERS` precisa já estar na `main` quando a ruleset for
+criada, senão *Require review from Code Owners* não tem de quem cobrar.
 
 A `staging` fica desprotegida de propósito: é onde a pessoa nova precisa poder
 empurrar sem cerimônia, e nada nela vai para produção sem passar pela `main`.
