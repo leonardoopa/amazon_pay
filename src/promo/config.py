@@ -138,6 +138,15 @@ class Rules:
     # R$ 237,00". Este piso e absoluto e NAO e afrouxado por tema prioritario:
     # e justamente com `PRIORITY_MIN_DISCOUNT_PCT=0` que o caso passou.
     min_discount_brl: float = 0.0
+    # Piso proprio da oferta VERIFICADA. Vazio usa `min_discount_pct`.
+    #
+    # A verificada e a unica que afirma "acompanhamos o preco e ele caiu", e
+    # essa frase precisa de um numero que a sustente: -0,8% com a mediana ao
+    # lado nao sustenta. O piso separado tambem sobrevive ao afrouxamento por
+    # tema, porque `regras_do_tema` so mexe em `min_discount_pct` -- que e o
+    # que se quer, ja que foi `PRIORITY_MIN_DISCOUNT_PCT=0` que deixou passar
+    # o Tasty Whey de dois reais.
+    min_discount_pct_verified: float | None = None
 
     @classmethod
     def load(cls) -> "Rules":
@@ -148,6 +157,11 @@ class Rules:
             repost_cooldown_days=_int("REPOST_COOLDOWN_DAYS", 14),
             max_offers_per_run=_int("MAX_OFFERS_PER_RUN", 5),
             min_discount_brl=float(_optional("MIN_DISCOUNT_BRL", "0")),
+            min_discount_pct_verified=(
+                float(bruto)
+                if (bruto := _optional("MIN_DISCOUNT_PCT_VERIFIED", ""))
+                else None
+            ),
         )
 
 

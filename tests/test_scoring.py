@@ -266,3 +266,84 @@ def test_produto_barato_com_desconto_alto_continua_passando(conn):
     seed_history(conn, [30.0, 30.0, 30.0])
 
     assert score(conn, make_offer(18.0), DEZ_REAIS) is not None
+
+
+# ---------- a verificada tem piso proprio ----------
+#
+# "esses descontos onde estamos observando os produtos tem que ser de no
+# minimo 10%". A verificada e a unica que afirma "acompanhamos o preco e ele
+# caiu" -- e essa frase precisa de um numero que a sustente.
+#
+# O piso proprio existe porque `PRIORITY_MIN_DISCOUNT_PCT=0` zera
+# `min_discount_pct` nos temas prioritarios, e foi assim que passaram o Tasty
+# Whey a -0,8% e o Perfume Club De Nuit a 0,0%.
+
+VERIFICADA_10 = Rules(
+    min_discount_pct=0,
+    baseline_window_days=60,
+    min_observations=3,
+    repost_cooldown_days=3,
+    max_offers_per_run=5,
+    min_discount_pct_verified=10.0,
+)
+
+
+def test_verificada_abaixo_de_dez_por_cento_e_recusada(conn):
+    seed_history(conn, [100.0, 100.0, 100.0])
+
+    assert score(conn, make_offer(95.0), VERIFICADA_10) is None  # -5%
+
+
+def test_verificada_em_dez_por_cento_passa(conn):
+    seed_history(conn, [100.0, 100.0, 100.0])
+
+    assert score(conn, make_offer(90.0), VERIFICADA_10) is not None
+
+
+def test_o_piso_da_verificada_sobrevive_ao_tema_prioritario(conn, monkeypatch):
+    """`regras_do_tema` zera `min_discount_pct`, e so ele. Se um dia passar a
+    zerar o piso da verificada tambem, o Tasty Whey volta."""
+    from promo.models import Offer
+    from promo.pipeline import regras_do_tema
+
+    monkeypatch.setenv("PRIORITY_MIN_DISCOUNT_PCT", "0")
+    whey = Offer(
+        source="mercadolivre", external_id="MLB123", title="Tasty Whey 3w Gourmet",
+        price=95.0, url="https://x",
+    )
+    afrouxadas = regras_do_tema(whey, VERIFICADA_10, ["whey"])
+
+    assert afrouxadas.min_discount_pct == 0
+    assert afrouxadas.min_discount_pct_verified == 10.0
+
+    seed_history(conn, [100.0, 100.0, 100.0], product_id="mercadolivre:MLB123")
+    assert score(conn, whey, afrouxadas) is None
+
+
+def test_sem_piso_proprio_vale_o_geral(conn):
+    """Padrao vazio: quem nao configurar nao muda de comportamento."""
+    geral = Rules(
+        min_discount_pct=5,
+        baseline_window_days=60,
+        min_observations=3,
+        repost_cooldown_days=3,
+        max_offers_per_run=5,
+    )
+    seed_history(conn, [100.0, 100.0, 100.0])
+
+    assert geral.min_discount_pct_verified is None
+    assert score(conn, make_offer(94.0), geral) is not None  # -6%, passa no geral
+
+
+def test_o_repasse_nao_usa_o_piso_da_verificada(conn):
+    """A vitrine nao afirma medicao nenhuma -- ela repete o riscado da loja.
+    Apertar la seria cortar volume sem ganhar honestidade."""
+    from promo.models import Offer
+    from promo.scoring import score_campaign
+
+    vitrine = Offer(
+        source="ml_ofertas", external_id="MLB9", title="P",
+        price=94.0, url="https://x", original_price=100.0,
+    )
+
+    assert score_campaign(conn, vitrine, VERIFICADA_10) is not None  # -6%
