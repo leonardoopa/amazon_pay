@@ -29,6 +29,9 @@ from .config import (
     post_max_age_minutes,
     price_focus_max,
     prefer_official_store,
+    discovery_categories_per_round,
+    discovery_priority_share,
+    discovery_terms_per_round,
     price_focus_reserve,
     priority_ignores_price_focus,
     priority_min_discount_pct,
@@ -46,6 +49,7 @@ from .db import (
     expire_stale_posts,
     familia_do_titulo,
     families_in_cooldown,
+    get_meta,
     mark_post_failed,
     mark_post_sent,
     hot_products,
@@ -176,6 +180,50 @@ def load_categories(path: Path | None = None) -> list[Category]:
     ]
 
 
+def _rodizio(pool: list, cursor: int, quantos: int) -> tuple[list, int]:
+    """`quantos` itens a partir de `cursor`, dando a volta no fim da lista."""
+    if not pool or quantos <= 0:
+        return [], cursor
+    inicio = cursor % len(pool)
+    fatia = [pool[(inicio + i) % len(pool)] for i in range(min(quantos, len(pool)))]
+    return fatia, (inicio + len(fatia)) % len(pool)
+
+
+def fatiar_watchlist(
+    watchlist: list[Watch],
+    temas: list[str],
+    por_rodada: int,
+    fatia_prioritaria: float,
+    cursor_prioritario: int = 0,
+    cursor_geral: int = 0,
+) -> tuple[list[Watch], int, int]:
+    """Os termos desta rodada, e os cursores para a proxima.
+
+    Dois pocos com rodizio proprio, e nao uma lista so. Com um cursor unico, os
+    95 termos prioritarios e os 95 gerais se alternariam na mesma volta e o
+    prioritario seria reconsultado na mesma frequencia do resto -- que e
+    exatamente o que se quer evitar: frequencia de post comeca em frequencia
+    de coleta, porque oferta que ninguem reconsultou nao pode ser escolhida.
+
+    `por_rodada` 0 devolve a watchlist inteira, que era o comportamento antes
+    de existir fatia.
+    """
+    if por_rodada <= 0:
+        return list(watchlist), cursor_prioritario, cursor_geral
+
+    prioritarios = [w for w in watchlist if tem_tema(w.term, temas)]
+    gerais = [w for w in watchlist if not tem_tema(w.term, temas)]
+
+    cota_prioritaria = min(round(por_rodada * fatia_prioritaria), len(prioritarios))
+    escolhidos, cursor_prioritario = _rodizio(
+        prioritarios, cursor_prioritario, cota_prioritaria
+    )
+    # A cota que o poco prioritario nao usou volta para o geral em vez de
+    # virar rodada menor.
+    resto, cursor_geral = _rodizio(gerais, cursor_geral, por_rodada - len(escolhidos))
+    return escolhidos + resto, cursor_prioritario, cursor_geral
+
+
 def build_sources() -> list:
     """Amazon e opcional: sem credencial (ou sem as 3 vendas), segue so com o ML."""
     sources: list = []
@@ -223,6 +271,41 @@ def collect(
     rules = rules or Rules.load()
     vitrine = load_vitrine_categories()
     descobrir = _time_to_discover()
+
+    # Fatia desta rodada. Sem fatia (0), a lista inteira, que era o
+    # comportamento antes de a rodada de descoberta virar 21 minutos de
+    # silencio no grupo.
+    categorias = list(categories or [])
+    if descobrir:
+        with connect() as conn:
+            cursor_p = int(get_meta(conn, "discovery_cursor_prioritario") or 0)
+            cursor_g = int(get_meta(conn, "discovery_cursor_geral") or 0)
+            cursor_c = int(get_meta(conn, "discovery_cursor_categoria") or 0)
+
+        watchlist, cursor_p, cursor_g = fatiar_watchlist(
+            watchlist,
+            load_priority(),
+            discovery_terms_per_round(),
+            discovery_priority_share(),
+            cursor_p,
+            cursor_g,
+        )
+        if discovery_categories_per_round() > 0:
+            categorias, cursor_c = _rodizio(
+                categorias, cursor_c, discovery_categories_per_round()
+            )
+
+        with connect() as conn:
+            set_meta(conn, "discovery_cursor_prioritario", str(cursor_p))
+            set_meta(conn, "discovery_cursor_geral", str(cursor_g))
+            set_meta(conn, "discovery_cursor_categoria", str(cursor_c))
+
+        if discovery_terms_per_round() > 0:
+            log.info(
+                "Descoberta desta rodada: %d termos e %d categorias.",
+                len(watchlist),
+                len(categorias),
+            )
     # Descoberta que so levantou excecao nao pode contar como descoberta feita.
     # Ver o carimbo no fim desta funcao.
     #
@@ -256,9 +339,9 @@ def collect(
             log.info("%s: %d ofertas para '%s'", source.name, len(found), watch.term)
 
         if descobrir:
-            if getattr(source, "highlights", None) and categories:
+            if getattr(source, "highlights", None) and categorias:
                 descoberta_tentou = True
-            achados, respondeu = collect_categories(source, categories or [])
+            achados, respondeu = collect_categories(source, categorias)
             offers.extend(achados)
             descoberta_respondeu = descoberta_respondeu or respondeu
         offers.extend(collect_vitrine(source, vitrine))
