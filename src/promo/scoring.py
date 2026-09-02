@@ -40,7 +40,17 @@ def score(conn: sqlite3.Connection, offer: Offer, rules: Rules) -> ScoredOffer |
     # impedia que ela fosse igual.
     if offer.price >= baseline:
         return None
-    if discount_pct < rules.min_discount_pct:
+    # Piso proprio: a verificada afirma que o preco caiu, e a afirmacao precisa
+    # de um numero que a sustente. Ele nao e afrouxado por tema prioritario --
+    # `regras_do_tema` so mexe em `min_discount_pct`.
+    piso = (
+        rules.min_discount_pct_verified
+        if rules.min_discount_pct_verified is not None
+        else rules.min_discount_pct
+    )
+    if discount_pct < piso:
+        return None
+    if baseline - offer.price < rules.min_discount_brl:
         return None
 
     if _in_cooldown(conn, offer, discount_pct, rules):
@@ -91,6 +101,8 @@ def score_campaign(
 
     desconto = (offer.original_price - offer.price) / offer.original_price * 100
     if desconto < rules.min_discount_pct:
+        return None
+    if offer.original_price - offer.price < rules.min_discount_brl:
         return None
 
     if _in_cooldown(conn, offer, desconto, rules):
