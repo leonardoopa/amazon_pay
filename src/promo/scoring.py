@@ -30,6 +30,16 @@ def score(conn: sqlite3.Connection, offer: Offer, rules: Rules) -> ScoredOffer |
         return None
 
     discount_pct = (baseline - offer.price) / baseline * 100
+    # Preco igual a mediana nao e oferta, e o preco de sempre. O piso sozinho
+    # nao pega isso quando ele e zero -- e ele e zero nos temas prioritarios,
+    # por `PRIORITY_MIN_DISCOUNT_PCT`. Custou um post real: "TESTO ESSENCIAL"
+    # saiu a R$ 56,77 com baseline R$ 56,77, anunciado como -0%.
+    #
+    # O repasse nao precisava desta guarda porque `score_campaign` ja exige
+    # preco riscado MAIOR que o atual; aqui a baseline e calculada, e nada
+    # impedia que ela fosse igual.
+    if offer.price >= baseline:
+        return None
     if discount_pct < rules.min_discount_pct:
         return None
 
