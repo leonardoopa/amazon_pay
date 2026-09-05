@@ -395,7 +395,7 @@
     },
     {
       "term": "progressiva",
-      "max_price": null
+      "max_price": 300
     },
     {
       "term": "oleo capilar",
@@ -439,6 +439,58 @@
     },
     {
       "term": "condicionador wella",
+      "max_price": null
+    },
+    {
+      "term": "kerastase",
+      "max_price": null
+    },
+    {
+      "term": "mascara kerastase",
+      "max_price": null
+    },
+    {
+      "term": "kerastase genesis",
+      "max_price": null
+    },
+    {
+      "term": "kerastase discipline",
+      "max_price": null
+    },
+    {
+      "term": "shampoo kerastase",
+      "max_price": null
+    },
+    {
+      "term": "condicionador kerastase",
+      "max_price": null
+    },
+    {
+      "term": "loreal professionnel",
+      "max_price": null
+    },
+    {
+      "term": "redken",
+      "max_price": null
+    },
+    {
+      "term": "cadiveu",
+      "max_price": null
+    },
+    {
+      "term": "brae",
+      "max_price": null
+    },
+    {
+      "term": "lola cosmetics",
+      "max_price": null
+    },
+    {
+      "term": "widi care",
+      "max_price": null
+    },
+    {
+      "term": "salon line",
       "max_price": null
     },
     {
@@ -770,6 +822,15 @@
   "_comment_priority": "Temas com vaga garantida por rodada (PRIORITY_RESERVE no .env diz quantas). Sao pedacos de TITULO, nao termos de busca: a mesma oferta chega pela busca por termo, pelos mais vendidos da categoria e pela vitrine, e nao carrega qual das tres a trouxe -- o titulo carrega. Comparacao sem acento e em minusculo. Cuidado com pedaco curto demais: 'oleo' pegaria oleo de motor.",
   "priority": [
     "wella",
+    "kerastase",
+    "loreal professionnel",
+    "redken",
+    "cadiveu",
+    "brae",
+    "lola cosmetics",
+    "widi care",
+    "haskell",
+    "salon line",
     "truss",
     "cerave",
     "cicaplast",
@@ -784,7 +845,6 @@
     "serum facial",
     "protetor labial",
     "creme para pentear",
-    "progressiva",
     "ampola capilar",
     "nike",
     "adidas",

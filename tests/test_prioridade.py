@@ -191,7 +191,40 @@ def test_os_temas_de_cabelo_pele_e_suplemento_continuam():
         "shampoo",
         "oleo capilar",
         "hidratante",
-        "progressiva",
+    } - set(load_priority())
+
+    assert faltando == set()
+
+
+def test_progressiva_nao_e_mais_tema():
+    """Saiu em 02/09/2026, junto com a entrada das marcas de salao. O termo
+    continua na watchlist com teto de R$ 300 -- deixou de ter vaga reservada,
+    nao deixou de ser procurado."""
+    assert "progressiva" not in load_priority()
+
+
+def test_as_marcas_de_salao_continuam():
+    """Terceira leva, 02/09/2026. Medidas contra a API antes de entrar:
+
+        "widi care"       8 produtos, 3 com desconto (ate -46%)
+        "lola cosmetics"  6 produtos
+        "brae"            5 produtos, 2 com desconto (-35% e -53%)
+        "kerastase"       3 produtos, 1 com desconto (-18%)
+
+    "haskell" devolveu ZERO e nao entrou como termo -- so como tema, igual a
+    Nike e adidas: a marca ainda chega pela vitrine, e la quem decide a vaga
+    e o tema.
+    """
+    faltando = {
+        "kerastase",
+        "loreal professionnel",
+        "redken",
+        "cadiveu",
+        "brae",
+        "lola cosmetics",
+        "widi care",
+        "haskell",
+        "salon line",
     } - set(load_priority())
 
     assert faltando == set()
