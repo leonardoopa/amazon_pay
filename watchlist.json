@@ -490,10 +490,6 @@
       "max_price": null
     },
     {
-      "term": "haskell",
-      "max_price": null
-    },
-    {
       "term": "salon line",
       "max_price": null
     },
@@ -849,6 +845,7 @@
     "serum facial",
     "protetor labial",
     "creme para pentear",
+    "progressiva",
     "ampola capilar",
     "nike",
     "adidas",

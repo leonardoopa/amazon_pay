@@ -197,6 +197,33 @@ def test_os_temas_de_cabelo_pele_e_suplemento_continuam():
     assert faltando == set()
 
 
+def test_as_marcas_de_salao_continuam():
+    """Terceira leva, 02/09/2026. Medidas contra a API antes de entrar:
+
+        "widi care"       8 produtos, 3 com desconto (ate -46%)
+        "lola cosmetics"  6 produtos
+        "brae"            5 produtos, 2 com desconto (-35% e -53%)
+        "kerastase"       3 produtos, 1 com desconto (-18%)
+
+    "haskell" devolveu ZERO e nao entrou como termo -- so como tema, igual a
+    Nike e adidas: a marca ainda chega pela vitrine, e la quem decide a vaga
+    e o tema.
+    """
+    faltando = {
+        "kerastase",
+        "loreal professionnel",
+        "redken",
+        "cadiveu",
+        "brae",
+        "lola cosmetics",
+        "widi care",
+        "haskell",
+        "salon line",
+    } - set(load_priority())
+
+    assert faltando == set()
+
+
 def test_os_temas_de_moda_e_corrida_continuam():
     """Segunda leva, 31/08/2026. Nike, adidas, Hering, Osklen e Vivara nao tem
     termo de busca correspondente -- o catalogo do ML nao os tem, e o tema e a

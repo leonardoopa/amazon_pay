@@ -211,6 +211,9 @@ def test_nao_entrou_termo_que_devolve_outra_coisa():
         "cafe termogenico",
         "mochila impermeavel",
         "kit capsulas de cafe",
+        # Marca de salao que o catalogo nao tem. Medida em 02/09/2026, entrou
+        # so como tema -- igual a Nike e adidas.
+        "haskell",
     }
 
     assert termos() & mortos == set()
