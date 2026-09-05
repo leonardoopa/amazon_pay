@@ -422,6 +422,29 @@ def post_cooldown_minutes() -> int:
     return _int("POST_COOLDOWN_MINUTES", 60)
 
 
+def category_cooldown_minutes() -> int:
+    """Silencio minimo entre dois posts do mesmo TIPO de produto.
+
+    Um nivel acima do `POST_COOLDOWN_MINUTES`, que olha o produto e a familia.
+    Este olha a assinatura de duas palavras -- "whey protein", "camisetas
+    hering", "adidas tenis" -- e existe porque a repeticao que o grupo percebe
+    nao e so a do produto igual.
+
+    Medido em producao em 04/09/2026, nos ultimos 200 posts: zero repeticoes de
+    `product_id`, 27 de familia, e 48 de assinatura grossa. Cinco wheys
+    diferentes em 100 minutos sao cinco produtos para a regra e uma rajada de
+    whey para quem le.
+
+    Janela curta de proposito. Os temas prioritarios -- whey, tenis, camiseta
+    Hering -- sao justamente os que mais colidem aqui, e uma janela longa
+    tiraria do ar o que mais converte. Duas horas espacam a rajada sem sumir
+    com o tema: ainda cabem doze posts de tenis por dia.
+
+    0 desliga a regra.
+    """
+    return _int("CATEGORY_COOLDOWN_MINUTES", 0)
+
+
 def max_pending_queue() -> int:
     """Teto da fila de posts nao enviados.
 
