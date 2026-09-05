@@ -23,6 +23,7 @@ from .config import (
     hot_interval_minutes,
     hot_margin_pct,
     hot_track_limit,
+    category_cooldown_minutes,
     max_pending_queue,
     ofertas_pages,
     post_cooldown_minutes,
@@ -44,6 +45,8 @@ from .config import (
 )
 from .copywriter import Copywriter, fallback_copy
 from .db import (
+    CATEGORIA,
+    categories_in_cooldown,
     connect,
     create_post,
     expire_stale_posts,
@@ -478,7 +481,9 @@ def _time_to_discover() -> bool:
     return False
 
 
-def _uma_por_familia(escolhidas: list[ScoredOffer]) -> list[ScoredOffer]:
+def _uma_por_familia(
+    escolhidas: list[ScoredOffer], palavras: int = 3
+) -> list[ScoredOffer]:
     """Deixa so a melhor oferta de cada familia de produto na rodada.
 
     O cooldown por familia olha o que ja foi para o grupo; isto olha o que esta
@@ -487,11 +492,15 @@ def _uma_por_familia(escolhidas: list[ScoredOffer]) -> list[ScoredOffer]:
 
     A lista chega ordenada por desconto, entao ficar com a primeira de cada
     familia e ficar com a melhor.
+
+    Com `palavras=CATEGORIA` a assinatura fica grossa e a regra vira "um item
+    de cada TIPO por rodada" -- o que impede a rajada de tres tenis adidas
+    saindo juntos, que a assinatura de tres palavras nao ve.
     """
     vistas: set[str] = set()
     saida: list[ScoredOffer] = []
     for scored in escolhidas:
-        familia = familia_do_titulo(scored.offer.title)
+        familia = familia_do_titulo(scored.offer.title, palavras)
         if familia and familia in vistas:
             continue
         if familia:
@@ -817,6 +826,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         na_fila = len(pending_posts(conn))
         bloqueados = products_in_cooldown(conn)
         familias_bloqueadas = families_in_cooldown(conn)
+        categorias_bloqueadas = categories_in_cooldown(conn)
 
     # Fora antes de escolher, e nao depois: assim o produto repetido nao ocupa
     # uma vaga da cota que outra oferta poderia usar, e nao gasta chamada do
@@ -839,23 +849,29 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         if fora:
             log.info("%d oferta(s) fora pela lista de exclusao.", fora)
 
-    if bloqueados or familias_bloqueadas:
+    if bloqueados or familias_bloqueadas or categorias_bloqueadas:
         antes = len(picked) + len(repasses)
 
         def passa(s: ScoredOffer) -> bool:
             if s.offer.product_id in bloqueados:
                 return False
-            return familia_do_titulo(s.offer.title) not in familias_bloqueadas
+            if familia_do_titulo(s.offer.title) in familias_bloqueadas:
+                return False
+            return (
+                familia_do_titulo(s.offer.title, CATEGORIA)
+                not in categorias_bloqueadas
+            )
 
         picked = [s for s in picked if passa(s)]
         repasses = [s for s in repasses if passa(s)]
         repetidos = antes - len(picked) - len(repasses)
         if repetidos:
             log.info(
-                "%d oferta(s) fora por repeticao: mesmo produto postado nos "
-                "ultimos %d min ou ainda na fila.",
+                "%d oferta(s) fora por repeticao: mesmo produto nos ultimos "
+                "%d min, mesmo tipo nos ultimos %d min, ou ainda na fila.",
                 repetidos,
                 post_cooldown_minutes(),
+                category_cooldown_minutes(),
             )
 
     # Na janela de silencio a entrega anda devagar; produzir no ritmo normal so
@@ -876,13 +892,21 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # uma e de qual fonte vem cada vaga.
     # Uma por familia antes de cortar a cota: assim o anuncio repetido nao
     # ocupa vaga que outro produto poderia usar.
-    picked = _priorizar_temas(_uma_por_familia(picked), espaco, temas)
+    #
+    # Quando o cooldown de categoria esta ligado, a assinatura usada aqui e a
+    # grossa: a de tres palavras separa "Tenis adidas Boost Run" de "Tenis
+    # adidas Ih4039", e os dois saiam na mesma rodada. Como a assinatura curta
+    # e prefixo da longa, uma so passagem cobre os dois niveis.
+    assinatura = CATEGORIA if category_cooldown_minutes() > 0 else 3
+    picked = _priorizar_temas(_uma_por_familia(picked, assinatura), espaco, temas)
     if len(picked) < espaco:
-        familias_usadas = {familia_do_titulo(s.offer.title) for s in picked}
+        familias_usadas = {
+            familia_do_titulo(s.offer.title, assinatura) for s in picked
+        }
         restantes = [
             s
-            for s in _uma_por_familia(repasses)
-            if familia_do_titulo(s.offer.title) not in familias_usadas
+            for s in _uma_por_familia(repasses, assinatura)
+            if familia_do_titulo(s.offer.title, assinatura) not in familias_usadas
         ]
         picked += _priorizar_temas(restantes, espaco - len(picked), temas)
     verificadas = sum(1 for s in picked if s.verified)

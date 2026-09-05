@@ -9,7 +9,12 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Iterator
 
-from .config import db_path, post_cooldown_minutes, post_max_age_minutes
+from .config import (
+    category_cooldown_minutes,
+    db_path,
+    post_cooldown_minutes,
+    post_max_age_minutes,
+)
 from .models import Offer
 
 SCHEMA = """
@@ -473,6 +478,13 @@ _VAZIAS = {
 }
 
 
+# Palavras da assinatura grossa, a que junta produtos so parecidos: "whey
+# protein", "camisetas hering", "adidas tenis". Serve para espacar rajada do
+# mesmo tipo de produto, e nao para identificar produto -- ver
+# `categories_in_cooldown`.
+CATEGORIA = 2
+
+
 def familia_do_titulo(titulo: str, palavras: int = 3) -> str:
     """Assinatura grosseira do produto, para pegar anuncio repetido.
 
@@ -525,6 +537,29 @@ def tem_tema(titulo: str, temas: list[str]) -> bool:
     return any(tema in normalizado for tema in temas)
 
 
+def _titulos_postados(
+    conn: sqlite3.Connection, cooldown_minutes: int
+) -> list[sqlite3.Row]:
+    """Titulos que ja foram para o grupo dentro da janela, mais os da fila."""
+    if cooldown_minutes <= 0:
+        condicao, args = "po.status = 'pending'", ()
+    else:
+        condicao = (
+            "po.status = 'pending' "
+            "OR (po.status = 'sent' AND COALESCE(po.sent_at, po.created_at) >= ?)"
+        )
+        args = (_iso(now() - timedelta(minutes=cooldown_minutes)),)
+
+    return conn.execute(
+        f"""
+        SELECT DISTINCT p.title FROM posts po
+        JOIN products p ON p.id = po.product_id
+        WHERE {condicao}
+        """,
+        args,
+    ).fetchall()
+
+
 def families_in_cooldown(
     conn: sqlite3.Connection, cooldown_minutes: int | None = None
 ) -> set[str]:
@@ -535,25 +570,35 @@ def families_in_cooldown(
     """
     if cooldown_minutes is None:
         cooldown_minutes = post_cooldown_minutes()
-
-    if cooldown_minutes <= 0:
-        condicao, args = "po.status = 'pending'", ()
-    else:
-        condicao = (
-            "po.status = 'pending' "
-            "OR (po.status = 'sent' AND COALESCE(po.sent_at, po.created_at) >= ?)"
-        )
-        args = (_iso(now() - timedelta(minutes=cooldown_minutes)),)
-
-    rows = conn.execute(
-        f"""
-        SELECT DISTINCT p.title FROM posts po
-        JOIN products p ON p.id = po.product_id
-        WHERE {condicao}
-        """,
-        args,
-    ).fetchall()
+    rows = _titulos_postados(conn, cooldown_minutes)
     return {f for row in rows if (f := familia_do_titulo(row["title"]))}
+
+
+def categories_in_cooldown(
+    conn: sqlite3.Connection, cooldown_minutes: int | None = None
+) -> set[str]:
+    """Assinaturas grossas -- duas palavras -- que acabaram de sair.
+
+    Um nivel acima da familia, e por um problema que a familia nao ve. Medido
+    em producao em 04/09/2026, nos ultimos 200 posts: nenhum `product_id`
+    repetido e 27 familias repetidas, mas 48 repeticoes de assinatura de duas
+    palavras -- cinco wheys diferentes em 100 minutos, quatro kits de camiseta
+    Hering em 2h30, tres tenis adidas em 42 minutos.
+
+    Nada disso e o mesmo produto, entao nem o cooldown por `product_id` nem o
+    por familia pega. Para quem le o grupo, porem, cinco wheys seguidos sao uma
+    rajada de whey, e nao cinco ofertas.
+
+    A janela e propria e curta de proposito: whey e tenis sao prioritarios, e
+    12h de bloqueio por categoria mataria o que mais converte. Aqui o objetivo
+    e espacar a rajada, nao tirar o tema do ar.
+    """
+    if cooldown_minutes is None:
+        cooldown_minutes = category_cooldown_minutes()
+    if cooldown_minutes <= 0:
+        return set()
+    rows = _titulos_postados(conn, cooldown_minutes)
+    return {f for row in rows if (f := familia_do_titulo(row["title"], CATEGORIA))}
 
 
 def products_in_cooldown(
