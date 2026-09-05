@@ -742,6 +742,46 @@
       "max_price": null
     },
     {
+      "term": "kit body splash",
+      "max_price": null
+    },
+    {
+      "term": "kit presente body splash",
+      "max_price": null
+    },
+    {
+      "term": "body splash boticario",
+      "max_price": null
+    },
+    {
+      "term": "quencher stanley",
+      "max_price": null
+    },
+    {
+      "term": "copo stanley",
+      "max_price": null
+    },
+    {
+      "term": "stanley copo termico",
+      "max_price": null
+    },
+    {
+      "term": "caneca stanley",
+      "max_price": null
+    },
+    {
+      "term": "garrafa stanley",
+      "max_price": null
+    },
+    {
+      "term": "stanley termica",
+      "max_price": null
+    },
+    {
+      "term": "stanley aerolight",
+      "max_price": null
+    },
+    {
       "term": "calcinha sem costura",
       "max_price": null
     },
@@ -857,6 +897,7 @@
     "tree hut",
     "esfoliante",
     "body splash",
+    "stanley",
     "pistola de massagem",
     "massageador",
     "cadeira gamer",

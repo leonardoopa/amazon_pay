@@ -503,3 +503,78 @@ def test_os_termos_fora_do_tema_mantem_teto():
 
     assert tetos["notebook"] == 5000
     assert tetos["monitor gamer"] == 3000
+
+
+# ---------- os temas que o grupo pediu ----------
+
+
+def test_stanley_e_tema_e_os_termos_dele_existem():
+    """Garrafa e copo Stanley entraram a pedido do grupo em 04/09/2026.
+
+    Os termos sao compostos de proposito. Medido na API do ML no mesmo dia, o
+    termo `stanley` sozinho devolve o livro do Paul Stanley, um filme do
+    Kubrick e uma furadeira de 550W -- a marca de ferramenta e a de garrafa
+    tem o mesmo nome. Os compostos devolvem so o termico:
+
+        quencher stanley       11 produtos, 3 com desconto (ate 40%)
+        stanley copo termico   12 produtos
+        copo stanley           11 produtos
+        stanley termica         9 produtos
+        caneca stanley          4 produtos
+        stanley aerolight       3 produtos, 2 com desconto
+        garrafa stanley         2 produtos
+
+    Ficaram de fora `stanley` puro, pelo motivo acima, e `garrafa termica
+    stanley`, que devolve 7 garrafas genericas e nenhuma Stanley.
+    """
+    from promo.pipeline import load_priority, load_watchlist
+
+    termos = {w.term for w in load_watchlist()}
+
+    assert "stanley" in load_priority()
+    assert "quencher stanley" in termos
+    assert "garrafa stanley" in termos
+    assert "stanley" not in termos
+    assert "garrafa termica stanley" not in termos
+
+
+def test_o_tema_stanley_pega_a_garrafa_cara():
+    """O ponto de por Stanley no tema: a Aerolight de R$ 275 passa do teto de
+    R$ 150 que `garrafa termica` carrega, e so escapa dele por termo proprio
+    sem teto."""
+    from promo.pipeline import e_prioritaria, load_priority, load_watchlist
+
+    tetos = {w.term: w.max_price for w in load_watchlist()}
+    garrafa = anuncio(
+        "Garrafa Termica Stanley Aerolight Fast Flow Polar 710ml", 275.74, 309.90
+    )
+
+    assert tetos["garrafa termica"] == 150  # o termo generico segue com teto
+    assert tetos["stanley aerolight"] is None
+    assert e_prioritaria(garrafa, load_priority())
+
+
+def test_kit_body_splash_cai_no_tema_que_ja_existia():
+    """`body splash` ja era tema, e tema casa por substring do titulo -- o kit
+    entra sem tema novo. Os termos sao para a DESCOBERTA achar o kit, que a
+    busca por `body splash` sozinha nao trazia."""
+    from promo.pipeline import e_prioritaria, load_priority, load_watchlist
+
+    temas = load_priority()
+    termos = {w.term for w in load_watchlist()}
+    kit = anuncio("Kit Body Splash + Creme Victoria's Secret Rush", 296.00, 349.00)
+
+    assert e_prioritaria(kit, temas)
+    assert "kit body splash" in termos
+    assert "kit presente body splash" in termos
+
+
+def test_perfume_ja_era_tema_e_continua():
+    """Pedido de novo em 04/09/2026. Ja estava: 8 termos sem teto e 112
+    produtos com `perfume` no titulo na carteira."""
+    from promo.pipeline import load_priority, load_watchlist
+
+    assert "perfume" in load_priority()
+    perfumes = [w for w in load_watchlist() if "perfume" in w.term]
+    assert len(perfumes) >= 8
+    assert all(w.max_price is None for w in perfumes)
