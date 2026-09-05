@@ -191,10 +191,16 @@ def test_os_temas_de_cabelo_pele_e_suplemento_continuam():
         "shampoo",
         "oleo capilar",
         "hidratante",
-        "progressiva",
     } - set(load_priority())
 
     assert faltando == set()
+
+
+def test_progressiva_nao_e_mais_tema():
+    """Saiu em 02/09/2026, junto com a entrada das marcas de salao. O termo
+    continua na watchlist com teto de R$ 300 -- deixou de ter vaga reservada,
+    nao deixou de ser procurado."""
+    assert "progressiva" not in load_priority()
 
 
 def test_as_marcas_de_salao_continuam():
