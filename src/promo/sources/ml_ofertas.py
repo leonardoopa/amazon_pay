@@ -101,6 +101,37 @@ def _preco(card: dict) -> tuple[float | None, float | None]:
     )
 
 
+def _frete_gratis(card: dict) -> bool:
+    """A vitrine anuncia frete gratis no componente `shipping_v2`.
+
+    Ele existe em todo card -- 144 de 144 medidos em 06/09/2026 -- e traz a
+    marcacao numa `key` que CONTEM `free_shipping`, em tres variacoes:
+
+        free_shipping_single      105 de 144   "Frete gratis"
+        next_day_free_shipping      1
+        same_day_free_shipping      1
+
+    Contem, e nao comeca nem termina: a primeira variacao tem o sufixo
+    `_single` depois, as outras duas tem o prefixo do prazo antes. Casar pela
+    substring cobre as tres e sobrevive a uma quarta.
+
+    O texto visivel NAO serve de chave: ele vem localizado ("Frete gratis") e
+    mudaria com o idioma da resposta.
+
+    Isto estava simplesmente faltando. O campo `free_shipping` existe no
+    modelo desde sempre e o copywriter ja sabe dizer "Frete gratis", mas so a
+    fonte de catalogo o preenchia. Como a vitrine e 89% do que sai no grupo,
+    na pratica quase nenhum post podia mencionar o frete -- inclusive os 74,3%
+    que tinham.
+    """
+    componente = _componente(card, "shipping_v2") or {}
+    for bloco in componente.get("shipping_v2") or []:
+        for valor in bloco.get("values") or []:
+            if "free_shipping" in (valor.get("key") or ""):
+                return True
+    return False
+
+
 def _imagem(card: dict) -> str | None:
     fotos = (card.get("pictures") or {}).get("pictures") or []
     if not fotos or not fotos[0].get("id"):
@@ -126,6 +157,7 @@ def _offer(card: dict) -> Offer | None:
         url=url if url.startswith("http") else f"https://{url}",
         original_price=anterior,
         image_url=_imagem(card),
+        free_shipping=_frete_gratis(card),
     )
 
 
