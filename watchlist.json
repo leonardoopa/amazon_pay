@@ -14,10 +14,6 @@
       "max_price": 1500
     },
     {
-      "term": "smartphone",
-      "max_price": 1000
-    },
-    {
       "term": "monitor gamer",
       "max_price": 3000
     },
@@ -936,7 +932,18 @@
     "mala de viagem",
     "mala rodinha",
     "necessaire",
-    "pochete"
+    "pochete",
+    "smartphone",
+    "celular samsung",
+    "celular motorola",
+    "celular xiaomi",
+    "galaxy a",
+    "galaxy s",
+    "moto g",
+    "moto e",
+    "motorola edge",
+    "poco x",
+    "redmi note"
   ],
   "_comment_vitrine": "Categorias pedidas da vitrine /ofertas (a pagina publica, nao a API). Uma requisicao por pagina, ~45 produtos cada, com o 'de' e o 'por' prontos -- e a fonte mais barata do projeto. Existe porque a vitrine crua e so o topo da campanha: medido em 01/09/2026, a pagina sem filtro trouxe 1.621 precos e ZERO Nike, adidas, Puma, Hering, Lupo ou New Balance, enquanto ?category=MLB23262 trouxe 422 precos e 36 de adidas. Esta e a UNICA via que resta para anuncio de vendedor: /sites/MLB/search responde 403 desde 2025 e a busca publica redireciona servidor para verificacao de conta.",
   "vitrine_categories": [

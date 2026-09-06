@@ -134,3 +134,52 @@ def test_nada_barrado_esta_tambem_em_priority():
     inuteis = set(load_exclude()) & set(load_priority())
 
     assert inuteis == set()
+
+
+# ---------- celular sai do grupo ----------
+
+
+def test_o_telefone_esta_barrado():
+    """Pedido em 06/09/2026. Medido sobre 2.289 posts enviados: 92 eram
+    telefone (4,0%), e esta lista pega os 92 com 2 falsos positivos.
+
+    `iphone` ficou de fora de proposito. Ele nao pegava nenhum telefone --
+    iPhone passa dos tetos de preco e nunca entrou -- e pegava 11 acessorios
+    ("Carregador Para iPhone", "Fone Compativel Com Iphone") mais um gloss:
+    "Liphoney" contem "iphone" como substring.
+    """
+    barrados = load_exclude()
+
+    for termo in ("smartphone", "galaxy a", "moto g", "poco x", "redmi note"):
+        assert termo in barrados
+    assert "iphone" not in barrados
+    assert "celular" not in barrados  # pega tripe, suporte e fone
+
+
+def test_o_termo_de_busca_de_celular_saiu_da_watchlist():
+    """Barrar na selecao sem tirar da busca gastaria chamada de API em toda
+    rodada para colher o que sera descartado depois."""
+    from promo.pipeline import load_watchlist
+
+    assert "smartphone" not in {w.term for w in load_watchlist()}
+
+
+def test_os_telefones_reais_sao_barrados():
+    barrados, temas = load_exclude(), load_priority()
+    titulos = [
+        "Smartphone Samsung Galaxy A17 5g 128gb 4gb Super Amoled 6.7''",
+        "Smartphone Motorola Moto g56 5G 256GB - 8GB RAM+16GB Ram Boost",
+        "Xiaomi Poco X7 Pro 5g 12ram /512 Gb Global Cor Preto",
+        "Celular Samsung Galaxy A56 5g 256gb 8gb Ram Cinza",
+        "Smartphone Motorola Edge 70 5g - 512gb 24gb",
+    ]
+
+    for titulo in titulos:
+        assert e_barrada(oferta(titulo), barrados, temas), titulo
+
+
+def test_o_gloss_nao_e_confundido_com_telefone():
+    """"Liphoney" contem "iphone". Foi por isso que `iphone` ficou fora."""
+    gloss = oferta("Gloss Fran By Franciny Ehlke Liphoney Mel Liphoney-mel")
+
+    assert not e_barrada(gloss, load_exclude(), load_priority())
