@@ -309,3 +309,64 @@ class CacheCompartilhado(TestCase):
         local = settings.CACHES["default"].get("LOCATION", "")
 
         self.assertIn("data", str(local))
+
+
+class RedirecionamentoHttps(TestCase):
+    """O SecurityMiddleware corta HTTP antes de qualquer outra coisa.
+
+    Isto está aqui como registro de um erro de MEDIÇÃO, não de código. Em
+    07/09/2026, ao testar o limite de login em produção, 30 tentativas
+    seguidas responderam 200 e a conclusão foi "o limite não funciona, a culpa
+    é do cache". Estava errado nas duas metades:
+
+    - as requisições iam por HTTP puro, o SecurityMiddleware respondia 301
+      antes de a pilha chegar ao contador, e o cliente de teste SEGUIA o
+      redirect até o site público pelo Caddy -- onde o X-Forwarded-For forjado
+      era substituído pelo IP real. O 200 observado era o formulário chegando
+      por outro caminho;
+    - o limite, quando a requisição de fato chega nele, bloqueia certo.
+
+    Quem for medir este middleware por HTTP precisa mandar X-Forwarded-Proto,
+    que é o que o Caddy manda em produção. Sem isso, mede-se o redirect.
+
+    Os testes forçam a configuração de produção: em DEBUG o redirect está
+    desligado, e era justamente a diferença entre os dois ambientes que
+    escondia o problema.
+    """
+
+    CONFIG = dict(
+        SECURE_SSL_REDIRECT=True,
+        SECURE_PROXY_SSL_HEADER=("HTTP_X_FORWARDED_PROTO", "https"),
+        ALLOWED_HOSTS=["exemplo.test"],
+    )
+
+    def post(self, **extra):
+        from django.test import Client
+
+        return Client(HTTP_HOST="exemplo.test", **extra).post(
+            "/admin/login/", {"username": "x", "password": "y"}
+        )
+
+    def test_sem_o_proto_https_a_pilha_devolve_redirect(self):
+        with self.settings(**self.CONFIG):
+            self.assertIn(self.post().status_code, (301, 302))
+
+    def test_com_o_proto_https_a_requisicao_chega_ao_login(self):
+        with self.settings(**self.CONFIG):
+            resposta = self.post(HTTP_X_FORWARDED_PROTO="https")
+
+        self.assertEqual(resposta.status_code, 200)
+
+    def test_o_contador_so_anda_quando_a_requisicao_chega(self):
+        """A prova de que o 301 nunca contou: mesmo IP, dez tentativas por
+        HTTP, contador intacto."""
+        from comunidade.seguranca import CHAVE_TENTATIVAS
+
+        chave = CHAVE_TENTATIVAS.format(ip="198.51.100.90")
+        cache.delete(chave)
+
+        with self.settings(**self.CONFIG):
+            for _ in range(10):
+                self.post(HTTP_X_FORWARDED_FOR="198.51.100.90")
+
+        self.assertIsNone(cache.get(chave))
