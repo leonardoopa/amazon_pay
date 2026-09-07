@@ -369,6 +369,19 @@ def priority_min_discount_pct() -> float | None:
     return float(bruto) if bruto else None
 
 
+def amazon_partner_tag() -> str:
+    """Tag de associado da Amazon, usada no `?tag=` do link.
+
+    Nao e segredo: ela aparece em toda URL que o grupo recebe, e e assim que a
+    Amazon atribui a comissao. Fica aqui, e nao no codigo, porque a conta tem
+    mais de um ID de rastreamento e trocar o do post nao pode exigir release.
+
+    Vazio desliga o comando `amazon-add` -- link sem tag e trabalho de graca
+    para a Amazon.
+    """
+    return _optional("AMAZON_PARTNER_TAG", "").strip()
+
+
 def prefer_official_store() -> bool:
     """Nos temas do `priority`, a oferta sai da loja oficial do ML?
 
