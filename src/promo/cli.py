@@ -462,6 +462,119 @@ def cmd_link(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_amazon_add(args: argparse.Namespace) -> int:
+    """Enfileira uma oferta da Amazon escolhida a mao.
+
+    Existe porque a Creators API ainda nao liberou -- ela pede vendas
+    qualificadas na conta Associates -- e raspar a Amazon nao e alternativa: o
+    Operating Agreement proibe "data mining, robots, or similar data gathering
+    and extraction tools" e exige que preco exibido venha da API. O risco de
+    raspar cairia sobre a mesma conta que precisa sobreviver ate liberar.
+
+    Entao a escolha e o preco sao de uma pessoa, e o resto e automatico: link
+    com a tag, imagem por ASIN, texto pelo copywriter e a fila de sempre, com o
+    mesmo gotejamento. Poucos posts por semana bastam para as vendas que
+    liberam a API -- e quando liberar, `sources/amazon.py` ja esta pronto e
+    nada disto vira lixo.
+
+    O post sai `verified=False`: o "de" e o que a loja anuncia, nao a nossa
+    mediana. Mesma marcacao do repasse da vitrine do ML.
+    """
+    from .config import amazon_partner_tag
+    from .copywriter import Copywriter, fallback_copy
+    from .db import create_post, recent_headlines, record_offer, save_affiliate_link
+    from .models import Offer, ScoredOffer
+    from .sources.amazon_link import extrair_asin, imagem_do_asin, link_de_afiliado
+
+    tag = args.tag or amazon_partner_tag()
+    if not tag:
+        print(
+            "Sem tag de associado. Passe --tag ou defina AMAZON_PARTNER_TAG no .env.",
+            file=sys.stderr,
+        )
+        return 2
+
+    asin = extrair_asin(args.produto)
+    if not asin:
+        print(
+            f"Nao achei o ASIN em {args.produto!r}. Passe a URL do produto "
+            "(com /dp/ASIN) ou o ASIN de dez caracteres.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.preco <= 0 or args.de <= 0:
+        print("Preco e 'de' precisam ser maiores que zero.", file=sys.stderr)
+        return 2
+    if args.preco >= args.de:
+        print(
+            f"O preco (R$ {args.preco:.2f}) precisa ser MENOR que o de "
+            f"(R$ {args.de:.2f}) -- sem queda nao ha oferta.",
+            file=sys.stderr,
+        )
+        return 2
+
+    desconto = (args.de - args.preco) / args.de * 100
+    link = link_de_afiliado(asin, tag)
+    offer = Offer(
+        source="amazon",
+        external_id=asin,
+        title=args.titulo.strip(),
+        price=args.preco,
+        url=link,
+        original_price=args.de,
+        image_url=None if args.sem_imagem else (args.imagem or imagem_do_asin(asin)),
+    )
+    scored = ScoredOffer(
+        offer=offer,
+        baseline=args.de,
+        discount_pct=desconto,
+        observations=0,
+        lowest_ever=False,
+        verified=False,
+    )
+
+    init_db()
+    with connect() as conn:
+        record_offer(conn, offer)
+        save_affiliate_link(conn, offer.product_id, link)
+        recentes = recent_headlines(conn)
+
+    if args.sem_ia:
+        texto = fallback_copy(scored, link)
+    else:
+        try:
+            texto = Copywriter().write(scored, link, None, recentes)
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger("promo").warning(
+                "Gemini falhou (%s); usando o texto padrao.", exc
+            )
+            texto = fallback_copy(scored, link)
+
+    if args.dry_run:
+        print(texto)
+        print()
+        print(f"(dry-run: nada foi enfileirado. Imagem: {offer.image_url or 'nenhuma'})")
+        return 0
+
+    with connect() as conn:
+        post_id = create_post(
+            conn,
+            offer.product_id,
+            offer.price,
+            scored.baseline,
+            scored.discount_pct,
+            texto,
+            offer.image_url,
+            verified=False,
+        )
+
+    print(f"Post {post_id} na fila: {asin} a R$ {args.preco:.2f} (-{desconto:.0f}%)")
+    print(f"Link: {link}")
+    print("Sai no proximo gotejamento, ou rode `promo flush` para drenar agora.")
+    return 0
+
+
 def cmd_link_all(args: argparse.Namespace) -> int:
     """Gera de uma vez os links que faltam, pelo painel de afiliados.
 
@@ -567,6 +680,10 @@ COMMANDS = {
     "serve": (cmd_serve, "Sobe a API (health check + /run) com o loop junto"),
     "flush": (cmd_flush, "Reenvia os posts que ficaram na fila"),
     "link": (cmd_link, "Salva o link de afiliado de um produto (manual)"),
+    "amazon-add": (
+        cmd_amazon_add,
+        "Enfileira uma oferta da Amazon escolhida a mao (sem a API)",
+    ),
     "link-all": (cmd_link_all, "Gera pelo painel os links que faltam, em lote"),
     "pending-links": (cmd_pending_links, "Lista produtos sem link de afiliado"),
     "wa-connect": (cmd_wa_connect, "Pareia o chip secundario na Evolution (QR)"),
@@ -620,6 +737,41 @@ def main(argv: list[str] | None = None) -> int:
         if name == "link":
             sub.add_argument("product_id", help="ID do anuncio, ex.: MLB3953571145")
             sub.add_argument("url", help="Link gerado no Link Builder do ML")
+        if name == "amazon-add":
+            sub.add_argument(
+                "produto", help="URL do produto na Amazon, ou o ASIN (ex.: B07DVJC66X)"
+            )
+            sub.add_argument("--titulo", required=True, help="Titulo do produto")
+            sub.add_argument(
+                "--preco", type=float, required=True, help="Preco de agora, em reais"
+            )
+            sub.add_argument(
+                "--de",
+                type=float,
+                required=True,
+                help="Preco anunciado antes do desconto, em reais",
+            )
+            sub.add_argument(
+                "--tag", default=None, help="Tag de associado (padrao: AMAZON_PARTNER_TAG)"
+            )
+            sub.add_argument(
+                "--imagem", default=None, help="URL da imagem (padrao: a do ASIN)"
+            )
+            sub.add_argument(
+                "--sem-imagem",
+                action="store_true",
+                help="Manda so texto, sem foto",
+            )
+            sub.add_argument(
+                "--sem-ia",
+                action="store_true",
+                help="Usa o texto padrao em vez de chamar o Gemini",
+            )
+            sub.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Mostra o texto e nao enfileira nada",
+            )
         if name == "wa-groups":
             sub.add_argument(
                 "--search",
