@@ -267,3 +267,45 @@ class LimiteDeLogin(TestCase):
     def test_zero_desliga_o_limite(self):
         for _ in range(10):
             self.assertNotEqual(self.errar().status_code, 429)
+
+
+class CacheCompartilhado(TestCase):
+    """O cache precisa valer para todos os workers, não para um processo.
+
+    Medido em produção em 07/09/2026, com LocMemCache e o gunicorn em vários
+    workers: 30 tentativas seguidas de login erradas no mesmo IP passaram
+    todas, nenhuma 429. A lógica do middleware está certa — testada isolada,
+    ela bloqueia na nona — mas cada worker tinha o seu contador e nenhum
+    chegou ao limite.
+
+    Os testes de `LimiteDeLogin` não pegam isso: o test client do Django roda
+    tudo num processo só, então o contador sempre soma. Por isso a garantia
+    aqui é sobre a CONFIGURAÇÃO, que é onde estava o defeito.
+    """
+
+    def test_o_cache_nao_e_local_ao_processo(self):
+        from django.conf import settings
+
+        backend = settings.CACHES["default"]["BACKEND"]
+
+        self.assertNotIn("locmem", backend.lower())
+
+    def test_o_cache_persiste_fora_do_processo(self):
+        """Sem isto, um contador de tentativas some a cada reinício de worker
+        e o limite vira decorativo."""
+        from django.conf import settings
+
+        backend = settings.CACHES["default"]["BACKEND"]
+
+        self.assertTrue(
+            any(k in backend.lower() for k in ("filebased", "db", "memcached", "redis")),
+            f"Backend {backend} não é compartilhado entre workers.",
+        )
+
+    def test_o_diretorio_do_cache_fica_no_volume_persistente(self):
+        """`data/` é o único diretório que sobrevive a `up --build`."""
+        from django.conf import settings
+
+        local = settings.CACHES["default"].get("LOCATION", "")
+
+        self.assertIn("data", str(local))

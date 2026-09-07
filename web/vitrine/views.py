@@ -116,9 +116,9 @@ def _quando(iso: str | None) -> datetime | None:
 def _em_cache(chave: str, produzir):
     """Guarda por CACHE_SEGUNDOS o resultado de uma leitura do banco do bot.
 
-    O cache é local ao processo (LocMemCache), então cada worker do gunicorn
-    tem o seu. Não é problema aqui: o pior caso é uma consulta por worker por
-    minuto em vez de uma por visita, e o dado é o mesmo para todo mundo — não
+    O cache é em arquivo e compartilhado entre os workers do gunicorn (ver
+    CACHES no settings), então a consulta acontece uma vez por minuto para o
+    site inteiro, e não uma por worker. O dado é o mesmo para todo mundo — não
     há nada por visitante para vazar de um para o outro.
     """
     valor = cache.get(chave)
@@ -444,11 +444,10 @@ JANELA_LIMITE_SEGUNDOS = 300
 def _excedeu_limite(request) -> bool:
     """Conta envios por IP numa janela curta.
 
-    O contador vive no cache do processo, então com N workers do gunicorn o
-    limite efetivo é N × LIMITE_ENVIOS. Fica assim de propósito: um contador
-    compartilhado exigiria Redis ou uma tabela, e para um formulário de um
-    campo a isca já derruba o volume — isto aqui é o teto que impede alguém de
-    encher a tabela num laço.
+    O contador vive no cache, que é em arquivo e compartilhado entre os
+    workers do gunicorn (ver CACHES no settings). Antes era LocMemCache, e o
+    limite efetivo era N × LIMITE_ENVIOS com N imprevisível: cada worker
+    contava o seu. Agora LIMITE_ENVIOS é o que está escrito.
 
     O IP não é gravado em lugar nenhum: ele só compõe a chave do contador, que
     expira junto com a janela.
