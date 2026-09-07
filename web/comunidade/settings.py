@@ -275,6 +275,32 @@ BOT_API_URL = os.getenv("BOT_API_URL", "http://amazon_pay:8000")
 # que enfileirar sem autenticação.
 BOT_API_SECRET = os.getenv("API_SECRET", "")
 
+# ---------- Cache ----------
+# Em ARQUIVO, e não o LocMemCache padrão, porque o gunicorn roda com vários
+# workers e o LocMemCache vive dentro de UM processo.
+#
+# Medido em produção em 07/09/2026: com LocMemCache, 30 tentativas seguidas de
+# login erradas no mesmo IP passaram todas — nenhuma 429. O contador existia,
+# mas cada worker tinha o seu, e nenhum chegou ao limite de 8. A mesma lógica
+# testada isoladamente bloqueia certo na nona. Ou seja: a proteção estava
+# instalada e não protegia, sem sintoma nenhum.
+#
+# O diretório fica no volume `data/`, que já é persistente e é o único lugar
+# gravável entre reinícios do container.
+#
+# O custo é uma leitura de arquivo por acerto de cache, contra um dicionário em
+# memória. Para o volume deste site — o contador de tentativas e um resumo de
+# números da home, com 60 segundos de vida — isso não aparece em lugar nenhum,
+# e o que se ganha é um contador que realmente conta.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": str(PROJECT_ROOT / os.getenv("DJANGO_CACHE_DIR", "data/cache")),
+        "TIMEOUT": 300,
+        "OPTIONS": {"MAX_ENTRIES": 1000},
+    }
+}
+
 # ---------- Tentativas de login no admin ----------
 # O /admin/ está exposto na internet e a senha é a única barreira. Sem limite,
 # uma lista de senhas comuns roda a noite inteira sem custo nenhum para quem
