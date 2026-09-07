@@ -112,6 +112,9 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Limite de tentativas no login do admin. Depois do Authentication
+    # porque precisa do `request.user` para saber se o login deu certo.
+    "comunidade.seguranca.LimiteDeLoginMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # CSP e Permissions-Policy. Ver comunidade/cabecalhos.py.
@@ -258,3 +261,23 @@ WHITENOISE_MAX_AGE = 31536000 if not DEBUG else 0
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# ---------- Backoffice: falar com o bot ----------
+# A tela de oferta da Amazon não escreve no banco do bot; ela chama a API dele.
+# O roteador em `comunidade/routers.py` proíbe essa escrita de propósito, e a
+# regra não abre exceção para o backoffice.
+#
+# Dentro da rede do compose o host é o nome do serviço. O `ports` do
+# amazon_pay publica só em 127.0.0.1, então de fora ninguém alcança.
+BOT_API_URL = os.getenv("BOT_API_URL", "http://amazon_pay:8000")
+# A mesma API_SECRET que o bot exige no header X-API-Key. Sem ela a tela
+# recebe 503 do próprio bot, que é o comportamento certo: melhor recusar do
+# que enfileirar sem autenticação.
+BOT_API_SECRET = os.getenv("API_SECRET", "")
+
+# ---------- Tentativas de login no admin ----------
+# O /admin/ está exposto na internet e a senha é a única barreira. Sem limite,
+# uma lista de senhas comuns roda a noite inteira sem custo nenhum para quem
+# tenta. Ver comunidade/seguranca.py.
+LOGIN_MAX_TENTATIVAS = int(os.getenv("LOGIN_MAX_TENTATIVAS", "8"))
+LOGIN_BLOQUEIO_MINUTOS = int(os.getenv("LOGIN_BLOQUEIO_MINUTOS", "15"))

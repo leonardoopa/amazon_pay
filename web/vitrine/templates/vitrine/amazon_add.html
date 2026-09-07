@@ -1,0 +1,43 @@
+{% extends "admin/base_site.html" %}
+{% comment %}
+Estende o admin de propósito: a tela é backoffice, não página pública. Herdar
+daqui traz o cabeçalho, o logout e o estilo que o dono já conhece, e deixa
+óbvio que ele está numa área autenticada.
+{% endcomment %}
+
+{% block content %}
+<h1>Oferta da Amazon</h1>
+
+<p style="max-width:52em">
+  Cole o link do produto e os dois preços. O post entra na mesma fila das
+  ofertas do Mercado Livre e sai no gotejamento normal — não vai direto para o
+  grupo.
+</p>
+
+<form method="post" novalidate>
+  {% csrf_token %}
+  {{ formulario.as_p }}
+  <p>
+    <button type="submit" class="default">Enfileirar</button>
+  </p>
+</form>
+
+{% if resultado %}
+  <h2>Como vai sair no grupo</h2>
+  <pre style="white-space:pre-wrap;max-width:52em;background:#f6f6f6;padding:1em;border-radius:4px">{{ resultado.texto }}</pre>
+  <p><a href="{{ resultado.link }}" target="_blank" rel="noopener noreferrer">{{ resultado.link }}</a></p>
+{% endif %}
+
+<h2>O que esta tela faz</h2>
+<ul style="max-width:52em">
+  <li>Monta o link com a sua tag de associado e descarta os rastreadores da
+      sessão que vêm colados na URL copiada do navegador.</li>
+  <li>Usa a foto oficial do produto, buscada pelo ASIN.</li>
+  <li>Escreve o texto e enfileira. O envio segue o ritmo de sempre.</li>
+</ul>
+<p style="max-width:52em">
+  O preço é digitado porque a API da Amazon ainda não liberou — ela pede vendas
+  qualificadas na conta. Raspar o site não é alternativa: o contrato do
+  Associates proíbe, e o risco cairia sobre essa mesma conta.
+</p>
+{% endblock %}

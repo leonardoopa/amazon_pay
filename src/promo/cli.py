@@ -480,76 +480,24 @@ def cmd_amazon_add(args: argparse.Namespace) -> int:
     O post sai `verified=False`: o "de" e o que a loja anuncia, nao a nossa
     mediana. Mesma marcacao do repasse da vitrine do ML.
     """
-    from .config import amazon_partner_tag
-    from .copywriter import Copywriter, fallback_copy
-    from .db import create_post, recent_headlines, record_offer, save_affiliate_link
-    from .models import Offer, ScoredOffer
-    from .sources.amazon_link import extrair_asin, imagem_do_asin, link_de_afiliado
+    from .manual import OfertaInvalida, enfileirar, escrever_texto, preparar_oferta_amazon
 
-    tag = args.tag or amazon_partner_tag()
-    if not tag:
-        print(
-            "Sem tag de associado. Passe --tag ou defina AMAZON_PARTNER_TAG no .env.",
-            file=sys.stderr,
+    try:
+        scored = preparar_oferta_amazon(
+            produto=args.produto,
+            titulo=args.titulo,
+            preco=args.preco,
+            de=args.de,
+            tag=args.tag,
+            imagem=args.imagem,
+            sem_imagem=args.sem_imagem,
         )
+    except OfertaInvalida as exc:
+        print(str(exc), file=sys.stderr)
         return 2
 
-    asin = extrair_asin(args.produto)
-    if not asin:
-        print(
-            f"Nao achei o ASIN em {args.produto!r}. Passe a URL do produto "
-            "(com /dp/ASIN) ou o ASIN de dez caracteres.",
-            file=sys.stderr,
-        )
-        return 2
-
-    if args.preco <= 0 or args.de <= 0:
-        print("Preco e 'de' precisam ser maiores que zero.", file=sys.stderr)
-        return 2
-    if args.preco >= args.de:
-        print(
-            f"O preco (R$ {args.preco:.2f}) precisa ser MENOR que o de "
-            f"(R$ {args.de:.2f}) -- sem queda nao ha oferta.",
-            file=sys.stderr,
-        )
-        return 2
-
-    desconto = (args.de - args.preco) / args.de * 100
-    link = link_de_afiliado(asin, tag)
-    offer = Offer(
-        source="amazon",
-        external_id=asin,
-        title=args.titulo.strip(),
-        price=args.preco,
-        url=link,
-        original_price=args.de,
-        image_url=None if args.sem_imagem else (args.imagem or imagem_do_asin(asin)),
-    )
-    scored = ScoredOffer(
-        offer=offer,
-        baseline=args.de,
-        discount_pct=desconto,
-        observations=0,
-        lowest_ever=False,
-        verified=False,
-    )
-
-    init_db()
-    with connect() as conn:
-        record_offer(conn, offer)
-        save_affiliate_link(conn, offer.product_id, link)
-        recentes = recent_headlines(conn)
-
-    if args.sem_ia:
-        texto = fallback_copy(scored, link)
-    else:
-        try:
-            texto = Copywriter().write(scored, link, None, recentes)
-        except Exception as exc:  # noqa: BLE001
-            logging.getLogger("promo").warning(
-                "Gemini falhou (%s); usando o texto padrao.", exc
-            )
-            texto = fallback_copy(scored, link)
+    offer = scored.offer
+    texto = escrever_texto(scored, usar_ia=not args.sem_ia)
 
     if args.dry_run:
         print(texto)
@@ -557,20 +505,13 @@ def cmd_amazon_add(args: argparse.Namespace) -> int:
         print(f"(dry-run: nada foi enfileirado. Imagem: {offer.image_url or 'nenhuma'})")
         return 0
 
-    with connect() as conn:
-        post_id = create_post(
-            conn,
-            offer.product_id,
-            offer.price,
-            scored.baseline,
-            scored.discount_pct,
-            texto,
-            offer.image_url,
-            verified=False,
-        )
+    post_id = enfileirar(scored, texto)
 
-    print(f"Post {post_id} na fila: {asin} a R$ {args.preco:.2f} (-{desconto:.0f}%)")
-    print(f"Link: {link}")
+    print(
+        f"Post {post_id} na fila: {offer.external_id} a R$ {offer.price:.2f} "
+        f"(-{scored.discount_pct:.0f}%)"
+    )
+    print(f"Link: {offer.url}")
     print("Sai no proximo gotejamento, ou rode `promo flush` para drenar agora.")
     return 0
 

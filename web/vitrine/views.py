@@ -10,7 +10,10 @@ from __future__ import annotations
 import sqlite3
 from datetime import date, datetime
 
+import httpx
+from django.conf import settings
 from django.contrib import messages
+from django.contrib.admin.views.decorators import staff_member_required
 from django.core.cache import cache
 from django.db.models import F, Sum
 from django.db.utils import DatabaseError, OperationalError
@@ -20,7 +23,7 @@ from django.urls import reverse
 from django.utils.html import escape
 from django.views.decorators.http import require_POST
 
-from .forms import InscricaoForm
+from .forms import InscricaoForm, OfertaAmazonForm
 from .models import Clique, Grupo, HistoricoPreco, Post, Produto
 from .precos import montar_curva
 
@@ -579,3 +582,66 @@ def sitemap(request):
         partes.append("  </url>")
     partes.append("</urlset>")
     return HttpResponse("\n".join(partes), content_type="application/xml")
+
+
+@staff_member_required
+def amazon_add(request):
+    """Tela do admin para enfileirar uma oferta da Amazon escolhida à mão.
+
+    Existe porque a Creators API ainda não liberou e o dono vê as ofertas no
+    celular. Sem isto, enfileirar exigiria SSH e uma linha de comando.
+
+    A view NÃO escreve no banco do bot: ela chama o `POST /amazon-add` da API,
+    que é quem grava. O roteador em `comunidade/routers.py` proíbe essa escrita
+    de propósito — um `.save()` acidental corromperia o histórico de preço — e
+    a regra não abre exceção para o backoffice.
+    """
+    formulario = OfertaAmazonForm(request.POST or None)
+    resultado = None
+
+    if request.method == "POST" and formulario.is_valid():
+        dados = formulario.cleaned_data
+        try:
+            resposta = httpx.post(
+                f"{settings.BOT_API_URL.rstrip('/')}/amazon-add",
+                json={
+                    "produto": dados["produto"],
+                    "titulo": dados["titulo"],
+                    "preco": float(dados["preco"]),
+                    "de": float(dados["de"]),
+                    "imagem": dados["imagem"] or None,
+                    "sem_ia": dados["sem_ia"],
+                },
+                headers={"X-API-Key": settings.BOT_API_SECRET},
+                # Generoso porque o Gemini escreve o texto durante a chamada, e
+                # ele leva uns 40s por oferta.
+                timeout=90.0,
+            )
+        except httpx.HTTPError as exc:
+            messages.error(request, f"Não consegui falar com o bot: {exc}")
+        else:
+            if resposta.status_code == 201:
+                resultado = resposta.json()
+                messages.success(
+                    request,
+                    f"Post {resultado['post_id']} na fila: {resultado['asin']} "
+                    f"(-{resultado['desconto_pct']}%). Sai no próximo gotejamento.",
+                )
+                formulario = OfertaAmazonForm()
+            else:
+                # O 422 traz a mensagem do `promo.manual`, que é escrita para
+                # quem digitou. Os outros não trazem nada de útil.
+                detalhe = ""
+                try:
+                    detalhe = resposta.json().get("detail", "")
+                except ValueError:
+                    detalhe = resposta.text[:200]
+                messages.error(
+                    request, f"O bot recusou ({resposta.status_code}): {detalhe}"
+                )
+
+    return render(
+        request,
+        "vitrine/amazon_add.html",
+        {"formulario": formulario, "resultado": resultado, "title": "Oferta da Amazon"},
+    )

@@ -19,9 +19,11 @@ from hmac import compare_digest
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
+from pydantic import BaseModel, Field
 
 from .config import api_secret, api_worker, run_interval_seconds
 from .db import connect, get_meta, hours_since, init_db, stats
+from .manual import OfertaInvalida, enfileirar, escrever_texto, preparar_oferta_amazon
 from .pipeline import run
 from .worker import LAST_ERROR_KEY, LAST_RUN_KEY, loop
 
@@ -102,6 +104,24 @@ def require_key(x_api_key: Annotated[str | None, Header()] = None) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="X-API-Key invalido ou ausente.",
         )
+
+
+class OfertaAmazon(BaseModel):
+    """Uma oferta da Amazon escolhida a mao.
+
+    O preco vem de fora porque a Creators API ainda nao liberou e raspar a
+    Amazon bate no Operating Agreement do Associates. Quem le o preco e uma
+    pessoa -- ver `promo.manual`.
+    """
+
+    produto: str = Field(description="URL do produto na Amazon, ou o ASIN")
+    titulo: str = Field(description="Titulo que sai no post")
+    preco: float = Field(gt=0, description="Preco de agora, em reais")
+    de: float = Field(gt=0, description="Preco anunciado antes do desconto")
+    tag: str | None = Field(default=None, description="Tag de associado")
+    imagem: str | None = Field(default=None, description="URL da imagem")
+    sem_imagem: bool = False
+    sem_ia: bool = False
 
 
 def create_app(worker_enabled: bool = True) -> FastAPI:
@@ -195,6 +215,49 @@ def create_app(worker_enabled: bool = True) -> FastAPI:
 
         threading.Thread(target=rodar_e_liberar, name="promo-run", daemon=True).start()
         return {"status": "aceito", "detalhe": "Rodada iniciada em background."}
+
+    @app.post(
+        "/amazon-add",
+        tags=["pipeline"],
+        status_code=status.HTTP_201_CREATED,
+        dependencies=[Depends(require_key)],
+    )
+    def amazon_add(oferta: OfertaAmazon) -> dict[str, Any]:
+        """Enfileira uma oferta da Amazon escolhida a mao.
+
+        Existe para o admin do site poder enfileirar sem escrever no banco do
+        bot. O roteador em `web/comunidade/routers.py` proibe essa escrita de
+        proposito -- um `.save()` acidental corromperia o historico de preco --
+        e a regra vale tambem para o que o dono digita. Entao o site pede, e
+        quem grava continua sendo o dono do schema.
+
+        Sincrono, diferente do /run: nao ha gotejamento aqui, so uma insercao.
+        Quem chama precisa da resposta para saber se o texto ficou bom.
+        """
+        try:
+            scored = preparar_oferta_amazon(
+                produto=oferta.produto,
+                titulo=oferta.titulo,
+                preco=oferta.preco,
+                de=oferta.de,
+                tag=oferta.tag,
+                imagem=oferta.imagem,
+                sem_imagem=oferta.sem_imagem,
+            )
+        except OfertaInvalida as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+
+        texto = escrever_texto(scored, usar_ia=not oferta.sem_ia)
+        post_id = enfileirar(scored, texto)
+        return {
+            "post_id": post_id,
+            "asin": scored.offer.external_id,
+            "link": scored.offer.url,
+            "desconto_pct": round(scored.discount_pct, 1),
+            "texto": texto,
+        }
 
     return app
 
