@@ -462,6 +462,74 @@ def cmd_link(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_cupons(args: argparse.Namespace) -> int:
+    """Mostra os cupons vigentes e em que produto cada um cairia."""
+    from .config import MercadoLivreConfig
+    from .pipeline import cupom_para, cupons_vigentes, load_coupons
+    from .sources.ml_cupons import SessionExpired, buscar
+
+    if args.atualizar:
+        try:
+            lidos = buscar(MercadoLivreConfig.load().affiliate_cookie)
+        except SessionExpired as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(f"{len(lidos)} cupom(ns) publicavel(is) no painel do ML:\n")
+        for c in lidos:
+            print(f"  {c.code}  {c.titulo}")
+            print(
+                f"      {c.desconto:g}{'%' if c.tipo == 'PERCENT' else ' BRL'} | "
+                f"minimo R$ {c.minimo:g} | teto R$ {c.teto:g} | ate {c.ate} | "
+                f"{len(c.categorias)} categoria(s)"
+            )
+        if not lidos:
+            print("  (nenhum com codigo digitavel agora -- o resto do painel e")
+            print("   cupom de ativacao, que nao da para publicar)")
+
+    cupons = cupons_vigentes()
+    do_watchlist = len(load_coupons())
+    print(
+        f"\nEm uso agora: {len(cupons)} "
+        f"({len(cupons) - do_watchlist} do painel, {do_watchlist} do watchlist.json)"
+    )
+
+    if args.testar:
+        init_db()
+        with connect() as conn:
+            produtos = conn.execute(
+                "SELECT id, title, category FROM products "
+                "WHERE source = 'mercadolivre' ORDER BY last_seen_at DESC LIMIT ?",
+                (args.testar,),
+            ).fetchall()
+
+        from .models import Offer
+
+        print(f"\nComo cairia nos {len(produtos)} produtos mais recentes:")
+        acertos = 0
+        for row in produtos:
+            fingida = Offer(
+                source="mercadolivre",
+                external_id=row["id"].split(":")[-1],
+                title=row["title"],
+                price=999.0,  # acima de qualquer minimo, para isolar a categoria
+                url="",
+                category=row["category"],
+            )
+            codigo = cupom_para(fingida, cupons)
+            if codigo:
+                acertos += 1
+                print(f"  {codigo:<16} {row['category'] or '(sem categoria)':<12} "
+                      f"{row['title'][:46]}")
+        print(f"\n{acertos} de {len(produtos)} receberiam cupom.")
+        sem_categoria = sum(1 for r in produtos if not r["category"])
+        if sem_categoria:
+            print(
+                f"{sem_categoria} sem `category` no banco -- esses nunca recebem "
+                "cupom de categoria, por seguranca."
+            )
+    return 0
+
+
 def cmd_amazon_add(args: argparse.Namespace) -> int:
     """Enfileira uma oferta da Amazon escolhida a mao.
 
@@ -621,6 +689,7 @@ COMMANDS = {
     "serve": (cmd_serve, "Sobe a API (health check + /run) com o loop junto"),
     "flush": (cmd_flush, "Reenvia os posts que ficaram na fila"),
     "link": (cmd_link, "Salva o link de afiliado de um produto (manual)"),
+    "cupons": (cmd_cupons, "Lista os cupons vigentes do ML e onde eles caem"),
     "amazon-add": (
         cmd_amazon_add,
         "Enfileira uma oferta da Amazon escolhida a mao (sem a API)",
@@ -678,6 +747,18 @@ def main(argv: list[str] | None = None) -> int:
         if name == "link":
             sub.add_argument("product_id", help="ID do anuncio, ex.: MLB3953571145")
             sub.add_argument("url", help="Link gerado no Link Builder do ML")
+        if name == "cupons":
+            sub.add_argument(
+                "--atualizar",
+                action="store_true",
+                help="Rele o painel do ML agora, em vez de usar o cache de 6h",
+            )
+            sub.add_argument(
+                "--testar",
+                type=int,
+                metavar="N",
+                help="Mostra em quais dos N produtos mais recentes o cupom cairia",
+            )
         if name == "amazon-add":
             sub.add_argument(
                 "produto", help="URL do produto na Amazon, ou o ASIN (ex.: B07DVJC66X)"

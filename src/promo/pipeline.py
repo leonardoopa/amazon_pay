@@ -141,14 +141,44 @@ def load_coupons(path: Path | None = None) -> list[dict]:
         codigo = (cupom.get("code") or "").strip()
         if not codigo:
             continue
+
+        # Falha FECHADO nos dois eixos, e isto nao e zelo abstrato. Medido em
+        # 08/09/2026 sobre os 37 cupons do ML publicados no Promobit: 12 (32%)
+        # vinham com o campo de instrucoes literalmente "-", sem regra, sem
+        # data, sem minimo -- e um deles era o OFERTASEMPRE, justamente um dos
+        # que o grupo concorrente postou.
+        #
+        # A primeira versao disto tratava ausencia como permissao: sem `ate`
+        # nunca vencia, sem `temas` valia para tudo. Com um terco da fonte sem
+        # regra nenhuma, esses dois defaults produziam exatamente o post que o
+        # cupom deveria evitar -- a pessoa clica, o codigo nao aplica, e a
+        # desconfianca sobra para o grupo.
         ate = cupom.get("ate")
-        if ate and date.fromisoformat(ate) < hoje:
+        if not ate:
+            log.warning(
+                "Cupom %s sem `ate`; nao entra. Cupom do ML vence, e alguns em "
+                "horas -- sem data nao da para saber se ainda vale.",
+                codigo,
+            )
+            continue
+        if date.fromisoformat(ate) < hoje:
             log.info("Cupom %s venceu em %s; nao entra nos posts.", codigo, ate)
             continue
+
+        temas = [sem_acento(t) for t in cupom.get("temas") or []]
+        if not temas and not cupom.get("geral"):
+            log.warning(
+                "Cupom %s sem `temas` e sem `geral: true`; nao entra. Cupom do "
+                "ML costuma valer so em algumas categorias, e a fonte publica "
+                "quase nunca diz quais.",
+                codigo,
+            )
+            continue
+
         validos.append(
             {
                 "code": codigo,
-                "temas": [sem_acento(t) for t in cupom.get("temas") or []],
+                "temas": temas,
                 "minimo": float(cupom.get("minimo") or 0),
             }
         )
@@ -174,12 +204,92 @@ def cupom_para(offer: Offer, cupons: list[dict]) -> str | None:
     """
     if offer.source != "mercadolivre":
         return None
-    servem = [
-        c["code"]
-        for c in cupons
-        if offer.price >= c["minimo"] and (not c["temas"] or tem_tema(offer.title, c["temas"]))
-    ]
+    servem = [c["code"] for c in cupons if _serve(offer, c)]
     return " ou ".join(servem) if servem else None
+
+
+def _serve(offer: Offer, cupom: dict) -> bool:
+    """Este cupom vale para esta oferta?
+
+    Tres regras, na ordem em que o ML as aplica.
+
+    `categorias` sao IDs do proprio ML (MLB1430 e Calcados, Roupas e Bolsas), e
+    quando existem elas mandam: e a regra oficial da campanha, nao uma
+    heuristica nossa. O cupom OFERTASEMPRE, lido do painel em 08/09/2026, trazia
+    vinte delas.
+
+    Produto sem categoria conhecida NAO recebe cupom de categoria. Falha
+    fechado de proposito: hoje so 24,8% da carteira tem `category` preenchido
+    -- a vitrine, que e 89% do que sai, nao devolve esse campo --, e adivinhar
+    pelo titulo aqui produziria justamente o post que manda a pessoa tentar um
+    codigo que nao aplica.
+
+    `temas` continua valendo para cupom cadastrado a mao, onde nao ha ID.
+    """
+    if offer.price < cupom.get("minimo", 0):
+        return False
+
+    categorias = cupom.get("categorias") or []
+    if categorias:
+        return bool(offer.category) and offer.category in categorias
+
+    temas = cupom.get("temas") or []
+    return not temas or tem_tema(offer.title, temas)
+
+
+CUPONS_META = "cupons_ml"
+CUPONS_HORAS = 6.0
+
+
+def cupons_vigentes(path: Path | None = None) -> list[dict]:
+    """Os cupons do painel do ML, mais os cadastrados a mao no watchlist.
+
+    Os do painel sao relidos a cada `CUPONS_HORAS` e guardados no banco. Seis
+    horas porque cupom de campanha dura dias, nao minutos -- e porque cada
+    leitura sao quatro requisicoes a uma pagina interna do ML, que nao e
+    contrato publico e nao merece trafego de rodada.
+
+    Falha nao-fatal em toda ponta: sem painel, valem os do watchlist; sem
+    nenhum dos dois, o post sai sem cupom, que foi o estado de todos os 2.953
+    posts entre 29/08 e 08/09.
+    """
+    do_painel: list[dict] = []
+    try:
+        with connect() as conn:
+            idade = hours_since(conn, CUPONS_META)
+            guardados = get_meta(conn, CUPONS_META)
+
+            if idade is None or idade >= CUPONS_HORAS:
+                from .sources.ml_cupons import SessionExpired, buscar
+
+                try:
+                    lidos = buscar(MercadoLivreConfig.load().affiliate_cookie)
+                    do_painel = [c.como_dict() for c in lidos]
+                    set_meta(conn, CUPONS_META, json.dumps(do_painel))
+                except SessionExpired as exc:
+                    # O cookie cai sozinho de tempos em tempos. Segue com o que
+                    # estava guardado -- eles tem `ate` proprio e expiram sozinhos.
+                    log.warning("Cupons do ML: %s", exc)
+                    do_painel = json.loads(guardados) if guardados else []
+                except Exception as exc:  # noqa: BLE001 - painel nao e contrato
+                    log.warning("Cupons do ML falharam (%s); usando o que havia.", exc)
+                    do_painel = json.loads(guardados) if guardados else []
+            elif guardados:
+                do_painel = json.loads(guardados)
+    except Exception as exc:  # noqa: BLE001 - cupom nunca derruba a rodada
+        log.warning("Nao consegui ler os cupons guardados: %s", exc)
+
+    # O `ate` e reconferido aqui, e nao so na leitura: o cache tem seis horas
+    # de vida e um cupom pode vencer dentro dessa janela.
+    hoje = date.today()
+    frescos = [
+        c for c in do_painel if c.get("ate") and date.fromisoformat(c["ate"]) >= hoje
+    ]
+    if len(frescos) < len(do_painel):
+        log.info("%d cupom(ns) do painel venceram desde a ultima leitura.",
+                 len(do_painel) - len(frescos))
+
+    return frescos + load_coupons(path)
 
 
 def load_coupon(path: Path | None = None) -> str | None:
@@ -885,19 +995,43 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             if scored is not None:
                 repasses.append(scored)
 
-    # Frete gratis desempata, e nao ordena: ele entra depois do desconto, entao
-    # so decide entre duas ofertas que ja empataram no que interessa primeiro.
+    # A ordem tem tres criterios, do que mais manda para o que so desempata.
     #
-    # Vale a pena porque o custo do frete e o que some do preco anunciado na
-    # hora do checkout -- oferta boa com frete de R$ 25 e pior do que oferta
-    # media com frete zero, e o grupo so descobre isso depois de clicar. Medido
-    # em 06/09/2026, 74,3% da vitrine tem frete gratis, entao o desempate tem
-    # material de sobra sem virar filtro que corta um quarto do volume.
+    # 1. PRIORITARIO COM CUPOM vai na frente de tudo. E a unica oferta que
+    #    junta as duas coisas que o grupo responde -- um tema que ele pediu, e
+    #    um desconto a mais que ninguem ve no anuncio. Sao raros por
+    #    construcao: o cupom cobre 20 categorias, exige minimo, e so 24,8% da
+    #    carteira tem `category` (a vitrine, que e 89% do que sai, nao devolve
+    #    esse campo). Medido em 08/09/2026, 34 de 2.964 posts enviados teriam
+    #    recebido cupom. Quando um aparece, ele nao pode perder a vaga para
+    #    mais um desconto grande de um produto qualquer.
+    #
+    # 2. Desconto, como sempre foi.
+    #
+    # 3. Frete gratis DESEMPATA, e nao ordena. O custo do frete e o que some do
+    #    preco anunciado na hora do checkout -- oferta boa com frete de R$ 25 e
+    #    pior que oferta media com frete zero, e o grupo so descobre depois de
+    #    clicar. Medido em 06/09/2026, 74,3% da vitrine tem frete gratis, entao
+    #    o desempate tem material de sobra sem virar filtro.
+    cupons = cupons_vigentes()
+
     def ordem(s: ScoredOffer) -> tuple:
-        return (s.discount_pct, s.offer.free_shipping)
+        premiada = bool(cupom_para(s.offer, cupons)) and e_prioritaria(s.offer, temas)
+        return (premiada, s.discount_pct, s.offer.free_shipping)
 
     picked.sort(key=ordem, reverse=True)
     repasses.sort(key=ordem, reverse=True)
+
+    premiadas = sum(
+        1
+        for s in picked + repasses
+        if cupom_para(s.offer, cupons) and e_prioritaria(s.offer, temas)
+    )
+    if premiadas:
+        log.info(
+            "%d oferta(s) prioritaria(s) COM cupom foram para o topo da fila.",
+            premiadas,
+        )
 
     # Contrapressao: a coleta produz mais rapido do que a entrega gotejada
     # drena. Sem teto, a fila vira um deposito e o grupo passa a receber oferta
@@ -1012,9 +1146,8 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         return []
 
     copywriter = Copywriter()
-    # A lista inteira, e nao um cupom so: qual deles serve depende do produto
-    # -- categoria, valor minimo, e a loja de origem. Ver `cupom_para`.
-    cupons = load_coupons()
+    # `cupons` ja veio da ordenacao la em cima -- a mesma lista, porque
+    # reconsultar aqui poderia mudar o que a fila prometeu enquanto ordenava.
     with connect() as conn:
         recentes = recent_headlines(conn)
     drafts: list[tuple[ScoredOffer, str]] = []
