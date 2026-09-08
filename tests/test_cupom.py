@@ -367,3 +367,96 @@ def test_cupom_do_painel_tambem_nao_sai_na_amazon():
     )
 
     assert cupom_para(creatina, [OFERTASEMPRE]) is None
+
+
+# ---------- prioritario com cupom vai na frente ----------
+#
+# Pedido em 08/09/2026. A justificativa esta na raridade: o cupom cobre 20
+# categorias, exige minimo, e so 24,8% da carteira tem `category` -- a
+# vitrine, que e 89% do que sai, nao devolve esse campo. Medido no historico,
+# 34 de 2.964 posts enviados teriam recebido cupom. Quando um desses aparece,
+# ele nao pode perder a vaga para mais um desconto grande qualquer.
+
+
+def ordenar_como_a_rodada(ofertas, cupons, temas):
+    """Reproduz a chave de ordenacao de `run`."""
+    from promo.pipeline import cupom_para, e_prioritaria
+
+    def ordem(s):
+        premiada = bool(cupom_para(s.offer, cupons)) and e_prioritaria(s.offer, temas)
+        return (premiada, s.discount_pct, s.offer.free_shipping)
+
+    return [s.offer.external_id for s in sorted(ofertas, key=ordem, reverse=True)]
+
+
+def pontuada(external_id, titulo, desconto, categoria=None, preco=100.0):
+    from promo.models import ScoredOffer
+
+    return ScoredOffer(
+        offer=Offer(
+            source="mercadolivre",
+            external_id=external_id,
+            title=titulo,
+            price=preco,
+            url="https://exemplo",
+            category=categoria,
+        ),
+        baseline=preco * 2,
+        discount_pct=desconto,
+        observations=9,
+        lowest_ever=False,
+        verified=True,
+    )
+
+
+TEMAS = ["nike", "adidas", "whey"]
+CUPOM = {"code": "OFERTASEMPRE", "minimo": 79.0, "categorias": ["MLB1430"], "temas": []}
+
+
+def test_prioritario_com_cupom_passa_na_frente_de_desconto_maior():
+    """40% num produto qualquer perde para 20% num tema com cupom."""
+    ofertas = [
+        pontuada("A", "Cafeteira Eletrica", 40.0, "MLB1276", 200.0),
+        pontuada("B", "Tenis adidas Runfalcon", 20.0, "MLB1430", 129.0),
+    ]
+
+    assert ordenar_como_a_rodada(ofertas, [CUPOM], TEMAS)[0] == "B"
+
+
+def test_prioritario_sem_cupom_nao_ganha_o_topo():
+    """Nao e o tema sozinho que sobe: e a soma das duas coisas."""
+    ofertas = [
+        pontuada("A", "Cafeteira Eletrica", 40.0, "MLB1276", 200.0),
+        pontuada("B", "Tenis adidas Runfalcon", 20.0, "MLB1276", 129.0),
+    ]
+
+    assert ordenar_como_a_rodada(ofertas, [CUPOM], TEMAS)[0] == "A"
+
+
+def test_cupom_sem_tema_prioritario_nao_ganha_o_topo():
+    """Nem o cupom sozinho."""
+    ofertas = [
+        pontuada("A", "Cafeteira Eletrica", 40.0, "MLB1276", 200.0),
+        pontuada("B", "Camisa Social Lisa", 20.0, "MLB1430", 129.0),
+    ]
+
+    assert ordenar_como_a_rodada(ofertas, [CUPOM], TEMAS)[0] == "A"
+
+
+def test_entre_duas_premiadas_o_desconto_decide():
+    ofertas = [
+        pontuada("A", "Tenis nike Revolution", 15.0, "MLB1430", 129.0),
+        pontuada("B", "Tenis adidas Runfalcon", 35.0, "MLB1430", 129.0),
+    ]
+
+    assert ordenar_como_a_rodada(ofertas, [CUPOM], TEMAS) == ["B", "A"]
+
+
+def test_sem_cupom_nenhum_a_ordem_e_a_de_antes():
+    """Desligar cupom nao pode reordenar a fila."""
+    ofertas = [
+        pontuada("A", "Tenis adidas Runfalcon", 20.0, "MLB1430", 129.0),
+        pontuada("B", "Cafeteira Eletrica", 40.0, "MLB1276", 200.0),
+    ]
+
+    assert ordenar_como_a_rodada(ofertas, [], TEMAS) == ["B", "A"]

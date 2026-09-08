@@ -995,19 +995,43 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             if scored is not None:
                 repasses.append(scored)
 
-    # Frete gratis desempata, e nao ordena: ele entra depois do desconto, entao
-    # so decide entre duas ofertas que ja empataram no que interessa primeiro.
+    # A ordem tem tres criterios, do que mais manda para o que so desempata.
     #
-    # Vale a pena porque o custo do frete e o que some do preco anunciado na
-    # hora do checkout -- oferta boa com frete de R$ 25 e pior do que oferta
-    # media com frete zero, e o grupo so descobre isso depois de clicar. Medido
-    # em 06/09/2026, 74,3% da vitrine tem frete gratis, entao o desempate tem
-    # material de sobra sem virar filtro que corta um quarto do volume.
+    # 1. PRIORITARIO COM CUPOM vai na frente de tudo. E a unica oferta que
+    #    junta as duas coisas que o grupo responde -- um tema que ele pediu, e
+    #    um desconto a mais que ninguem ve no anuncio. Sao raros por
+    #    construcao: o cupom cobre 20 categorias, exige minimo, e so 24,8% da
+    #    carteira tem `category` (a vitrine, que e 89% do que sai, nao devolve
+    #    esse campo). Medido em 08/09/2026, 34 de 2.964 posts enviados teriam
+    #    recebido cupom. Quando um aparece, ele nao pode perder a vaga para
+    #    mais um desconto grande de um produto qualquer.
+    #
+    # 2. Desconto, como sempre foi.
+    #
+    # 3. Frete gratis DESEMPATA, e nao ordena. O custo do frete e o que some do
+    #    preco anunciado na hora do checkout -- oferta boa com frete de R$ 25 e
+    #    pior que oferta media com frete zero, e o grupo so descobre depois de
+    #    clicar. Medido em 06/09/2026, 74,3% da vitrine tem frete gratis, entao
+    #    o desempate tem material de sobra sem virar filtro.
+    cupons = cupons_vigentes()
+
     def ordem(s: ScoredOffer) -> tuple:
-        return (s.discount_pct, s.offer.free_shipping)
+        premiada = bool(cupom_para(s.offer, cupons)) and e_prioritaria(s.offer, temas)
+        return (premiada, s.discount_pct, s.offer.free_shipping)
 
     picked.sort(key=ordem, reverse=True)
     repasses.sort(key=ordem, reverse=True)
+
+    premiadas = sum(
+        1
+        for s in picked + repasses
+        if cupom_para(s.offer, cupons) and e_prioritaria(s.offer, temas)
+    )
+    if premiadas:
+        log.info(
+            "%d oferta(s) prioritaria(s) COM cupom foram para o topo da fila.",
+            premiadas,
+        )
 
     # Contrapressao: a coleta produz mais rapido do que a entrega gotejada
     # drena. Sem teto, a fila vira um deposito e o grupo passa a receber oferta
@@ -1122,9 +1146,8 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         return []
 
     copywriter = Copywriter()
-    # A lista inteira, e nao um cupom so: qual deles serve depende do produto
-    # -- categoria, valor minimo, e a loja de origem. Ver `cupom_para`.
-    cupons = cupons_vigentes()
+    # `cupons` ja veio da ordenacao la em cima -- a mesma lista, porque
+    # reconsultar aqui poderia mudar o que a fila prometeu enquanto ordenava.
     with connect() as conn:
         recentes = recent_headlines(conn)
     drafts: list[tuple[ScoredOffer, str]] = []
