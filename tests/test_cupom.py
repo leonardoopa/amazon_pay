@@ -274,3 +274,96 @@ def test_formato_antigo_sem_data_tambem_nao_entra(tmp_path):
     caminho = escrever(tmp_path, {"code": "VALEMAIS"})
 
     assert load_coupons(caminho) == []
+
+
+# ---------- casamento por ID de categoria ----------
+#
+# O cupom lido do painel traz a regra como ID do ML (MLB1430 e "Calcados,
+# Roupas e Bolsas"), que e o mesmo vocabulario de `products.category`. Isso e
+# a regra oficial da campanha, nao uma heuristica de titulo -- e por isso ela
+# manda quando existe.
+
+
+def com_categoria(titulo: str, categoria: str | None, preco: float = 100.0) -> Offer:
+    return Offer(
+        source="mercadolivre",
+        external_id="X1",
+        title=titulo,
+        price=preco,
+        url="https://exemplo/x1",
+        category=categoria,
+    )
+
+
+OFERTASEMPRE = {
+    "code": "OFERTASEMPRE",
+    "minimo": 79.0,
+    "categorias": ["MLB1430", "MLB107292", "MLB188064"],
+    "temas": [],
+}
+
+
+def test_produto_na_categoria_do_cupom_recebe():
+    """MLB1430 e Calcados, Roupas e Bolsas -- uma das vinte do OFERTASEMPRE."""
+    tenis = com_categoria("Tenis adidas Runfalcon", "MLB1430", 129.0)
+
+    assert cupom_para(tenis, [OFERTASEMPRE]) == "OFERTASEMPRE"
+
+
+def test_produto_de_outra_categoria_nao_recebe():
+    secador = com_categoria("Secador Taiff Easy 1700w", "MLB1276", 133.0)
+
+    assert cupom_para(secador, [OFERTASEMPRE]) is None
+
+
+def test_produto_sem_categoria_nao_recebe_cupom_de_categoria():
+    """Falha fechado, e isso pesa: so 24,8% da carteira tem `category`, porque
+    a vitrine -- 89% do que sai -- nao devolve o campo. Adivinhar pelo titulo
+    aqui mandaria a pessoa tentar um codigo que nao aplica."""
+    sem = com_categoria("Tenis adidas Runfalcon", None, 129.0)
+
+    assert cupom_para(sem, [OFERTASEMPRE]) is None
+
+
+def test_categoria_certa_mas_abaixo_do_minimo_nao_recebe():
+    """O minimo do OFERTASEMPRE e R$ 79."""
+    meia = com_categoria("Kit 3 Meias", "MLB1430", 39.90)
+
+    assert cupom_para(meia, [OFERTASEMPRE]) is None
+
+
+def test_a_categoria_manda_quando_existe():
+    """Com `categorias` preenchido, `temas` nao e consultado -- senao a regra
+    oficial da campanha perderia para o nosso palpite."""
+    cupom = dict(OFERTASEMPRE, temas=["secador"])
+    secador = com_categoria("Secador Taiff", "MLB1276", 133.0)
+
+    assert cupom_para(secador, [cupom]) is None
+
+
+def test_cupom_do_watchlist_sem_categoria_continua_por_tema():
+    """Cupom cadastrado a mao nao tem ID: a regra dele e o tema."""
+    manual = {"code": "PAGUEMENOS", "minimo": 29.0, "categorias": [], "temas": ["cueca"]}
+    cueca = com_categoria("Kit 5 Cuecas Boxer", None, 40.0)
+
+    assert cupom_para(cueca, [manual]) == "PAGUEMENOS"
+
+
+def test_painel_e_watchlist_convivem_na_mesma_lista():
+    manual = {"code": "MANUAL", "minimo": 0.0, "categorias": [], "temas": []}
+    tenis = com_categoria("Tenis adidas", "MLB1430", 129.0)
+
+    assert cupom_para(tenis, [OFERTASEMPRE, manual]) == "OFERTASEMPRE ou MANUAL"
+
+
+def test_cupom_do_painel_tambem_nao_sai_na_amazon():
+    creatina = Offer(
+        source="amazon",
+        external_id="B07DVJC66X",
+        title="Creatina 300g",
+        price=129.0,
+        url="https://exemplo",
+        category="MLB1430",
+    )
+
+    assert cupom_para(creatina, [OFERTASEMPRE]) is None
