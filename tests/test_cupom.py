@@ -460,3 +460,38 @@ def test_sem_cupom_nenhum_a_ordem_e_a_de_antes():
     ]
 
     assert ordenar_como_a_rodada(ofertas, [], TEMAS) == ["B", "A"]
+
+
+def test_produto_sem_categoria_recebe_pelo_tema_derivado():
+    """A segunda via que faz o cupom alcancar a vitrine, que e 89% do que sai
+    e nao devolve categoria. O tema saiu do nome oficial da categoria da
+    campanha, nao de palpite."""
+    cupom = dict(OFERTASEMPRE, temas=["camiseta", "legging", "short"])
+    da_vitrine = com_categoria("Kit 5 Camisetas Hering Basicas", None, 129.0)
+
+    assert cupom_para(da_vitrine, [cupom]) == "OFERTASEMPRE"
+
+
+def test_produto_sem_categoria_e_fora_do_tema_nao_recebe():
+    cupom = dict(OFERTASEMPRE, temas=["camiseta", "legging"])
+    da_vitrine = com_categoria("Cafeteira Eletrica Mondial", None, 129.0)
+
+    assert cupom_para(da_vitrine, [cupom]) is None
+
+
+def test_com_categoria_o_id_decide_e_o_tema_nao_e_consultado():
+    """O ID e a regra oficial: se o produto tem categoria e ela nao esta na
+    campanha, nao adianta o titulo casar um tema."""
+    cupom = dict(OFERTASEMPRE, temas=["camiseta"])
+    camiseta_fora = com_categoria("Camiseta Tecnica", "MLB1276", 129.0)
+
+    assert cupom_para(camiseta_fora, [cupom]) is None
+
+
+def test_cupom_de_categoria_sem_tema_nao_alcanca_produto_sem_categoria():
+    """Quando a API de categorias esta fora e nao ha tema derivado, falha
+    fechado em vez de publicar codigo que talvez nao aplique."""
+    cupom = dict(OFERTASEMPRE, temas=[])
+    da_vitrine = com_categoria("Kit 5 Camisetas Hering", None, 129.0)
+
+    assert cupom_para(da_vitrine, [cupom]) is None

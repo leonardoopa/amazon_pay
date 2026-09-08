@@ -213,27 +213,34 @@ def _serve(offer: Offer, cupom: dict) -> bool:
 
     Tres regras, na ordem em que o ML as aplica.
 
-    `categorias` sao IDs do proprio ML (MLB1430 e Calcados, Roupas e Bolsas), e
-    quando existem elas mandam: e a regra oficial da campanha, nao uma
-    heuristica nossa. O cupom OFERTASEMPRE, lido do painel em 08/09/2026, trazia
-    vinte delas.
+    `categorias` sao IDs do proprio ML (MLB1430 e Calcados, Roupas e Bolsas). E
+    a regra oficial da campanha, entao quando o produto TEM categoria ela
+    decide sozinha, e nem se consulta o titulo.
 
-    Produto sem categoria conhecida NAO recebe cupom de categoria. Falha
-    fechado de proposito: hoje so 24,8% da carteira tem `category` preenchido
-    -- a vitrine, que e 89% do que sai, nao devolve esse campo --, e adivinhar
-    pelo titulo aqui produziria justamente o post que manda a pessoa tentar um
-    codigo que nao aplica.
+    Quando o produto chega SEM categoria, cai para os temas. Isso nao e um
+    atalho: e o unico caminho para 89% do que o grupo recebe. A vitrine nao
+    devolve categoria em campo nenhum, e as duas vias de conserto estao
+    fechadas -- /items/{id} responde 403 (8 de 8) e a pagina do produto vem
+    bloqueada. Sem esta segunda via, o cupom alcancaria 34 posts em 2.964.
 
-    `temas` continua valendo para cupom cadastrado a mao, onde nao ha ID.
+    Os temas do cupom do painel nao sao chute: saem do NOME das categorias que
+    o proprio ML declarou. As vinte do OFERTASEMPRE sao todas roupa -- Camisas,
+    Saias, Calcas, Leggings, Ternos, Bermudas e Shorts --, e viram "camisa",
+    "saia", "calca", "legging", "terno", "bermuda", "short". Ver
+    `enriquecer_com_temas`.
     """
     if offer.price < cupom.get("minimo", 0):
         return False
 
     categorias = cupom.get("categorias") or []
-    if categorias:
-        return bool(offer.category) and offer.category in categorias
+    if categorias and offer.category:
+        return offer.category in categorias
 
     temas = cupom.get("temas") or []
+    if categorias and not temas:
+        # Cupom de categoria, produto sem categoria e sem tema derivado: nao ha
+        # como afirmar que se aplica. Falha fechado.
+        return False
     return not temas or tem_tema(offer.title, temas)
 
 
@@ -260,11 +267,15 @@ def cupons_vigentes(path: Path | None = None) -> list[dict]:
             guardados = get_meta(conn, CUPONS_META)
 
             if idade is None or idade >= CUPONS_HORAS:
-                from .sources.ml_cupons import SessionExpired, buscar
+                from .sources.ml_cupons import (
+                    SessionExpired,
+                    buscar,
+                    enriquecer_com_temas,
+                )
 
                 try:
                     lidos = buscar(MercadoLivreConfig.load().affiliate_cookie)
-                    do_painel = [c.como_dict() for c in lidos]
+                    do_painel = enriquecer_com_temas(lidos)
                     set_meta(conn, CUPONS_META, json.dumps(do_painel))
                 except SessionExpired as exc:
                     # O cookie cai sozinho de tempos em tempos. Segue com o que

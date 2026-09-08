@@ -166,3 +166,105 @@ def test_o_dict_sai_no_formato_do_watchlist():
 
 def test_lista_vazia_nao_estoura():
     assert normalizar([]) == []
+
+
+# ---------- categoria vira tema de titulo ----------
+#
+# A vitrine e 89% do que o grupo recebe e nao devolve categoria em campo
+# nenhum. As duas vias de conserto estao fechadas: /items/{id} responde 403
+# (8 de 8 testados) e a pagina do produto vem bloqueada (67 KB uniformes, sem
+# breadcrumb). Sem uma segunda via, o cupom alcancaria 34 posts em 2.964.
+#
+# Os temas nao sao chute: saem do NOME que o proprio ML da a cada categoria da
+# campanha. As 20 do OFERTASEMPRE, lidas em 08/09/2026, sao todas roupa.
+
+
+def test_categoria_simples_vira_tema():
+    from promo.sources.ml_cupons import temas_de_categoria
+
+    assert temas_de_categoria("Calcados, Roupas e Bolsas > Camisas") == ["camisa"]
+
+
+def test_categoria_composta_vira_dois_temas():
+    from promo.sources.ml_cupons import temas_de_categoria
+
+    assert temas_de_categoria("Calçados, Roupas e Bolsas > Camisetas e Regatas") == [
+        "camiseta",
+        "regata",
+    ]
+
+
+def test_so_a_folha_do_caminho_conta():
+    """O pai e generico demais: "Calcados, Roupas e Bolsas" casaria com meio
+    mundo, inclusive com bolsa, que esta na lista de exclusao."""
+    from promo.sources.ml_cupons import temas_de_categoria
+
+    temas = temas_de_categoria("Calçados, Roupas e Bolsas > Leggings")
+
+    assert temas == ["legging"]
+    assert "bolsa" not in temas
+
+
+def test_conectivo_nao_vira_tema():
+    """"Bermudas e Shorts" com o "e" dentro casaria com qualquer titulo."""
+    from promo.sources.ml_cupons import temas_de_categoria
+
+    assert "e" not in temas_de_categoria("Roupas > Bermudas e Shorts")
+
+
+def test_plural_em_oes_singulariza():
+    from promo.sources.ml_cupons import temas_de_categoria
+
+    assert temas_de_categoria("Roupas > Macacões") == ["macacao"]
+
+
+def test_acento_some_do_tema():
+    from promo.sources.ml_cupons import temas_de_categoria
+
+    assert temas_de_categoria("Roupas > Calças") == ["calca"]
+
+
+def test_palavra_generica_de_vestuario_nao_vira_tema():
+    """"Moda Fitness" nao pode virar o tema "moda", que casa com tudo."""
+    from promo.sources.ml_cupons import temas_de_categoria
+
+    assert temas_de_categoria("Calçados > Moda Fitness") == ["fitness"]
+
+
+def test_categoria_desconhecida_nao_da_tema():
+    from promo.sources.ml_cupons import temas_de_categoria
+
+    assert temas_de_categoria("") == []
+
+
+def test_enriquecer_junta_os_temas_de_todas_as_categorias(monkeypatch):
+    from promo.sources import ml_cupons
+
+    monkeypatch.setattr(
+        ml_cupons,
+        "nomes_das_categorias",
+        lambda ids, **kw: {
+            "MLB31447": "Calçados, Roupas e Bolsas > Camisetas e Regatas",
+            "MLB278018": "Calçados, Roupas e Bolsas > Leggings",
+        },
+    )
+    cupom = normalizar([cru(segmentations={"categories": ["MLB31447", "MLB278018"]})])
+
+    enriquecido = ml_cupons.enriquecer_com_temas(cupom)[0]
+
+    assert enriquecido["temas"] == ["camiseta", "regata", "legging"]
+    assert enriquecido["categorias"] == ["MLB31447", "MLB278018"]
+
+
+def test_api_de_categoria_fora_do_ar_nao_derruba_o_cupom(monkeypatch):
+    """Sem os nomes, o cupom continua valendo pelo ID -- que e o caminho
+    preciso. O tema e alcance a mais, nao a regra."""
+    from promo.sources import ml_cupons
+
+    monkeypatch.setattr(ml_cupons, "nomes_das_categorias", lambda ids, **kw: {})
+    cupom = normalizar([cru()])
+
+    enriquecido = ml_cupons.enriquecer_com_temas(cupom)[0]
+
+    assert enriquecido["temas"] == []
+    assert enriquecido["code"] == "OFERTASEMPRE"

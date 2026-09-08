@@ -246,3 +246,124 @@ def buscar(cookie: str, timeout: float = 25.0) -> list[Cupom]:
         ", ".join(c.code for c in cupons) or "nenhum",
     )
     return cupons
+
+
+# Conectivos e palavras que nao identificam produto nenhum. Sem tirar isso,
+# "Bermudas e Shorts" viraria o tema "e", que casa com qualquer titulo.
+_VAZIAS_CATEGORIA = {
+    "e", "de", "da", "do", "das", "dos", "para", "com", "em", "a", "o", "as", "os",
+    "moda", "roupa", "roupas", "outros", "outras", "mais",
+}
+
+CATEGORIAS_API = "https://api.mercadolibre.com/categories/{id}"
+
+
+def _tema_da_palavra(palavra: str) -> str:
+    """Singular grosseiro, que e o que basta para casar por substring.
+
+    "camisetas" vira "camiseta", e o titulo "Kit 5 Camisetas Hering" casa
+    mesmo assim porque a comparacao e por pedaco. Nao vale a pena um
+    singularizador de verdade: erro aqui so faz o tema deixar de casar, nunca
+    casar demais.
+    """
+    palavra = palavra.strip().lower()
+    if palavra.endswith("oes"):  # macacoes -> macacao
+        return palavra[:-3] + "ao"
+    # "ss" no fim e palavra que ja esta no singular: fitness, dress. Sem esta
+    # guarda, "Moda Fitness" virava o tema "fitnes", que nao casa com titulo
+    # nenhum -- o cupom simplesmente deixaria de sair, em silencio.
+    if palavra.endswith("s") and not palavra.endswith("ss") and len(palavra) > 3:
+        return palavra[:-1]
+    return palavra
+
+
+def temas_de_categoria(nome: str) -> list[str]:
+    """As palavras do nome da categoria que servem de tema de titulo.
+
+    "Calcados, Roupas e Bolsas > Camisetas e Regatas" vira
+    ["camiseta", "regata"]. So o ULTIMO nivel do caminho interessa: o pai e
+    generico demais e casaria com meio mundo.
+    """
+    folha = nome.split(">")[-1]
+    folha = re.sub(r"[^\w\s]", " ", sem_acento_simples(folha))
+    temas = []
+    for palavra in folha.split():
+        tema = _tema_da_palavra(palavra)
+        if tema and tema not in _VAZIAS_CATEGORIA and len(tema) > 2:
+            temas.append(tema)
+    return temas
+
+
+def sem_acento_simples(texto: str) -> str:
+    """Minusculo e sem diacritico. Copia local para nao importar `db` daqui --
+    este modulo e uma fonte, e fonte nao deve depender do banco."""
+    import unicodedata
+
+    decomposto = unicodedata.normalize("NFKD", texto)
+    return "".join(c for c in decomposto if not unicodedata.combining(c)).casefold()
+
+
+def nomes_das_categorias(ids: list[str], timeout: float = 20.0) -> dict[str, str]:
+    """Nome completo de cada categoria, pela API publica.
+
+    Esta rota AINDA responde -- e das poucas que o ML nao fechou. Medida em
+    08/09/2026: 18 de 20 IDs do OFERTASEMPRE devolveram 200, e as duas que
+    faltaram deram 404 (categoria descontinuada, nao bloqueio).
+
+    Erro aqui e nao-fatal: sem o nome, o cupom continua valendo pelo ID, que e
+    o caminho preciso. Os temas sao o alcance a mais, nao a regra.
+    """
+    nomes: dict[str, str] = {}
+    with httpx.Client(timeout=timeout) as cliente:
+        for cid in ids:
+            try:
+                resposta = cliente.get(CATEGORIAS_API.format(id=cid))
+                if resposta.status_code != 200:
+                    continue
+                caminho = resposta.json().get("path_from_root") or []
+                if caminho:
+                    nomes[cid] = " > ".join(p.get("name", "") for p in caminho)
+            except Exception as exc:  # noqa: BLE001
+                log.debug("Categoria %s nao respondeu: %s", cid, exc)
+    return nomes
+
+
+def enriquecer_com_temas(cupons: list[Cupom]) -> list[dict]:
+    """Traduz as categorias de cada cupom em temas de titulo.
+
+    Existe por um numero: a vitrine e 89% do que o grupo recebe e NAO devolve
+    categoria -- nem no payload dela, nem por /items/{id} (403 em 8 de 8), nem
+    pela pagina do produto (bloqueada). Sem isso o cupom so alcancaria os
+    24,8% da carteira que vem do catalogo, e medido no historico eram 34 posts
+    em 2.964.
+
+    O ID continua mandando quando o produto tem categoria: e a regra oficial.
+    O tema entra como segunda via, para o produto que chegou sem ela.
+
+    As 20 categorias do OFERTASEMPRE, lidas em 08/09/2026, sao todas de roupa
+    -- Camisas, Saias, Calcas, Leggings, Ternos, Bermudas e Shorts, Camisetas
+    e Regatas, Moda Intima. Derivar "camiseta", "legging", "bermuda" delas
+    cobre exatamente o que a vitrine manda sem categoria.
+    """
+    todos_ids = sorted({cid for c in cupons for cid in c.categorias})
+    nomes = nomes_das_categorias(todos_ids) if todos_ids else {}
+
+    enriquecidos = []
+    for cupom in cupons:
+        temas: list[str] = []
+        for cid in cupom.categorias:
+            for tema in temas_de_categoria(nomes.get(cid, "")):
+                if tema not in temas:
+                    temas.append(tema)
+        dados = cupom.como_dict()
+        dados["temas"] = temas
+        enriquecidos.append(dados)
+        if temas:
+            log.info(
+                "Cupom %s: %d categoria(s) viraram %d tema(s) de titulo (%s).",
+                cupom.code,
+                len(cupom.categorias),
+                len(temas),
+                ", ".join(temas[:8]),
+            )
+    return enriquecidos
