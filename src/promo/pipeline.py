@@ -100,24 +100,97 @@ def load_watchlist(path: Path | None = None) -> list[Watch]:
     ]
 
 
-def load_coupon(path: Path | None = None) -> str | None:
-    """Cupom de campanha do watchlist.json, se ainda estiver valendo.
+def load_coupons(path: Path | None = None) -> list[dict]:
+    """Cupons de campanha do watchlist.json que ainda estao no prazo.
 
-    Cupom do ML e de campanha (vale no site inteiro por alguns dias), nao por
-    produto -- por isso mora num campo so, nao no cadastro de cada oferta. E
-    por isso tem `ate`: cupom vencido no post e pior que post sem cupom, porque
-    a pessoa clica, tenta, falha, e passa a desconfiar do grupo.
+    Cupom do ML e de campanha -- vale no site por alguns dias --, nao por
+    produto. Mas nao vale para TUDO: cada um traz regra propria de categoria,
+    valor minimo e teto. Medido em 08/09/2026, o `PAGUEMENOS` publicado dava
+    18% so em roupas e acessorios, com minimo de R$ 29.
+
+    Por isso cada cupom carrega o proprio `ate`, os proprios `temas` e o
+    proprio `minimo`. Cupom vencido, ou citado num produto onde nao vale, e
+    pior do que post sem cupom: a pessoa clica, tenta, falha e passa a
+    desconfiar do grupo inteiro.
+
+    Aceita os dois formatos. O antigo era um cupom so:
+
+        "coupon": {"code": "VALEMAIS", "ate": "2026-09-15"}
+
+    O novo e uma lista, porque cupom do ML tem limite de uso e quando um
+    estoura o outro ainda pega:
+
+        "coupon": {"codes": [
+          {"code": "PAGUEMENOS", "ate": "2026-09-30",
+           "temas": ["camiseta", "cueca"], "minimo": 29},
+          {"code": "VALEMAIS", "ate": "2026-09-15"}
+        ]}
     """
     path = path or ROOT / "watchlist.json"
     data = json.loads(path.read_text(encoding="utf-8"))
-    cupom = data.get("coupon") or {}
-    codigo, ate = cupom.get("code"), cupom.get("ate")
-    if not codigo:
+    bloco = data.get("coupon") or {}
+
+    crus = bloco.get("codes")
+    if crus is None:
+        # Formato antigo: um cupom solto no proprio bloco.
+        crus = [bloco] if bloco.get("code") else []
+
+    validos = []
+    hoje = date.today()
+    for cupom in crus:
+        codigo = (cupom.get("code") or "").strip()
+        if not codigo:
+            continue
+        ate = cupom.get("ate")
+        if ate and date.fromisoformat(ate) < hoje:
+            log.info("Cupom %s venceu em %s; nao entra nos posts.", codigo, ate)
+            continue
+        validos.append(
+            {
+                "code": codigo,
+                "temas": [sem_acento(t) for t in cupom.get("temas") or []],
+                "minimo": float(cupom.get("minimo") or 0),
+            }
+        )
+    return validos
+
+
+def cupom_para(offer: Offer, cupons: list[dict]) -> str | None:
+    """Os cupons que valem PARA ESTA oferta, prontos para o texto.
+
+    Devolve "COD1 ou COD2" quando mais de um serve. Grupo concorrente faz isso
+    e o motivo e real: cupom do ML tem limite de uso, e quando o primeiro
+    estoura o segundo ainda pega. A diferenca aqui e que a alternativa so
+    aparece se ela de fato se aplicar -- listar tres e torcer e o que produz o
+    aviso "se o cupom der erro, tente pela aba anonima".
+
+    So sai em oferta do MERCADO LIVRE. Estes cupons sao de campanha do ML e
+    nao existem em outra loja: cita-los num post da Amazon levaria a pessoa a
+    tentar um codigo que o checkout de la nunca vai aceitar. A fonte importa
+    mais desde que o grupo passou a receber Amazon tambem.
+
+    Sem `temas`, o cupom vale para qualquer produto do ML. Com, o titulo
+    precisa citar um deles.
+    """
+    if offer.source != "mercadolivre":
         return None
-    if ate and date.fromisoformat(ate) < date.today():
-        log.info("Cupom %s venceu em %s; post sai sem cupom.", codigo, ate)
-        return None
-    return codigo
+    servem = [
+        c["code"]
+        for c in cupons
+        if offer.price >= c["minimo"] and (not c["temas"] or tem_tema(offer.title, c["temas"]))
+    ]
+    return " ou ".join(servem) if servem else None
+
+
+def load_coupon(path: Path | None = None) -> str | None:
+    """O primeiro cupom valido, sem olhar o produto.
+
+    Continua aqui para quem so quer saber se ha campanha no ar. Quem monta
+    post deve usar `load_coupons` mais `cupom_para`, que respeitam a regra de
+    categoria e de valor minimo de cada cupom.
+    """
+    cupons = load_coupons(path)
+    return cupons[0]["code"] if cupons else None
 
 
 def load_priority(path: Path | None = None) -> list[str]:
@@ -939,7 +1012,9 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         return []
 
     copywriter = Copywriter()
-    cupom = load_coupon()
+    # A lista inteira, e nao um cupom so: qual deles serve depende do produto
+    # -- categoria, valor minimo, e a loja de origem. Ver `cupom_para`.
+    cupons = load_coupons()
     with connect() as conn:
         recentes = recent_headlines(conn)
     drafts: list[tuple[ScoredOffer, str]] = []
@@ -953,6 +1028,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             # queimar ela num post sem comissao.
             sem_link.append(scored)
             continue
+        cupom = cupom_para(scored.offer, cupons)
         try:
             text = copywriter.write(scored, link, cupom, recentes)
         except Exception as exc:  # noqa: BLE001 - sem IA ainda da pra postar
