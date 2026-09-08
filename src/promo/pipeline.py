@@ -141,14 +141,44 @@ def load_coupons(path: Path | None = None) -> list[dict]:
         codigo = (cupom.get("code") or "").strip()
         if not codigo:
             continue
+
+        # Falha FECHADO nos dois eixos, e isto nao e zelo abstrato. Medido em
+        # 08/09/2026 sobre os 37 cupons do ML publicados no Promobit: 12 (32%)
+        # vinham com o campo de instrucoes literalmente "-", sem regra, sem
+        # data, sem minimo -- e um deles era o OFERTASEMPRE, justamente um dos
+        # que o grupo concorrente postou.
+        #
+        # A primeira versao disto tratava ausencia como permissao: sem `ate`
+        # nunca vencia, sem `temas` valia para tudo. Com um terco da fonte sem
+        # regra nenhuma, esses dois defaults produziam exatamente o post que o
+        # cupom deveria evitar -- a pessoa clica, o codigo nao aplica, e a
+        # desconfianca sobra para o grupo.
         ate = cupom.get("ate")
-        if ate and date.fromisoformat(ate) < hoje:
+        if not ate:
+            log.warning(
+                "Cupom %s sem `ate`; nao entra. Cupom do ML vence, e alguns em "
+                "horas -- sem data nao da para saber se ainda vale.",
+                codigo,
+            )
+            continue
+        if date.fromisoformat(ate) < hoje:
             log.info("Cupom %s venceu em %s; nao entra nos posts.", codigo, ate)
             continue
+
+        temas = [sem_acento(t) for t in cupom.get("temas") or []]
+        if not temas and not cupom.get("geral"):
+            log.warning(
+                "Cupom %s sem `temas` e sem `geral: true`; nao entra. Cupom do "
+                "ML costuma valer so em algumas categorias, e a fonte publica "
+                "quase nunca diz quais.",
+                codigo,
+            )
+            continue
+
         validos.append(
             {
                 "code": codigo,
-                "temas": [sem_acento(t) for t in cupom.get("temas") or []],
+                "temas": temas,
                 "minimo": float(cupom.get("minimo") or 0),
             }
         )

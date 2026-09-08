@@ -57,7 +57,9 @@ def oferta(titulo: str, preco: float = 100.0, fonte: str = "mercadolivre") -> Of
 
 
 def test_cupom_no_prazo_entra(tmp_path):
-    caminho = escrever(tmp_path, {"codes": [{"code": "VALEMAIS", "ate": AMANHA}]})
+    caminho = escrever(
+        tmp_path, {"codes": [{"code": "VALEMAIS", "ate": AMANHA, "geral": True}]}
+    )
 
     assert [c["code"] for c in load_coupons(caminho)] == ["VALEMAIS"]
 
@@ -69,10 +71,13 @@ def test_cupom_vencido_fica_de_fora(tmp_path):
     assert load_coupons(caminho) == []
 
 
-def test_cupom_sem_validade_entra(tmp_path):
-    caminho = escrever(tmp_path, {"codes": [{"code": "SEMPRE"}]})
+def test_cupom_sem_validade_nao_entra(tmp_path):
+    """Cupom do ML sempre vence, e alguns em horas -- o VALEMAIS publicado em
+    08/09/2026 dizia "disponivel apenas em 08/09/26". Sem data nao da para
+    saber se ainda vale, e a duvida nao pode virar post."""
+    caminho = escrever(tmp_path, {"codes": [{"code": "SEMPRE", "geral": True}]})
 
-    assert [c["code"] for c in load_coupons(caminho)] == ["SEMPRE"]
+    assert load_coupons(caminho) == []
 
 
 def test_lista_vazia_nao_estoura(tmp_path):
@@ -96,7 +101,7 @@ def test_codigo_vazio_e_ignorado(tmp_path):
 
 
 def test_formato_antigo_de_um_cupom_so(tmp_path):
-    caminho = escrever(tmp_path, {"code": "VALEMAIS", "ate": AMANHA})
+    caminho = escrever(tmp_path, {"code": "VALEMAIS", "ate": AMANHA, "geral": True})
 
     assert [c["code"] for c in load_coupons(caminho)] == ["VALEMAIS"]
 
@@ -109,7 +114,11 @@ def test_formato_antigo_vencido_tambem_sai(tmp_path):
 
 def test_load_coupon_devolve_o_primeiro(tmp_path):
     caminho = escrever(
-        tmp_path, {"codes": [{"code": "UM", "ate": AMANHA}, {"code": "DOIS"}]}
+        tmp_path,
+        {"codes": [
+            {"code": "UM", "ate": AMANHA, "geral": True},
+            {"code": "DOIS", "ate": AMANHA, "geral": True},
+        ]},
     )
 
     assert load_coupon(caminho) == "UM"
@@ -217,3 +226,51 @@ def test_a_watchlist_real_tem_o_bloco_de_cupom():
     )
 
     assert "codes" in (dados.get("coupon") or {})
+
+
+# ---------- falha fechado ----------
+#
+# Medido em 08/09/2026 sobre os 37 cupons do ML publicados no Promobit: 12
+# (32%) vinham com o campo de instrucoes literalmente "-" -- sem regra, sem
+# data, sem minimo. Um deles era o OFERTASEMPRE, um dos que o grupo
+# concorrente postou. Tres ja estavam VENCIDOS e continuavam listados como
+# validos, e seis venciam no mesmo dia.
+#
+# A primeira versao tratava ausencia como permissao: sem `ate` nunca vencia,
+# sem `temas` valia para tudo. Com um terco da fonte sem regra, isso produzia
+# exatamente o post que o cupom deveria evitar.
+
+
+def test_cupom_sem_data_nao_entra(tmp_path):
+    """Cupom do ML vence, e alguns em horas: o VALEMAIS publicado em 08/09
+    dizia "disponivel apenas em 08/09/26"."""
+    caminho = escrever(tmp_path, {"codes": [{"code": "SEMDATA", "geral": True}]})
+
+    assert load_coupons(caminho) == []
+
+
+def test_cupom_sem_tema_e_sem_geral_nao_entra(tmp_path):
+    """Ausencia de regra nao e permissao. A fonte publica quase nunca diz a
+    categoria -- 20 dos 25 cupons com texto apontavam a elegibilidade para um
+    container do ML que responde 403."""
+    caminho = escrever(tmp_path, {"codes": [{"code": "SEMREGRA", "ate": AMANHA}]})
+
+    assert load_coupons(caminho) == []
+
+
+def test_cupom_geral_declarado_entra(tmp_path):
+    """`geral: true` e a afirmacao explicita de quem cadastrou: eu conferi, vale
+    para tudo. Diferente de nao ter escrito nada."""
+    caminho = escrever(
+        tmp_path, {"codes": [{"code": "VALEMAIS", "ate": AMANHA, "geral": True}]}
+    )
+
+    assert [c["code"] for c in load_coupons(caminho)] == ["VALEMAIS"]
+
+
+def test_formato_antigo_sem_data_tambem_nao_entra(tmp_path):
+    """O formato antigo passa pelo mesmo funil -- senao a compatibilidade
+    viraria a porta dos fundos do fail-open."""
+    caminho = escrever(tmp_path, {"code": "VALEMAIS"})
+
+    assert load_coupons(caminho) == []
