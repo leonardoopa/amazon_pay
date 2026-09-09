@@ -739,14 +739,32 @@ def test_o_preco_final_usa_o_cupom_que_rende_mais(com_preco_de_cupom):
     assert preco_com_cupom(o, cupons) == 150.0
 
 
-def test_cupom_restrito_tambem_entra_no_preco(com_preco_de_cupom):
-    """A pedido, e o texto e que carrega a condicao: "por R$ X com o cupom"."""
+def test_cupom_restrito_entra_no_preco_quando_o_codigo_diz_a_marca(
+    com_preco_de_cupom,
+):
+    """Restrito nao e mais sinonimo de "vale para tudo".
+
+    Este teste nasceu quando restrito servia para qualquer produto. O dono
+    testou os codigos no carrinho e nenhum pegava -- TORCIDA inclusive --, e a
+    medicao explicou: "Em itens Selecionados", sem o ML dizer quais. Hoje o
+    recorte sai do codigo, e so quando ele carrega uma marca.
+    """
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Avene Cicalfate Creme Reparador 100g", 149.99)
+    avene = dict(geral("AVENE15", 10, teto=30.0, minimo=79.0), restrito=True)
+
+    assert preco_com_cupom(o, [avene]) == 134.99
+
+
+def test_cupom_restrito_sem_marca_no_codigo_nao_mexe_no_preco(com_preco_de_cupom):
+    """"TORCIDA" nao recorta nada, entao nao ha preco com cupom a prometer."""
     from promo.pipeline import preco_com_cupom
 
     o = oferta("Kit Progressiva Titanium Liss", 149.99)
     torcida = dict(geral("TORCIDA", 10, teto=30.0, minimo=79.0), restrito=True)
 
-    assert preco_com_cupom(o, [torcida]) == 134.99
+    assert preco_com_cupom(o, [torcida]) is None
 
 
 def test_amazon_nao_ganha_preco_de_cupom_do_ml():
@@ -901,3 +919,92 @@ def test_em_producao_o_preco_nao_leva_o_cupom():
     from promo.pipeline import PRECO_LEVA_O_CUPOM
 
     assert PRECO_LEVA_O_CUPOM is False
+
+
+# ---------- cupom restrito sem recorte publicado ----------
+#
+# Medido em 09/09/2026: os nove cupons no ar tinham `restrito: True`, nenhum
+# tema e nenhuma categoria. "Em itens Selecionados", sem dizer quais. O
+# `_serve` tratava ausencia de tema como "vale para tudo", e 300 de 300 posts
+# recentes sairam com cupom -- o grupo recebeu "Aparador de Pelos Kemei, use o
+# cupom AVENE15 ou MANTECORP14".
+
+
+def oferta_ml(titulo: str, preco: float = 100.0):
+    from promo.models import Offer
+
+    return Offer(
+        source="mercadolivre", external_id="MLB1", title=titulo, price=preco,
+        url="https://mercadolivre.com.br/MLB1",
+    )
+
+
+def cupom_restrito(code: str, minimo: float = 5.0) -> dict:
+    return {
+        "code": code, "minimo": minimo, "desconto": 15.0, "tipo": "PERCENT",
+        "teto": 150.0, "categorias": [], "temas": [], "restrito": True,
+        "ate": "2030-01-01",
+    }
+
+
+def test_o_codigo_da_marca_vira_o_recorte_do_cupom():
+    """O ML nao publica quais itens sao "selecionados", mas o codigo entrega a
+    marca. AVENE15 passa a valer so no que cita Avene."""
+    from promo.pipeline import cupom_para
+
+    cupons = [cupom_restrito("AVENE15")]
+
+    assert cupom_para(oferta_ml("Avene Hydrance Creme Hidratante 40g"), cupons) == "AVENE15"
+    assert cupom_para(oferta_ml("Aparador de Pelos Kemei KM-6511"), cupons) is None
+
+
+def test_codigo_sem_marca_nao_oferece_o_cupom():
+    """"TUDOMELI" vira "tudo" depois de tirar numero e sufixo -- nao recorta
+    nada. Errar para menos custa um post sem cupom; errar para mais manda a
+    pessoa digitar um codigo que o checkout recusa."""
+    from promo.pipeline import cupom_para
+
+    for code in ("TUDOMELI", "OFERTAHOJE", "SOHOJE", "INTERNACIONALNOMELI"):
+        assert cupom_para(oferta_ml("Qualquer Produto 500g"), [cupom_restrito(code)]) is None
+
+
+def test_cupom_nao_restrito_continua_valendo_para_tudo():
+    """A regra e so para `restrito`. Cupom geral do ML nao muda."""
+    from promo.pipeline import cupom_para
+
+    geral = cupom_restrito("9DO9MEIANOITE", minimo=219.0)
+    geral["restrito"] = False
+
+    assert (
+        cupom_para(oferta_ml("Tenis Feminino Questar 3 adidas", 260.0), [geral])
+        == "9DO9MEIANOITE"
+    )
+
+
+def test_o_sufixo_do_ml_sai_antes_da_marca():
+    """"NOMELI" precisa sair antes de "MELI", senao MAYBELLINENOMELI viraria
+    "maybellineno" e nao casaria com titulo nenhum."""
+    from promo.pipeline import _marca_do_codigo
+
+    assert _marca_do_codigo("MAYBELLINENOMELI") == "maybelline"
+    assert _marca_do_codigo("AVENE15") == "avene"
+    assert _marca_do_codigo("MANTECORP14") == "mantecorp"
+
+
+def test_sobra_de_campanha_nao_vira_marca():
+    """"9DO9SPORTS" perde os digitos e vira "DOSPORTS", que nao e marca."""
+    from promo.pipeline import _marca_do_codigo
+
+    assert _marca_do_codigo("9DO9SPORTS") == ""
+    assert _marca_do_codigo("9DO9MEIANOITE") == ""
+
+
+def test_o_tema_declarado_vence_o_codigo():
+    """Quando o cupom TEM tema, ele manda -- o codigo e so o ultimo recurso."""
+    from promo.pipeline import cupom_para
+
+    cupom = cupom_restrito("AVENE15")
+    cupom["temas"] = ["shampoo"]
+
+    assert cupom_para(oferta_ml("Shampoo Wella Invigo 1L"), [cupom]) == "AVENE15"
+    assert cupom_para(oferta_ml("Avene Creme Hidratante"), [cupom]) is None
