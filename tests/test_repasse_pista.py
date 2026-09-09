@@ -26,8 +26,31 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from promo.config import Rules  # noqa: E402
+from promo.db import SCHEMA  # noqa: E402
 from promo.models import Offer, ScoredOffer  # noqa: E402
-from promo.scoring import score_pista  # noqa: E402
+from promo.scoring import score_pista as _score_pista  # noqa: E402
+
+
+def banco():
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA)
+    return conn
+
+
+REGRAS = Rules.load()
+
+
+def score_pista(offer: Offer, conn=None, rules: Rules | None = None):
+    """`score_pista` real, com um banco vazio quando o teste nao se importa.
+
+    Banco vazio quer dizer "esta pista nunca virou post", que e o caso da
+    maioria dos testes aqui. Quem testa o cooldown passa o seu.
+    """
+    return _score_pista(conn if conn is not None else banco(), offer, rules or REGRAS)
 
 
 def oferta(preco: float = 155.0, disponivel: bool = True) -> Offer:
@@ -257,3 +280,143 @@ def test_post_normal_nasce_sem_prioridade():
     _gravar_post(conn, scored, "texto do post", "")
 
     assert conn.execute("SELECT prioridade FROM posts").fetchone()[0] == 0
+
+
+# ---------- o que o grupo mostrou em 09/09/2026 ----------
+#
+# Tres defeitos reais, medidos no banco de producao no mesmo dia em que a
+# terceira porta entrou no ar.
+
+
+def test_a_pista_nao_volta_a_cada_rodada():
+    """O pior dos tres: `MLB4341313127` saiu SEIS vezes num dia.
+
+    04:53, 05:59, 07:28, 08:42, 10:03 e 13:10. A causa e estrutural, e nao um
+    acaso: a fonte rele as mesmas 50 mensagens a cada rodada, entao a pista
+    continua aparecendo enquanto o grupo vizinho nao empurrar ela para fora da
+    janela. Sem cooldown, republicar de novo nao era um risco -- era o que ia
+    acontecer sempre.
+    """
+    from promo.db import create_post, mark_post_sent, record_offer
+
+    conn = banco()
+    produto = oferta()
+    record_offer(conn, produto)
+    post = create_post(
+        conn, produto.product_id, 155.0, 155.0, 0.0, "texto", prioridade=1
+    )
+    mark_post_sent(conn, post)
+
+    assert score_pista(produto, conn=conn) is None
+
+
+def test_a_pista_inedita_passa_pelo_cooldown():
+    """A trava e sobre repetir, nao sobre publicar."""
+    conn = banco()
+
+    assert score_pista(oferta(), conn=conn) is not None
+
+
+def test_o_cooldown_da_pista_nao_tem_a_saida_dos_10_pontos():
+    """`_in_cooldown` libera quem melhorou 10 pontos percentuais de desconto.
+
+    A pista tem `discount_pct` zero por construcao, entao ela nunca melhora e
+    a trava vale integralmente ate `REPOST_COOLDOWN_DAYS` passar. E o que faz
+    "uma vez por dia" ser uma garantia aqui, e nao uma tendencia.
+    """
+    from promo.db import create_post, mark_post_sent, record_offer
+
+    conn = banco()
+    produto = oferta()
+    record_offer(conn, produto)
+    # O post anterior saiu sem desconto nenhum -- o piso mais baixo possivel.
+    post = create_post(
+        conn, produto.product_id, 155.0, 155.0, 0.0, "texto", prioridade=1
+    )
+    mark_post_sent(conn, post)
+
+    assert score_pista(produto, conn=conn) is None
+
+
+# ---------- a foto ----------
+
+
+def test_a_pista_carrega_a_foto_do_anuncio():
+    """57 dos 90 primeiros posts de pista sairam sem imagem, contra 0 de 210
+    posts normais. `fetch_by_ids` nao busca foto: ele confia em quem chama."""
+    from promo.sources.grupo_wa import IMAGEM, produto_do_link
+
+    html = (
+        '<meta property="og:title" content="Perfume Lattafa 100ml">'
+        '<meta property="og:image" content="https://http2.mlstatic.com/D_1-F.jpg">'
+        '{"item_id":"MLB60687768"}'
+    )
+
+    assert IMAGEM.search(html).group(1) == "https://http2.mlstatic.com/D_1-F.jpg"
+    assert produto_do_link is not None  # a tupla de tres e coberta abaixo
+
+
+def test_o_anuncio_sem_og_image_nao_derruba_a_pista():
+    from promo.sources.grupo_wa import IMAGEM
+
+    assert IMAGEM.search('<meta property="og:title" content="Perfume">') is None
+
+
+# ---------- perfumes diferentes na mesma rodada ----------
+
+
+def test_quatro_perfumes_diferentes_saem_juntos():
+    """Pedido do dono em 09/09/2026, com os titulos que sairam de verdade.
+
+    A assinatura fina separa marca e modelo; a grossa (`CATEGORIA`) juntaria
+    "lattafa perfume" com "carolina perfume" pela metade e derrubaria tres dos
+    quatro.
+    """
+    from promo.pipeline import _uma_por_familia
+
+    titulos = [
+        "Zaad Tradicional Eau De Parfum 95ml - O Boticário",
+        "Perfume Lattafa Asdaaf Ameerat Al Arab Eau De Parfum 100ml",
+        "Perfume Carolina Herrera 212 Men Heroes Eau de Toilette 150ml",
+        "Perfume Calvin Klein CK One 200ml",
+    ]
+    pistas = [
+        score_pista(
+            Offer(
+                source="mercadolivre",
+                external_id=f"MLB{i}",
+                title=t,
+                price=155.0,
+                url=f"https://mercadolivre.com.br/MLB{i}",
+            )
+        )
+        for i, t in enumerate(titulos)
+    ]
+
+    assert len(_uma_por_familia(pistas, 3)) == 4
+
+
+def test_o_mesmo_perfume_em_dois_anuncios_sai_uma_vez():
+    """O caso que a linha existe para barrar: o ML lista o mesmo produto sob
+    dezenas de vendedores, com `product_id` diferente e titulo quase igual."""
+    from promo.pipeline import _uma_por_familia
+
+    pistas = [
+        score_pista(
+            Offer(
+                source="mercadolivre",
+                external_id=f"MLB{i}",
+                title=t,
+                price=155.0,
+                url=f"https://mercadolivre.com.br/MLB{i}",
+            )
+        )
+        for i, t in enumerate(
+            [
+                "Perfume Calvin Klein CK One 200ml",
+                "Perfume Calvin Klein CK One 200ml Original Lacrado",
+            ]
+        )
+    ]
+
+    assert len(_uma_por_familia(pistas, 3)) == 1

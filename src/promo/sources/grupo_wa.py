@@ -54,6 +54,17 @@ LINK = re.compile(
 ITEM_ID = re.compile(r'"item_id"\s*:\s*"(MLB\d{6,})"')
 TITULO = re.compile(r'<meta property="og:title" content="([^"]*)"')
 
+# A foto do produto, da mesma pagina que ja esta baixada.
+#
+# Sem ela o post da pista saia so com texto: `fetch_by_ids` recebe a imagem de
+# quem chama -- na reconsulta normal ela vem do banco -- e a pista nao tinha o
+# que passar. Medido em 09/09/2026, 57 dos 90 posts vindos daqui foram sem
+# foto, contra 0 de 210 posts normais.
+#
+# `/products/{id}/items` devolve as fotos do anuncio, mas seria uma segunda
+# chamada por produto para pegar o que esta nesta pagina de graca.
+IMAGEM = re.compile(r'<meta property="og:image" content="([^"]*)"')
+
 log = logging.getLogger("promo")
 
 
@@ -64,6 +75,7 @@ class Pista:
     external_id: str
     titulo: str
     origem: str  # nome do grupo, para o log
+    imagem: str = ""  # og:image da pagina do produto, "" quando nao veio
 
 
 def _texto_da_mensagem(registro: dict) -> str:
@@ -116,8 +128,8 @@ def ler_mensagens(
     return corpo if isinstance(corpo, list) else []
 
 
-def produto_do_link(url: str, timeout: float = 25.0) -> tuple[str, str] | None:
-    """(id do anuncio, titulo) do produto por tras do link, ou None.
+def produto_do_link(url: str, timeout: float = 25.0) -> tuple[str, str, str] | None:
+    """(id do anuncio, titulo, imagem) do produto por tras do link, ou None.
 
     O link de afiliado nao carrega o ID na URL: ele redireciona para
     `/social/<nickname>` e o ID mora no corpo. Por isso a pagina inteira e
@@ -145,7 +157,12 @@ def produto_do_link(url: str, timeout: float = 25.0) -> tuple[str, str] | None:
         item = achado.group(1)
 
     titulo = TITULO.search(html)
-    return item, (titulo.group(1).strip() if titulo else "")
+    imagem = IMAGEM.search(html)
+    return (
+        item,
+        (titulo.group(1).strip() if titulo else ""),
+        (imagem.group(1).strip() if imagem else ""),
+    )
 
 
 def pistas(
@@ -190,11 +207,13 @@ def pistas(
         time.sleep(pausa)
         if not resolvido:
             continue
-        item, titulo = resolvido
+        item, titulo, imagem = resolvido
         if item in vistos:
             continue
         vistos.add(item)
-        achadas.append(Pista(external_id=item, titulo=titulo, origem=nome or jid))
+        achadas.append(
+            Pista(external_id=item, titulo=titulo, origem=nome or jid, imagem=imagem)
+        )
 
     log.info("Grupo %s: %d produto(s) identificado(s).", nome or jid, len(achadas))
     return achadas

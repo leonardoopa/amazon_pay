@@ -118,7 +118,9 @@ def score_campaign(
     )
 
 
-def score_pista(offer: Offer) -> ScoredOffer | None:
+def score_pista(
+    conn: sqlite3.Connection, offer: Offer, rules: Rules
+) -> ScoredOffer | None:
     """Pontua o que outro grupo acabou de postar, pela curadoria deles.
 
     A terceira porta, e a mais fraca das tres de proposito.
@@ -136,13 +138,27 @@ def score_pista(offer: Offer) -> ScoredOffer | None:
     zero e `verified` em False. Quem escreve o texto le esses dois campos e
     anuncia o preco, nao uma queda.
 
-    Sem piso e sem cooldown por decisao do dono em 09/09/2026: o pedido e
-    republicar tudo que der, e o filtro aqui e o deles.
+    Sem piso de desconto, por decisao do dono em 09/09/2026: o filtro aqui e o
+    deles.
+
+    Com o cooldown de repeticao, pelo que aconteceu no mesmo dia. A primeira
+    versao dispensava os dois, e o resultado foi o mesmo produto saindo seis
+    vezes: 04:53, 05:59, 07:28, 08:42, 10:03 e 13:10. A causa e estrutural --
+    a fonte rele as mesmas 50 mensagens a cada rodada, entao a pista continua
+    "nova" enquanto o post dela nao envelhecer. Sem esta trava a repeticao nao
+    e um risco, e o comportamento garantido.
+
+    `discount_pct` zero tambem torna o cooldown definitivo aqui: a excecao de
+    `_in_cooldown` libera quem melhorou 10 pontos percentuais, e zero nunca
+    melhora. Uma pista sai uma vez por `REPOST_COOLDOWN_DAYS`, e pronto.
 
     Quando o anuncio TEM riscado, `score_campaign` pontua melhor e roda antes
     -- esta funcao so recebe o que sobrou.
     """
     if not offer.available or offer.price <= 0:
+        return None
+
+    if _in_cooldown(conn, offer, 0.0, rules):
         return None
 
     return ScoredOffer(
