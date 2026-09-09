@@ -120,6 +120,19 @@ class EvolutionConfig:
         )
 
 
+def grupos_fonte_intervalo_horas() -> float:
+    """Horas entre leituras dos grupos usados como fonte de descoberta.
+
+    Cada leitura sao 50 mensagens da Evolution mais uma pagina de ~370 KB do
+    ML por link -- o link de afiliado nao carrega o ID do anuncio na URL, so
+    no corpo. Meia hora acompanha um grupo que posta a cada poucos minutos sem
+    virar trafego de rodada.
+
+    0 desliga a fonte.
+    """
+    return float(_optional("GRUPOS_FONTE_INTERVALO_HORAS", "0.5"))
+
+
 def delivery_backend() -> str:
     """'evolution' (posta no grupo) ou 'cloud' (manda pra voce encaminhar)."""
     return _optional("DELIVERY_BACKEND", "cloud").strip().lower()

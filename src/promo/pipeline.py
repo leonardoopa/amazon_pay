@@ -20,6 +20,7 @@ from .config import (
     discovery_interval_hours,
     drip_interval_seconds,
     full_refetch_interval_hours,
+    grupos_fonte_intervalo_horas,
     hot_interval_minutes,
     hot_margin_pct,
     hot_track_limit,
@@ -121,6 +122,19 @@ class GrupoDestino:
 
     def aceita(self, offer: Offer) -> bool:
         return self.e_geral or tem_tema(offer.title, list(self.temas))
+
+
+def load_grupos_fonte(path: Path | None = None) -> list[dict]:
+    """Grupos de WhatsApp lidos como fonte de DESCOBERTA.
+
+    O que se aproveita e a pista -- qual produto esta em oferta --, e nao o
+    texto nem o link. Ver `sources/grupo_wa` para o porque.
+    """
+    path = path or ROOT / "watchlist.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return [
+        g for g in (data.get("grupos_fonte") or []) if (g.get("jid") or "").strip()
+    ]
 
 
 def load_grupos(path: Path | None = None) -> list[GrupoDestino]:
@@ -417,7 +431,34 @@ def chave_da_fila(
     """
     tem_cupom = bool(cupom_para(scored.offer, cupons))
     premiada = tem_cupom and e_prioritaria(scored.offer, temas)
-    return (premiada, tem_cupom, scored.discount_pct, scored.offer.free_shipping)
+    return (
+        _veio_de_outro_grupo(scored.offer),
+        premiada,
+        tem_cupom,
+        scored.discount_pct,
+        scored.offer.free_shipping,
+    )
+
+
+# Produtos vistos em grupo concorrente, nesta rodada. Preenchido por `run` e
+# lido pela ordenacao -- vive em modulo, e nao no `Offer`, porque a pista e
+# sobre a DESCOBERTA e nao sobre o produto: o mesmo anuncio pode aparecer
+# amanha pela vitrine, e ai nao tem nada de especial.
+_VISTOS_EM_OUTRO_GRUPO: set[str] = set()
+
+
+def _veio_de_outro_grupo(offer: Offer) -> bool:
+    """Alguem que vive disso escolheu este produto hoje.
+
+    Vale mais que qualquer sinal nosso e por isso vem primeiro na ordem: um
+    grupo de 990 membros que posta ha meses acertou a curadoria antes de nos,
+    e o produto ja provou que atrai clique em publico parecido.
+
+    O que se herda e so isso: a pista. O texto e o link continuam sendo
+    nossos, e o produto passa por todos os filtros de preco, desconto e
+    cooldown como qualquer outro.
+    """
+    return offer.external_id in _VISTOS_EM_OUTRO_GRUPO
 
 
 def _regra_incompleta(cupom: dict) -> bool:
@@ -841,6 +882,7 @@ def collect(
             offers.extend(refetch_tracked(source, rules))
             _stamp("last_full_refetch")
         offers.extend(refetch_hot(source))
+        offers.extend(collect_de_outros_grupos(source))
 
     # So carimba se a descoberta realmente aconteceu.
     #
@@ -929,6 +971,72 @@ def refetch_hot(source) -> list[Offer]:
         return []
 
     log.info("%s: %d produtos quentes reconsultados", source.name, len(found))
+    return found
+
+
+def collect_de_outros_grupos(source) -> list[Offer]:
+    """Produtos que grupos concorrentes acabaram de postar.
+
+    Descoberta, e nao repasse: daqui sai uma lista de IDs, e eles entram na
+    carteira para serem MEDIDOS como qualquer outro produto. O texto, o link e
+    todos os filtros continuam sendo nossos -- ver `sources/grupo_wa`.
+
+    Vale a pena porque a curadoria ja foi feita por quem vive disso: um grupo
+    de 990 membros que posta ha meses escolheu aquele produto hoje. Essa e a
+    razao de esses produtos irem para o topo da fila em `chave_da_fila`.
+    """
+    from .config import EvolutionConfig
+    from .sources.grupo_wa import pistas
+
+    fontes = load_grupos_fonte()
+    fetch = getattr(source, "fetch_by_ids", None)
+    if not fontes or fetch is None:
+        return []
+    if not _due("last_grupos_fonte", grupos_fonte_intervalo_horas()):
+        return []
+
+    try:
+        config = EvolutionConfig.load()
+    except MissingConfig:
+        # Sem Evolution nao ha o que ler. Nao e erro: quem usa o backend
+        # oficial da Meta simplesmente nao tem esta fonte.
+        return []
+
+    _stamp("last_grupos_fonte")
+
+    achadas = []
+    for fonte in fontes:
+        achadas += pistas(
+            base_url=config.base_url,
+            instancia=config.instance,
+            chave=config.api_key,
+            jid=fonte["jid"],
+            nome=fonte.get("nome", ""),
+            limite_links=int(fonte.get("limite", 15)),
+        )
+    if not achadas:
+        return []
+
+    # A pista vale para a ORDENACAO desta rodada. Nao vira atributo do
+    # produto: o mesmo anuncio pode reaparecer amanha pela vitrine, e ai nao
+    # tem nada de especial.
+    _VISTOS_EM_OUTRO_GRUPO.update(p.external_id for p in achadas)
+
+    # O ID sozinho nao basta -- `fetch_by_ids` quer (product_id, external_id,
+    # url). O produto ainda nao esta na carteira, entao a URL vai vazia e a
+    # fonte resolve pelo ID.
+    alvos = [(f"{source.name}:{p.external_id}", p.external_id, None) for p in achadas]
+    try:
+        found = fetch(alvos)
+    except Exception as exc:  # noqa: BLE001 - fonte extra nao derruba a rodada
+        log.warning("Nao consegui medir os produtos dos outros grupos: %s", exc)
+        return []
+
+    log.info(
+        "Outros grupos: %d pista(s), %d produto(s) medido(s) e no topo da fila.",
+        len(achadas),
+        len(found),
+    )
     return found
 
 
