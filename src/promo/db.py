@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS posts (
     discount_pct REAL NOT NULL,
     copy         TEXT NOT NULL,
     image_url    TEXT,           -- imagem enviada junto do texto
+    -- JID do grupo de destino. Vazio = o destino padrao do .env, que era o
+    -- unico ate 09/09/2026.
+    grupo_jid    TEXT NOT NULL DEFAULT '',
     attempts     INTEGER NOT NULL DEFAULT 0,
     -- 1 = desconto medido contra a nossa mediana. 0 = repasse da vitrine do
     -- ML, medido contra o "de/por" da loja. A distincao existia so em memoria
@@ -128,6 +131,19 @@ MIGRATIONS = [
         # tudo como verificado herda o dado como ele era lido antes; marcar
         # tudo como nao verificado apagaria a prova real que existe.
         "ALTER TABLE posts ADD COLUMN verified INTEGER NOT NULL DEFAULT 1",
+    ),
+    (
+        "posts",
+        "grupo_jid",
+        # Para qual grupo do WhatsApp este post foi. Vazio nos posts antigos,
+        # que sao todos do grupo unico -- e `deliver` trata vazio como "o
+        # destino padrao do .env", que e exatamente o que eles eram.
+        #
+        # A coluna existe para o cooldown poder perguntar "ja saiu NESTE
+        # grupo?" em vez de "ja saiu?". Sem ela, uma oferta de Wella enviada
+        # ao Geral bloquearia a mesma oferta no Mulheres, e o grupo nichado
+        # nunca receberia nada que o Geral tivesse acabado de mandar.
+        "ALTER TABLE posts ADD COLUMN grupo_jid TEXT NOT NULL DEFAULT ''",
     ),
 ]
 
@@ -422,6 +438,7 @@ def create_post(
     copy: str,
     image_url: str | None = None,
     verified: bool = True,
+    grupo_jid: str = "",
 ) -> int:
     """Enfileira um post.
 
@@ -432,8 +449,8 @@ def create_post(
     cursor = conn.execute(
         """
         INSERT INTO posts (product_id, price, baseline, discount_pct, copy,
-                           image_url, verified, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                           image_url, verified, grupo_jid, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
         """,
         (
             product_id,
@@ -443,6 +460,7 @@ def create_post(
             copy,
             image_url,
             1 if verified else 0,
+            grupo_jid,
             _iso(now()),
         ),
     )
@@ -538,30 +556,41 @@ def tem_tema(titulo: str, temas: list[str]) -> bool:
 
 
 def _titulos_postados(
-    conn: sqlite3.Connection, cooldown_minutes: int
+    conn: sqlite3.Connection, cooldown_minutes: int, grupo_jid: str = ""
 ) -> list[sqlite3.Row]:
-    """Titulos que ja foram para o grupo dentro da janela, mais os da fila."""
+    """Titulos que ja foram para ESTE grupo dentro da janela, mais os da fila.
+
+    O recorte por grupo e o que permite nichar. Sem ele, uma oferta de Wella
+    enviada ao Geral bloquearia a mesma oferta no grupo de Mulheres, e o
+    nichado so receberia a sobra do que o Geral nao quis -- ou seja, nada,
+    porque o Geral quer tudo.
+    """
+    condicoes = ["po.grupo_jid = ?"]
+    args: list = [grupo_jid]
+
     if cooldown_minutes <= 0:
-        condicao, args = "po.status = 'pending'", ()
+        condicoes.append("po.status = 'pending'")
     else:
-        condicao = (
-            "po.status = 'pending' "
-            "OR (po.status = 'sent' AND COALESCE(po.sent_at, po.created_at) >= ?)"
+        condicoes.append(
+            "(po.status = 'pending' "
+            "OR (po.status = 'sent' AND COALESCE(po.sent_at, po.created_at) >= ?))"
         )
-        args = (_iso(now() - timedelta(minutes=cooldown_minutes)),)
+        args.append(_iso(now() - timedelta(minutes=cooldown_minutes)))
 
     return conn.execute(
         f"""
         SELECT DISTINCT p.title FROM posts po
         JOIN products p ON p.id = po.product_id
-        WHERE {condicao}
+        WHERE {" AND ".join(condicoes)}
         """,
         args,
     ).fetchall()
 
 
 def families_in_cooldown(
-    conn: sqlite3.Connection, cooldown_minutes: int | None = None
+    conn: sqlite3.Connection,
+    cooldown_minutes: int | None = None,
+    grupo_jid: str = "",
 ) -> set[str]:
     """Familias de titulo que acabaram de ir para o grupo.
 
@@ -570,12 +599,14 @@ def families_in_cooldown(
     """
     if cooldown_minutes is None:
         cooldown_minutes = post_cooldown_minutes()
-    rows = _titulos_postados(conn, cooldown_minutes)
+    rows = _titulos_postados(conn, cooldown_minutes, grupo_jid)
     return {f for row in rows if (f := familia_do_titulo(row["title"]))}
 
 
 def categories_in_cooldown(
-    conn: sqlite3.Connection, cooldown_minutes: int | None = None
+    conn: sqlite3.Connection,
+    cooldown_minutes: int | None = None,
+    grupo_jid: str = "",
 ) -> set[str]:
     """Assinaturas grossas -- duas palavras -- que acabaram de sair.
 
@@ -597,12 +628,14 @@ def categories_in_cooldown(
         cooldown_minutes = category_cooldown_minutes()
     if cooldown_minutes <= 0:
         return set()
-    rows = _titulos_postados(conn, cooldown_minutes)
+    rows = _titulos_postados(conn, cooldown_minutes, grupo_jid)
     return {f for row in rows if (f := familia_do_titulo(row["title"], CATEGORIA))}
 
 
 def products_in_cooldown(
-    conn: sqlite3.Connection, cooldown_minutes: int | None = None
+    conn: sqlite3.Connection,
+    cooldown_minutes: int | None = None,
+    grupo_jid: str = "",
 ) -> set[str]:
     """Produtos que nao podem virar post agora, por terem virado ha pouco.
 
@@ -623,7 +656,9 @@ def products_in_cooldown(
         # duas rodadas seguidas enfileiram o mesmo produto e o grupo recebe os
         # dois em sequencia, com minutos de diferenca.
         rows = conn.execute(
-            "SELECT DISTINCT product_id FROM posts WHERE status = 'pending'"
+            "SELECT DISTINCT product_id FROM posts "
+            "WHERE status = 'pending' AND grupo_jid = ?",
+            (grupo_jid,),
         ).fetchall()
         return {row["product_id"] for row in rows}
 
@@ -631,10 +666,11 @@ def products_in_cooldown(
     rows = conn.execute(
         """
         SELECT DISTINCT product_id FROM posts
-        WHERE status = 'pending'
-           OR (status = 'sent' AND COALESCE(sent_at, created_at) >= ?)
+        WHERE grupo_jid = ?
+          AND (status = 'pending'
+               OR (status = 'sent' AND COALESCE(sent_at, created_at) >= ?))
         """,
-        (limite,),
+        (grupo_jid, limite),
     ).fetchall()
     return {row["product_id"] for row in rows}
 
