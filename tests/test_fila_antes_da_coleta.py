@@ -56,7 +56,7 @@ def test_devolve_o_tempo_de_gotejamento(monkeypatch, banco_em_memoria):
     from promo.db import create_post
 
     class Entrega:
-        def send_post(self, texto, imagem):
+        def send_post(self, texto, imagem, para=None):
             return None
 
     monkeypatch.setattr(pipeline, "build_delivery", Entrega)
@@ -76,7 +76,7 @@ def test_orcamento_estourado_tambem_devolve_o_gasto(monkeypatch, banco_em_memori
     from promo.db import create_post
 
     class Entrega:
-        def send_post(self, texto, imagem):
+        def send_post(self, texto, imagem, para=None):
             return None
 
     monkeypatch.setattr(pipeline, "build_delivery", Entrega)

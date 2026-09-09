@@ -138,9 +138,14 @@ def load_grupos(path: Path | None = None) -> list[GrupoDestino]:
 
     grupos = []
     for cru in crus:
+        # JID vazio e legitimo, e o do grupo principal: significa "o destino
+        # padrao do .env". Manter assim, em vez de escrever o JID real, e o
+        # que preserva o cooldown -- os 3.063 posts ja enviados tem `grupo_jid`
+        # vazio, e trocar o valor faria todos eles sumirem da conta e produtos
+        # recem-postados voltarem ao grupo.
         jid = (cru.get("jid") or "").strip()
-        if not jid:
-            log.warning("Grupo %r sem jid; fora.", cru.get("nome"))
+        if not cru.get("nome"):
+            log.warning("Grupo sem nome, com jid %r; fora.", jid)
             continue
         grupos.append(
             GrupoDestino(
@@ -1503,29 +1508,55 @@ DRIP_JITTER = 0.4
 
 
 def deliver(
-    drafts: list[tuple[ScoredOffer, str]], budget_seconds: float | None = None
+    drafts: list[tuple[ScoredOffer, str]],
+    budget_seconds: float | None = None,
+    grupos: list[GrupoDestino] | None = None,
 ) -> float:
     """Enfileira os posts novos e drena a fila (incluindo o que sobrou de antes).
 
     Chamada mesmo com `drafts` vazio, de proposito: sem isso uma rodada que nao
     selecionou nada deixava a fila anterior parada ate alguma rodada selecionar
     -- o grupo mudo com post pronto esperando.
+
+    Cada rascunho vira UM post por grupo que o aceita. Uma oferta de Wella vai
+    para o Geral e para o de Mulheres; um monitor gamer, so para o Geral. O
+    texto e o mesmo -- foi escrito uma vez, e reescrever por grupo dobraria a
+    conta do Gemini para dizer a mesma coisa.
+
+    O cooldown ja foi conferido por grupo la em cima, entao aqui e so gravar.
     """
+    grupos = grupos or load_grupos()
     with connect() as conn:
         for scored, text in drafts:
-            create_post(
-                conn,
-                scored.offer.product_id,
-                scored.offer.price,
-                scored.baseline,
-                scored.discount_pct,
-                text,
-                scored.offer.image_url,
-                # Sem isso a distincao morria aqui: o site lia repasse da
-                # vitrine como desconto medido por nos.
-                verified=scored.verified,
-            )
+            destinos = [g for g in grupos if g.aceita(scored.offer)]
+            if not destinos:
+                # Nao deveria acontecer -- a selecao ja filtrou --, mas se
+                # acontecer o post some em silencio, e um log barato evita
+                # caçar isso depois.
+                log.warning(
+                    "Nenhum grupo aceita %r; post descartado.", scored.offer.title[:50]
+                )
+                continue
+            for grupo in destinos:
+                _gravar_post(conn, scored, text, grupo.jid)
     return flush_pending(budget_seconds)
+
+
+def _gravar_post(conn, scored: ScoredOffer, text: str, grupo_jid: str) -> None:
+    """Um post pendente, para um grupo."""
+    create_post(
+        conn,
+        scored.offer.product_id,
+        scored.offer.price,
+        scored.baseline,
+        scored.discount_pct,
+        text,
+        scored.offer.image_url,
+        # Sem isso a distincao morria aqui: o site lia repasse da vitrine como
+        # desconto medido por nos.
+        verified=scored.verified,
+        grupo_jid=grupo_jid,
+    )
 
 
 def flush_pending(
@@ -1561,7 +1592,8 @@ def flush_pending(
         # ser chute -- e chute e o que o grupo existe para nao receber.
         velhos = expire_stale_posts(conn)
         queue = [
-            (row["id"], row["copy"], row["image_url"]) for row in pending_posts(conn)
+            (row["id"], row["copy"], row["image_url"], row["grupo_jid"])
+            for row in pending_posts(conn)
         ]
 
     if velhos:
@@ -1582,7 +1614,7 @@ def flush_pending(
 
     enviados = 0
 
-    for index, (post_id, text, image_url) in enumerate(queue):
+    for index, (post_id, text, image_url, grupo_jid) in enumerate(queue):
         if enviados:
             # Decidir ANTES de dormir. Checar so o tempo ja gasto deixava a
             # drenagem estourar o orcamento por um intervalo inteiro -- com
@@ -1599,7 +1631,9 @@ def flush_pending(
             sleep(espera)
 
         try:
-            delivery.send_post(text, image_url)
+            # `or None` porque post antigo tem JID vazio, e vazio quer dizer
+            # "o destino padrao do .env".
+            delivery.send_post(text, image_url, grupo_jid or None)
         except WindowClosed:
             # So o backend 'cloud' chega aqui. Fora da janela de 24h so passa
             # template: pinga voce pedindo uma resposta qualquer, o que reabre a

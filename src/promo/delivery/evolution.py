@@ -168,8 +168,13 @@ class Evolution:
             },
         )
 
-    def send_post(self, text: str, image_url: str | None = None) -> dict:
+    def send_post(
+        self, text: str, image_url: str | None = None, to: str | None = None
+    ) -> dict:
         """Mesma assinatura do backend oficial: imagem quando da, texto quando nao.
+
+        `to` e o JID do grupo de destino. Vazio ou None usa o do .env, que era
+        o unico destino ate 09/09/2026 -- e continua sendo o do Geral.
 
         Repare no que NAO tem aqui: janela de 24h. Ela e uma regra da Cloud API
         da Meta, e a Evolution nao passa por ela -- entao o pipeline nunca vai
@@ -189,7 +194,7 @@ class Evolution:
             # na rolagem, que e o mesmo que nao ter sido enviado.
             for tentativa in range(2):
                 try:
-                    return self.send_image(image_url, text)
+                    return self.send_image(image_url, text, to)
                 except NotConnected:
                     raise  # instancia caida nao e problema da imagem
                 except Exception as exc:  # noqa: BLE001 - recusa da midia vira texto
@@ -199,4 +204,4 @@ class Evolution:
                         exc,
                     )
             log.warning("Post sai sem imagem: a Evolution recusou a midia duas vezes.")
-        return self.send_text(text)
+        return self.send_text(text, to)
