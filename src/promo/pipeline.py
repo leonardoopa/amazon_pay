@@ -240,6 +240,13 @@ def load_coupons(path: Path | None = None) -> list[dict]:
                 "code": codigo,
                 "temas": temas,
                 "minimo": float(cupom.get("minimo") or 0),
+                # Sem estes tres, `_quanto_economiza` devolvia zero e o cupom
+                # do watchlist perdia toda disputa de ordem para o do Pelando,
+                # que traz os campos. Cupom cadastrado a mao costuma ser o
+                # MELHOR -- alguem conferiu --, e ficava por ultimo.
+                "desconto": float(cupom.get("desconto") or 0),
+                "tipo": (cupom.get("tipo") or "PERCENT").upper(),
+                "teto": float(cupom.get("teto") or 0),
             }
         )
     return validos
