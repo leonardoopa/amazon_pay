@@ -420,3 +420,98 @@ def test_o_mesmo_perfume_em_dois_anuncios_sai_uma_vez():
     ]
 
     assert len(_uma_por_familia(pistas, 3)) == 1
+
+
+# ---------- a foto que a carteira ja tinha ----------
+
+
+def test_reconsulta_sem_foto_nao_apaga_a_foto_do_banco():
+    """A pista chegou sem imagem por um dia e zerou produto que ja tinha foto.
+
+    Medido em 09/09/2026: cinco produtos com post antigo ilustrado ficaram sem
+    `image_url` na carteira. O estrago passa do caminho da pista -- o proximo
+    post desses produtos sairia so com texto mesmo vindo pela vitrine.
+    """
+    from promo.db import record_offer
+
+    conn = banco()
+    com_foto = Offer(
+        source="mercadolivre",
+        external_id="MLB1",
+        title="Whey Protein 1kg",
+        price=78.99,
+        url="https://mercadolivre.com.br/MLB1",
+        image_url="https://http2.mlstatic.com/D_NQ_NP_608162-F.jpg",
+    )
+    record_offer(conn, com_foto)
+
+    from dataclasses import replace
+
+    record_offer(conn, replace(com_foto, image_url=None, price=80.0))
+
+    guardada = conn.execute("SELECT image_url FROM products").fetchone()[0]
+    assert guardada == "https://http2.mlstatic.com/D_NQ_NP_608162-F.jpg"
+
+
+def test_foto_nova_substitui_a_antiga():
+    """Nao virou coluna imutavel: quando ha foto nova, ela vale."""
+    from dataclasses import replace
+
+    from promo.db import record_offer
+
+    conn = banco()
+    original = Offer(
+        source="mercadolivre",
+        external_id="MLB1",
+        title="Whey Protein 1kg",
+        price=78.99,
+        url="https://mercadolivre.com.br/MLB1",
+        image_url="https://http2.mlstatic.com/velha.jpg",
+    )
+    record_offer(conn, original)
+    record_offer(conn, replace(original, image_url="https://http2.mlstatic.com/nova.jpg"))
+
+    assert (
+        conn.execute("SELECT image_url FROM products").fetchone()[0]
+        == "https://http2.mlstatic.com/nova.jpg"
+    )
+
+
+def test_string_vazia_conta_como_sem_foto():
+    """`p.imagem or None` manda None, mas outra fonte pode mandar ''."""
+    from dataclasses import replace
+
+    from promo.db import record_offer
+
+    conn = banco()
+    original = Offer(
+        source="mercadolivre",
+        external_id="MLB1",
+        title="Whey Protein 1kg",
+        price=78.99,
+        url="https://mercadolivre.com.br/MLB1",
+        image_url="https://http2.mlstatic.com/velha.jpg",
+    )
+    record_offer(conn, original)
+    record_offer(conn, replace(original, image_url=""))
+
+    assert (
+        conn.execute("SELECT image_url FROM products").fetchone()[0]
+        == "https://http2.mlstatic.com/velha.jpg"
+    )
+
+
+# ---------- o retry da midia ----------
+
+
+def test_a_espera_cresce_entre_as_tentativas():
+    """Retry imediato nao ajuda contra `getaddrinfo EAI_AGAIN`.
+
+    Em 09/09/2026 as duas tentativas cairam em 5 segundos, no mesmo resolver
+    ainda indisponivel, e o post saiu sem foto.
+    """
+    from promo.delivery.evolution import ESPERAS_DA_MIDIA
+
+    assert len(ESPERAS_DA_MIDIA) == 3
+    assert ESPERAS_DA_MIDIA[-1] == 0.0  # nao espera depois da ultima
+    assert ESPERAS_DA_MIDIA[0] < ESPERAS_DA_MIDIA[1]
