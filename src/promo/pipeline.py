@@ -245,20 +245,51 @@ def _serve(offer: Offer, cupom: dict) -> bool:
 
 
 CUPONS_META = "cupons_ml"
-CUPONS_HORAS = 6.0
+CUPONS_HORAS = 3.0
+
+# Quantos dias um cupom do Pelando vale, contados da postagem. O site nao
+# publica validade -- a data do slug e quando o usuario postou. Tres dias e a
+# defesa: cupom de la sai de circulacao sozinho em vez de ficar sendo
+# publicado para sempre com base num palpite.
+PELANDO_VALIDADE_DIAS = 3
+
+# Quantas paginas do Pelando abrir por leitura. Sao 121 URLs do ML no sitemap,
+# e abrir todas seria 121 requisicoes a um site de terceiro a cada tres horas.
+# Os mais recentes sao os que valem: o sitemap vem em ordem de postagem.
+PELANDO_LIMITE = 20
+
+
+def _cupons_do_pelando() -> list[dict]:
+    """Cupons do ML publicados no Pelando, ja no formato do watchlist.
+
+    Existe porque o painel do proprio ML nao serve de fonte: ele so mostra o
+    cupom DEPOIS que o dono clica em ativar, entao o bot enxergaria apenas o
+    que ja foi ativado a mao. Medido em 08/09/2026, o painel dava 1 cupom
+    publicavel e o Pelando dava 8.
+
+    Erro aqui e nao-fatal, como em toda fonte de cupom.
+    """
+    from .sources.pelando import buscar as buscar_pelando
+
+    achados = buscar_pelando(limite=PELANDO_LIMITE)
+    return [c.como_dict(PELANDO_VALIDADE_DIAS) for c in achados]
 
 
 def cupons_vigentes(path: Path | None = None) -> list[dict]:
-    """Os cupons do painel do ML, mais os cadastrados a mao no watchlist.
+    """Cupons de tres origens: Pelando, painel do ML, e o watchlist.
 
-    Os do painel sao relidos a cada `CUPONS_HORAS` e guardados no banco. Seis
-    horas porque cupom de campanha dura dias, nao minutos -- e porque cada
-    leitura sao quatro requisicoes a uma pagina interna do ML, que nao e
-    contrato publico e nao merece trafego de rodada.
+    Relidos a cada `CUPONS_HORAS` e guardados no banco. Tres horas porque
+    cupom de campanha do ML sai rapido -- alguns valem so no dia --, e uma
+    janela maior publicaria codigo morto por horas.
 
-    Falha nao-fatal em toda ponta: sem painel, valem os do watchlist; sem
-    nenhum dos dois, o post sai sem cupom, que foi o estado de todos os 2.953
-    posts entre 29/08 e 08/09.
+    A ordem das origens e a da confianca. O Pelando e a fonte de volume, mas e
+    conteudo de comunidade: o codigo vem de um usuario e a validade e estimada.
+    O painel do ML e pouco mas e oficial. O watchlist e o que o dono conferiu
+    com as proprias maos.
+
+    Falha nao-fatal em toda ponta: se as duas fontes de rede cairem, valem os
+    do watchlist; sem nenhum dos tres, o post sai sem cupom -- que foi o estado
+    de todos os 2.953 posts entre 29/08 e 08/09.
     """
     do_painel: list[dict] = []
     try:
@@ -273,31 +304,45 @@ def cupons_vigentes(path: Path | None = None) -> list[dict]:
                     enriquecer_com_temas,
                 )
 
+                lidos: list[dict] = []
                 try:
-                    lidos = buscar(MercadoLivreConfig.load().affiliate_cookie)
-                    do_painel = enriquecer_com_temas(lidos)
-                    set_meta(conn, CUPONS_META, json.dumps(do_painel))
+                    lidos = _cupons_do_pelando()
+                except Exception as exc:  # noqa: BLE001 - site de terceiro
+                    log.warning("Pelando falhou (%s); sigo com as outras fontes.", exc)
+
+                try:
+                    do_ml = enriquecer_com_temas(
+                        buscar(MercadoLivreConfig.load().affiliate_cookie)
+                    )
+                    # O painel manda no empate: mesmo codigo, regra oficial.
+                    codigos_oficiais = {c["code"] for c in do_ml}
+                    lidos = do_ml + [
+                        c for c in lidos if c["code"] not in codigos_oficiais
+                    ]
                 except SessionExpired as exc:
-                    # O cookie cai sozinho de tempos em tempos. Segue com o que
-                    # estava guardado -- eles tem `ate` proprio e expiram sozinhos.
-                    log.warning("Cupons do ML: %s", exc)
-                    do_painel = json.loads(guardados) if guardados else []
+                    # O cookie cai sozinho de tempos em tempos.
+                    log.warning("Painel de cupons do ML: %s", exc)
                 except Exception as exc:  # noqa: BLE001 - painel nao e contrato
-                    log.warning("Cupons do ML falharam (%s); usando o que havia.", exc)
+                    log.warning("Painel de cupons do ML falhou: %s", exc)
+
+                if lidos:
+                    do_painel = lidos
+                    set_meta(conn, CUPONS_META, json.dumps(do_painel))
+                else:
                     do_painel = json.loads(guardados) if guardados else []
             elif guardados:
                 do_painel = json.loads(guardados)
     except Exception as exc:  # noqa: BLE001 - cupom nunca derruba a rodada
         log.warning("Nao consegui ler os cupons guardados: %s", exc)
 
-    # O `ate` e reconferido aqui, e nao so na leitura: o cache tem seis horas
+    # O `ate` e reconferido aqui, e nao so na leitura: o cache tem tres horas
     # de vida e um cupom pode vencer dentro dessa janela.
     hoje = date.today()
     frescos = [
         c for c in do_painel if c.get("ate") and date.fromisoformat(c["ate"]) >= hoje
     ]
     if len(frescos) < len(do_painel):
-        log.info("%d cupom(ns) do painel venceram desde a ultima leitura.",
+        log.info("%d cupom(ns) venceram desde a ultima leitura.",
                  len(do_painel) - len(frescos))
 
     return frescos + load_coupons(path)
