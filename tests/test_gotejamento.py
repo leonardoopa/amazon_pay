@@ -38,7 +38,7 @@ class FakeDelivery:
         self.erro = erro
         self.config = type("C", (), {"group_jid": "x@g.us"})()
 
-    def send_post(self, text, image_url=None):
+    def send_post(self, text, image_url=None, to=None):
         # Conta TENTATIVAS, nao sucessos: contar sucessos faria a falha se
         # repetir pra sempre, e o teste mediria o fake em vez do codigo.
         indice, self.tentativas = self.tentativas, self.tentativas + 1

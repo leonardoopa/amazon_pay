@@ -78,12 +78,24 @@ class WhatsApp:
             }
         )
 
-    def send_post(self, text: str, image_url: str | None = None) -> dict:
+    def send_post(
+        self, text: str, image_url: str | None = None, to: str | None = None
+    ) -> dict:
         """Manda como imagem quando da, e cai pra texto quando nao da.
 
         Motivos pra cair: sem imagem no anuncio, legenda longa demais, ou a
         Meta recusando a URL. Nenhum deles justifica perder a oferta.
+
+        `to` levanta em vez de ser ignorado. Este backend manda para o destino
+        fixo da configuracao, e engolir o parametro faria um post destinado ao
+        grupo de Mulheres sair no Geral -- errado e silencioso, que e a pior
+        combinacao. Quem usa varios grupos usa a Evolution.
         """
+        if to:
+            raise NotImplementedError(
+                "O backend oficial da Meta manda para um destino fixo; nao da "
+                f"para enviar para {to}. Use a Evolution para varios grupos."
+            )
         if image_url and len(text) <= CAPTION_LIMIT:
             try:
                 return self.send_image(image_url, text)

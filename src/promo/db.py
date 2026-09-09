@@ -729,7 +729,8 @@ def recent_headlines(conn: sqlite3.Connection, limit: int = 12) -> list[str]:
 def pending_posts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Posts que ficaram na fila (janela de 24h fechada, erro de rede etc.)."""
     return conn.execute(
-        "SELECT id, copy, image_url FROM posts WHERE status = 'pending' ORDER BY created_at"
+        "SELECT id, copy, image_url, grupo_jid FROM posts "
+        "WHERE status = 'pending' ORDER BY created_at"
     ).fetchall()
 
 

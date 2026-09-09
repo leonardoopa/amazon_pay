@@ -854,6 +854,55 @@
   "coupon": {
     "codes": []
   },
+  "_comment_grupos": "Grupos de WhatsApp que recebem os posts. `temas` vazio quer dizer 'recebe tudo' -- e o grupo geral. Com temas, o grupo so recebe oferta cujo TITULO cite um deles, mesma regra do `priority`: a oferta chega por busca, por categoria ou pela vitrine, e nenhuma dessas carrega o motivo de ter vindo; o titulo carrega. O `jid` do geral fica VAZIO de proposito: vazio significa o EVOLUTION_GROUP_JID do .env, e e o que mantem os 3.063 posts ja enviados contando no cooldown dele. Trocar por um JID escrito faria todos sumirem da conta e produtos recem-postados voltarem ao grupo. Uma oferta vai para TODOS os grupos que a aceitam: Wella sai no Geral e no Mulheres, monitor gamer so no Geral. Lista ausente = um destino unico, que era o comportamento ate 09/09/2026.",
+  "grupos": [
+    {
+      "nome": "Comunidade do Desconto - Geral",
+      "jid": "",
+      "temas": []
+    },
+    {
+      "nome": "Comunidade do Desconto - Mulheres",
+      "jid": "120363428560546806@g.us",
+      "temas": [
+        "wella",
+        "kerastase",
+        "truss",
+        "cadiveu",
+        "brae",
+        "loreal professionnel",
+        "redken",
+        "lola cosmetics",
+        "widi care",
+        "salon line",
+        "haskell",
+        "shampoo",
+        "condicionador",
+        "mascara capilar",
+        "oleo capilar",
+        "ampola capilar",
+        "creme para pentear",
+        "cerave",
+        "cicaplast",
+        "la roche",
+        "protetor solar",
+        "hidratante",
+        "serum facial",
+        "pele sensivel",
+        "protetor labial",
+        "perfume",
+        "body splash",
+        "tree hut",
+        "esfoliante",
+        "occitane",
+        "vivara",
+        "legging",
+        "lupo",
+        "calcinha",
+        "top puma"
+      ]
+    }
+  ],
   "_comment_priority": "Temas com vaga garantida por rodada (PRIORITY_RESERVE no .env diz quantas). Sao pedacos de TITULO, nao termos de busca: a mesma oferta chega pela busca por termo, pelos mais vendidos da categoria e pela vitrine, e nao carrega qual das tres a trouxe -- o titulo carrega. Comparacao sem acento e em minusculo. Cuidado com pedaco curto demais: 'oleo' pegaria oleo de motor.",
   "priority": [
     "wella",
