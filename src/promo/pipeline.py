@@ -6,6 +6,7 @@ import inspect
 import json
 import logging
 import random
+import re
 import time
 from datetime import date, datetime
 from dataclasses import dataclass, replace
@@ -536,12 +537,94 @@ def _serve(offer: Offer, cupom: dict) -> bool:
     if categorias and offer.category:
         return offer.category in categorias
 
-    temas = cupom.get("temas") or []
+    temas = list(cupom.get("temas") or [])
     if categorias and not temas:
         # Cupom de categoria, produto sem categoria e sem tema derivado: nao ha
         # como afirmar que se aplica. Falha fechado.
         return False
+
+    # `restrito` e o "Em itens Selecionados" da pagina do cupom: ele vale num
+    # recorte, e o recorte nao esta publicado em lugar nenhum. Sem tema e sem
+    # categoria, o codigo e a unica pista do recorte -- e ele costuma ser a
+    # propria marca.
+    #
+    # Medido em 09/09/2026, os nove cupons no ar eram TODOS restritos, TODOS
+    # sem tema e sem categoria. Sem esta regra o `return` abaixo os tratava
+    # como "vale para tudo", e o grupo recebeu "Aparador de Pelos Kemei, use o
+    # cupom AVENE15 ou MANTECORP14" -- dois cupons de dermocosmetico num
+    # aparador de pelos. E a queixa que o dono repetiu quatro vezes: o cupom
+    # nao pega.
+    if not temas and cupom.get("restrito"):
+        marca = _marca_do_codigo(cupom.get("code") or "")
+        if not marca:
+            # Restrito, sem tema, sem categoria e sem marca no codigo: nao ha
+            # como afirmar que se aplica a nada. Falha fechado, igual acima.
+            return False
+        temas = [marca]
+
     return not temas or tem_tema(offer.title, temas)
+
+
+# Sufixos que o ML gruda no codigo e que nao fazem parte da marca. Ordenados do
+# maior para o menor: "NOMELI" precisa sair antes de "MELI", senao
+# "MAYBELLINENOMELI" viraria "maybellineno".
+_SUFIXOS_DO_CODIGO = ("NOMELI", "NOML", "MELI", "OFF")
+
+
+def _marca_do_codigo(code: str) -> str:
+    """A marca escondida no codigo do cupom, ou "" quando nao da para dizer.
+
+    `AVENE15` -> "avene". `MANTECORP14` -> "mantecorp". `MAYBELLINENOMELI` ->
+    "maybelline". `TUDOMELI` -> "" (sobra "tudo", que nao e marca de nada).
+
+    Serve so para cupom restrito sem tema: o codigo vira o recorte que o ML nao
+    publica. Errar aqui para MENOS e barato -- o post sai sem cupom, como
+    saia antes de existirem cupons. Errar para MAIS e o que custa: manda a
+    pessoa digitar um codigo que o checkout recusa.
+    """
+    limpo = re.sub(r"\d+", "", (code or "").upper())
+    for sufixo in _SUFIXOS_DO_CODIGO:
+        if limpo.endswith(sufixo) and len(limpo) > len(sufixo):
+            limpo = limpo[: -len(sufixo)]
+            break
+
+    # Palavras genericas de campanha nao recortam nada: "OFERTAHOJE" e "SOHOJE"
+    # valem em itens selecionados que ninguem sabe quais sao.
+    if limpo.lower() in _CODIGOS_SEM_MARCA or len(limpo) < 4:
+        return ""
+    return limpo.lower()
+
+
+# Codigos que sobram sem marca nenhuma depois de tirar numero e sufixo. Vieram
+# dos que estavam no ar em 09/09/2026; a lista existe para eles nao virarem
+# "tema" e casarem com titulo por acaso.
+_CODIGOS_SEM_MARCA = frozenset(
+    {
+        "tudo",
+        "ofertahoje",
+        "sohoje",
+        "internacional",
+        "sports",
+        "meianoite",
+        "promo",
+        "desconto",
+        "cupom",
+        "oferta",
+        "hoje",
+        "sitetod",
+        "predata",
+        "tudodebom",
+        "valemais",
+        "torcida",
+        "gloria",
+        # Sobras de "9DO9...", o prefixo da campanha 9.9. Tirar os digitos
+        # deixa "DOSPORTS" e "DOMEIANOITE", que nao sao marca de nada. Sem
+        # estes dois a funcao ja falharia fechado -- titulo nenhum contem
+        # "dosports" --, mas depender disso seria depender de acaso.
+        "dosports",
+        "domeianoite",
+    }
+)
 
 
 # Duas chaves, e nao uma. `hours_since` le a chave que recebe e faz
