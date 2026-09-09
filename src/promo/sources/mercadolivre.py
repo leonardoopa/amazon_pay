@@ -303,12 +303,35 @@ class MercadoLivre:
         Nome e foto vem do banco em vez de uma segunda chamada -- eles quase
         nao mudam, e o que interessa aqui e o preco de hoje. Um GET por
         produto; o teto por rodada e ML_TRACK_LIMIT.
+
+        Um produto que falha nao leva os outros junto. A rota so aceita ID de
+        produto de catalogo, e nem todo ID que chega aqui e um: os que vem da
+        descoberta por outro grupo podem ser de anuncio, e para esses a API
+        responde 403. Antes, uma unica resposta dessas abortava a leva inteira
+        -- medido em 09/09/2026, 15 pistas viraram zero produtos.
         """
         offers = []
+        falhas = 0
         for external_id, title, image_url in tracked:
-            offer = self._offer_for(external_id, title=title, image_url=image_url)
+            try:
+                offer = self._offer_for(external_id, title=title, image_url=image_url)
+            except httpx.HTTPStatusError as exc:
+                falhas += 1
+                log.debug(
+                    "Produto %s nao reconsultado: HTTP %s",
+                    external_id,
+                    exc.response.status_code,
+                )
+                continue
             if offer is not None:
                 offers.append(offer)
+
+        # Falhar em todos e outra coisa: nao e um ID esquisito na lista, e a
+        # reconsulta inteira quebrada. Silencio ali esconderia uma rodada cega.
+        if tracked and falhas == len(tracked):
+            log.warning(
+                "Nenhum dos %d produto(s) respondeu a reconsulta.", len(tracked)
+            )
         return offers
 
     def _offer_for(
