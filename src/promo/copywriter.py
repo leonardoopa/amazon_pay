@@ -187,6 +187,7 @@ class Copywriter:
         link: str,
         coupon: str | None = None,
         avoid: list[str] | None = None,
+        preco_com_cupom: float | None = None,
     ) -> str:
         """Escreve o post, recusando chamada que ja saiu no grupo.
 
@@ -208,7 +209,7 @@ class Copywriter:
         proibidas.discard("")
 
         for tentativa in range(2):
-            text = self._escrever_uma_vez(scored, link, coupon, avoid)
+            text = self._escrever_uma_vez(scored, link, coupon, avoid, preco_com_cupom)
             if _chave_da_chamada(text) not in proibidas:
                 return text
             log.info(
@@ -225,8 +226,11 @@ class Copywriter:
         link: str,
         coupon: str | None,
         avoid: list[str] | None,
+        preco_com_cupom: float | None = None,
     ) -> str:
-        response = self._generate(_facts(scored, link, coupon, avoid))
+        response = self._generate(
+            _facts(scored, link, coupon, avoid, preco_com_cupom)
+        )
 
         _reject_truncated(response)
 
@@ -236,6 +240,7 @@ class Copywriter:
             raise RuntimeError("Gemini devolveu resposta vazia")
 
         _reject_unfounded_claims(text, scored)
+        _reject_preco_de_cupom_solto(text, coupon, preco_com_cupom)
         text = _enforce_title(text, scored.offer.title)
         return _enforce_disclosure(text, scored.offer.source)
 
@@ -484,6 +489,7 @@ def _facts(
     link: str,
     coupon: str | None = None,
     avoid: list[str] | None = None,
+    preco_com_cupom: float | None = None,
 ) -> str:
     offer = scored.offer
     facts = [
@@ -505,9 +511,25 @@ def _facts(
     # "nao". Deixar o assunto de fora nao equivale a proibir: o modelo preenche
     # o formato que aprendeu, e escreve "Loja oficial no ML" sozinho -- foi o
     # que aconteceu em 3 de 3 posts antes desta instrucao existir.
-    facts.append(
-        f"Cupom: {coupon}" if coupon else "Cupom: NAO ha. NAO escreva linha de cupom."
-    )
+    if coupon and preco_com_cupom is not None:
+        # O preco que a pessoa PAGA, e nao o do anuncio. Pedido em 09/09/2026:
+        # o post saia "por R$ 117,35" quando o cupom levava a R$ 105,61, e o
+        # numero mais atraente ficava escondido numa linha depois. O grupo
+        # concorrente ja faz assim -- "De R$ 154 por R$ 70 no Pix".
+        #
+        # So entra quando o cupom vale MESMO para este produto: cupom "em
+        # itens selecionados" nao chega aqui, porque anunciar um preco que o
+        # checkout nao vai dar e pior do que nao citar cupom nenhum.
+        facts.append(
+            f"Cupom: {coupon}. O preco JA E com o cupom aplicado: escreva "
+            f"R$ {brl(preco_com_cupom)} na linha do preco, e diga na mesma "
+            f"linha que e com o cupom. O anuncio mostra R$ {brl(offer.price)} "
+            "antes do cupom."
+        )
+    elif coupon:
+        facts.append(f"Cupom: {coupon}")
+    else:
+        facts.append("Cupom: NAO ha. NAO escreva linha de cupom.")
     facts.append(
         "Loja oficial: SIM, e anuncio de loja oficial no ML."
         if offer.official_store
@@ -581,6 +603,40 @@ def _normaliza(texto: str) -> str:
     return " ".join(sem_acento.lower().split())
 
 
+def _reject_preco_de_cupom_solto(
+    text: str, coupon: str | None, preco_com_cupom: float | None
+) -> None:
+    """O preco com cupom precisa dizer que e com cupom.
+
+    O numero so e verdadeiro atrelado a condicao. Cupom que vale "em itens
+    selecionados" as vezes nao aplica -- medido em 09/09/2026, o TORCIDA
+    passou num pre-treino e numa progressiva e falhou num whey. Escrito como
+    preco do anuncio, ele seria falso nesses casos.
+
+    Levanta em vez de corrigir: a linha do preco e a linha que o post inteiro
+    existe para entregar, e remendar ela no automatico produziria frase torta.
+    Quem chama cai no `fallback_copy`, que monta a linha certa por construcao.
+    """
+    if not coupon or preco_com_cupom is None:
+        return
+
+    alvo = brl(preco_com_cupom)
+    if alvo not in text:
+        raise RuntimeError(
+            f"O post nao traz o preco com cupom (R$ {alvo}); o Gemini usou "
+            "outro numero na linha do preco."
+        )
+
+    for linha in text.splitlines():
+        if alvo in linha:
+            if re.search(r"com\s+(o\s+)?cupom", linha, re.I):
+                return
+            raise RuntimeError(
+                f"A linha do preco traz R$ {alvo} sem dizer que e com o "
+                f"cupom: {linha.strip()!r}"
+            )
+
+
 def _enforce_disclosure(text: str, source: str) -> str:
     """Garante a linha de divulgacao, exatamente uma vez.
 
@@ -638,7 +694,12 @@ def _cola_no_link(linhas: list[str], disclosure: str) -> str:
     return "\n".join(miolo[:-1] + [f"{miolo[-1]}\n{fim}"])
 
 
-def fallback_copy(scored: ScoredOffer, link: str, coupon: str | None = None) -> str:
+def fallback_copy(
+    scored: ScoredOffer,
+    link: str,
+    coupon: str | None = None,
+    preco_com_cupom: float | None = None,
+) -> str:
     """Texto sem IA, usado quando o Gemini falha ou inventa.
 
     Segue o mesmo formato do prompt, menos a linha de chamada -- que e
@@ -650,7 +711,9 @@ def fallback_copy(scored: ScoredOffer, link: str, coupon: str | None = None) -> 
     lines = [
         offer.title,
         "",
-        f"De R$ {brl(scored.baseline)} por *R$ {brl(offer.price)}*",
+        f"De R$ {brl(scored.baseline)} por *R$ {brl(preco_com_cupom)}* com o cupom"
+        if coupon and preco_com_cupom is not None
+        else f"De R$ {brl(scored.baseline)} por *R$ {brl(offer.price)}*",
     ]
     if coupon:
         lines.append(f"Use o cupom: {coupon} 🎟️")
@@ -660,6 +723,9 @@ def fallback_copy(scored: ScoredOffer, link: str, coupon: str | None = None) -> 
     if offer.official_store:
         lines.append("Loja oficial no ML")
     lines.append(link)
-    lines.append("")
     lines.append(disclosure_for(offer.source))
+    # Sem linha em branco entre o link e a divulgacao, igual ao caminho do
+    # Gemini (ver `_cola_no_link`). Os dois textos vao para o mesmo grupo e
+    # nao podem ter formato diferente -- o fallback entra justamente nas
+    # rodadas em que o Gemini falha, que sao imprevisiveis.
     return "\n".join(lines)
