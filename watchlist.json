@@ -970,6 +970,11 @@
         "lupo",
         "calcinha",
         "top puma"
+      ],
+      "exclui": [
+        "cueca",
+        "boxer masculina",
+        "sunga"
       ]
     }
   ],

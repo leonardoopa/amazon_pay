@@ -316,3 +316,74 @@ def test_expiracao_nao_toca_no_que_ja_foi_enviado():
         ]
         == "sent"
     )
+
+
+# ---------- quando o DNS da Evolution cai ----------
+#
+# Em 09/09/2026 o resolver do container da Evolution parou de responder:
+# `getaddrinfo EAI_AGAIN http2.mlstatic.com`, reproduzido de dentro dele. Dois
+# posts perderam a foto em tres minutos. Retry nao resolve esse caso -- repete
+# a mesma pergunta ao mesmo resolver quebrado.
+
+
+class EvolutionComDnsQuebrado:
+    """A Evolution recusa toda URL, mas aceita bytes."""
+
+    def __init__(self):
+        self.tentativas_url = 0
+        self.recebeu_base64 = None
+
+    def send_image(self, image_url, caption, to=None):
+        self.tentativas_url += 1
+        raise RuntimeError(
+            'Evolution recusou o envio (500): {"response":{"message":'
+            '["Error: getaddrinfo EAI_AGAIN http2.mlstatic.com"]}}'
+        )
+
+    def send_image_bytes(self, image_url, caption, to=None):
+        self.recebeu_base64 = (image_url, caption)
+        return {"key": {"id": "ok"}}
+
+    def send_text(self, text, to=None):
+        raise AssertionError("nao devia cair para texto: os bytes funcionaram")
+
+
+def test_dns_fora_manda_os_bytes_em_vez_de_desistir_da_foto():
+    from promo.delivery.evolution import ESPERAS_DA_MIDIA, Evolution
+
+    falso = EvolutionComDnsQuebrado()
+    Evolution.send_post(
+        falso, "Perfume por R$ 169,17", "https://http2.mlstatic.com/D_1-F.jpg"
+    )
+
+    assert falso.tentativas_url == len(ESPERAS_DA_MIDIA)
+    assert falso.recebeu_base64[0] == "https://http2.mlstatic.com/D_1-F.jpg"
+
+
+class EvolutionSemRede:
+    """Nem URL nem bytes passam: aqui o post sai como texto mesmo."""
+
+    def __init__(self):
+        self.texto = None
+
+    def send_image(self, image_url, caption, to=None):
+        raise RuntimeError("500")
+
+    def send_image_bytes(self, image_url, caption, to=None):
+        raise RuntimeError("a CDN tambem nao respondeu")
+
+    def send_text(self, text, to=None):
+        self.texto = text
+        return {"key": {"id": "ok"}}
+
+
+def test_se_os_bytes_tambem_falharem_o_post_sai_como_texto():
+    """A foto e importante, mas nao a ponto de segurar a oferta."""
+    from promo.delivery.evolution import Evolution
+
+    falso = EvolutionSemRede()
+    Evolution.send_post(
+        falso, "Perfume por R$ 169,17", "https://http2.mlstatic.com/D_1-F.jpg"
+    )
+
+    assert falso.texto == "Perfume por R$ 169,17"

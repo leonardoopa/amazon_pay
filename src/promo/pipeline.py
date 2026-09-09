@@ -110,17 +110,28 @@ class GrupoDestino:
     grupo so recebe oferta cujo TITULO cite um deles, que e a mesma regra de
     `priority`: a oferta chega por busca, por categoria ou pela vitrine, e
     nenhuma dessas carrega o motivo de ter vindo. O titulo carrega.
+
+    `exclui` derruba a oferta mesmo que um tema case, e vem depois por isso.
+    Existe porque tema e marca colidem: "lupo" trouxe "Kit 6 Cuecas Lupo Boxer"
+    para o grupo de Mulheres, duas vezes, em 09/09/2026. A marca faz calcinha E
+    cueca, e nenhum ajuste no tema separa as duas -- so a palavra do produto.
+
+    A lista de exclusao geral (`load_exclude`) nao serve aqui: ela e o que nao
+    entra em grupo NENHUM, e cueca no Geral e oferta legitima.
     """
 
     jid: str
     nome: str
     temas: tuple[str, ...] = ()
+    exclui: tuple[str, ...] = ()
 
     @property
     def e_geral(self) -> bool:
         return not self.temas
 
     def aceita(self, offer: Offer) -> bool:
+        if self.exclui and tem_tema(offer.title, list(self.exclui)):
+            return False
         return self.e_geral or tem_tema(offer.title, list(self.temas))
 
 
@@ -166,6 +177,7 @@ def load_grupos(path: Path | None = None) -> list[GrupoDestino]:
                 jid=jid,
                 nome=(cru.get("nome") or jid).strip(),
                 temas=tuple(sem_acento(x) for x in cru.get("temas") or ()),
+                exclui=tuple(sem_acento(x) for x in cru.get("exclui") or ()),
             )
         )
 
