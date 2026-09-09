@@ -182,3 +182,81 @@ def test_o_grupo_de_mulheres_aceita_o_que_e_dele():
         "Kit Body Splash Victoria's Secret",
     ):
         assert nichado.aceita(oferta(titulo)), titulo
+
+
+# ---------- exclusao por grupo ----------
+#
+# Tema e marca colidem. Em 09/09/2026 o tema "lupo" levou "Kit 6 Cuecas Lupo
+# Boxer" para o grupo de Mulheres, duas vezes: a marca faz calcinha E cueca, e
+# nenhum ajuste no tema separa as duas.
+
+
+def test_cueca_nao_entra_no_grupo_de_mulheres():
+    grupo = GrupoDestino(
+        jid="120@g.us", nome="Mulheres", temas=("lupo", "calcinha"),
+        exclui=("cueca",),
+    )
+
+    assert not grupo.aceita(
+        oferta("Kit 6 Cuecas Lupo Boxer Box Sem Costura Basic Microfibra")
+    )
+
+
+def test_a_exclusao_do_grupo_nao_derruba_o_resto_da_marca():
+    """O tema continua valendo para o que ele deveria trazer."""
+    grupo = GrupoDestino(
+        jid="120@g.us", nome="Mulheres", temas=("lupo", "calcinha"),
+        exclui=("cueca",),
+    )
+
+    assert grupo.aceita(oferta("Kit 3 Calcinhas Lupo Algodao"))
+
+
+def test_a_exclusao_vence_o_tema():
+    """A ordem importa: `exclui` corre depois de `temas` e derruba mesmo com
+    tema casando. Sem isso a palavra excluida so valeria para o que ja nao
+    entrava."""
+    grupo = GrupoDestino(
+        jid="120@g.us", nome="Mulheres", temas=("cueca",), exclui=("cueca",)
+    )
+
+    assert not grupo.aceita(oferta("Cueca Lupo"))
+
+
+def test_grupo_sem_exclusao_segue_igual():
+    """A maioria dos grupos nao tem `exclui`, e nada muda para eles."""
+    grupo = GrupoDestino(jid="120@g.us", nome="Mulheres", temas=("lupo",))
+
+    assert grupo.aceita(oferta("Kit 6 Cuecas Lupo Boxer"))
+
+
+def test_o_geral_com_exclusao_continua_recebendo_o_resto():
+    """`exclui` funciona tambem no grupo sem temas -- ele nao vira nichado por
+    causa disso."""
+    grupo = GrupoDestino(jid="", nome="Geral", exclui=("cueca",))
+
+    assert not grupo.aceita(oferta("Cueca Lupo Boxer"))
+    assert grupo.aceita(oferta("Shampoo Wella 1L"))
+
+
+def test_a_exclusao_do_watchlist_chega_no_grupo(tmp_path):
+    arquivo = tmp_path / "watchlist.json"
+    arquivo.write_text(
+        json.dumps(
+            {
+                "grupos": [
+                    {
+                        "nome": "Mulheres",
+                        "jid": "120@g.us",
+                        "temas": ["lupo"],
+                        "exclui": ["cueca", "sunga"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    grupo = load_grupos(arquivo)[0]
+
+    assert grupo.exclui == ("cueca", "sunga")

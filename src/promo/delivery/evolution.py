@@ -17,6 +17,7 @@ dois esta rodando.
 
 from __future__ import annotations
 
+import base64
 import logging
 import time
 
@@ -36,6 +37,11 @@ CAPTION_LIMIT = 1024
 # Evolution falhando por alguns segundos. Retry imediato nao ajuda nesse caso:
 # ele repete a pergunta para o mesmo resolver ainda indisponivel.
 ESPERAS_DA_MIDIA = (2.0, 6.0, 0.0)
+
+# Quanto esperar ao baixar a foto da CDN do ML por conta propria. As imagens do
+# ML sao de dezenas de KB; o que este numero cobre e a CDN lenta, nao arquivo
+# grande.
+MEDIA_TIMEOUT = 20.0
 
 # Listar grupos e a chamada mais lenta da API: ela espera a sincronizacao do
 # Baileys com o celular. Numa conta com ~170 grupos passa de 30s.
@@ -178,6 +184,40 @@ class Evolution:
             },
         )
 
+    def send_image_bytes(
+        self, image_url: str, caption: str, to: str | None = None
+    ) -> dict:
+        """A mesma imagem, mas baixada por NOS e enviada em base64.
+
+        Existe porque o resolver do container da Evolution cai. Em 09/09/2026 a
+        falha era `getaddrinfo EAI_AGAIN http2.mlstatic.com`, reproduzida de
+        dentro do container: o DNS embutido do Docker (127.0.0.11) parou de
+        responder ali, e dois posts perderam a foto em tres minutos.
+
+        Quem resolve o nome aqui somos nos, e o nosso container resolve DNS o
+        tempo todo -- e ele que baixa as paginas do ML. Isso tira a Evolution
+        do caminho da rede sem mexer no container que carrega a sessao pareada
+        do WhatsApp.
+
+        Fica como segunda tentativa, e nao como padrao: mandar a URL nao gasta
+        banda nossa nem memoria com a imagem inteira, e funciona na maior parte
+        das vezes.
+        """
+        with httpx.Client(timeout=MEDIA_TIMEOUT, follow_redirects=True) as c:
+            resposta = c.get(image_url)
+            resposta.raise_for_status()
+            bruto = resposta.content
+
+        return self._send(
+            "/message/sendMedia",
+            {
+                "number": to or self.config.group_jid,
+                "mediatype": "image",
+                "media": base64.b64encode(bruto).decode("ascii"),
+                "caption": caption[:CAPTION_LIMIT],
+            },
+        )
+
     def send_post(
         self, text: str, image_url: str | None = None, to: str | None = None
     ) -> dict:
@@ -220,8 +260,23 @@ class Evolution:
                     )
                     if espera:
                         time.sleep(espera)
+
+            # Ultima carta: baixar a foto aqui e mandar os bytes.
+            #
+            # Quando a falha e o DNS da Evolution, repetir a mesma chamada nao
+            # tem como dar certo -- ela vai continuar sem resolver o nome. Este
+            # caminho troca QUEM busca a imagem, e por isso funciona onde o
+            # retry nao funcionava.
+            try:
+                return self.send_image_bytes(image_url, text, to)
+            except NotConnected:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Envio da imagem em base64 tambem falhou: %s", exc)
+
             log.warning(
-                "Post sai sem imagem: a Evolution recusou a midia %d vezes.",
+                "Post sai sem imagem: a Evolution recusou a midia %d vezes, e o "
+                "envio direto dos bytes tambem.",
                 len(ESPERAS_DA_MIDIA),
             )
         return self.send_text(text, to)
