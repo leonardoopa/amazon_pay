@@ -852,7 +852,17 @@
   ],
   "_comment_coupon": "Cupons de campanha do MERCADO LIVRE, preenchidos A MAO: sondadas em 08/09/2026, 17 rotas de cupom da API do ML devolvem 404 e a pagina /cupons devolve 403 para servidor, entao nao ha de onde ler sozinho. Campos: `ate` (validade, OBRIGATORIO), `temas` (so entra em titulo que cite um deles), `geral: true` (afirmacao explicita de que vale para tudo -- exigida no lugar de `temas`), `minimo` (valor minimo da compra). Falta de regra NAO e permissao: sem `ate`, ou sem `temas` e sem `geral`, o cupom nao entra. Motivo medido: dos 37 cupons do ML publicados no Promobit, 12 (32%) vinham sem regra nenhuma, 3 ja estavam vencidos e ainda listados como validos, e 6 venciam no mesmo dia. Varios validos para o mesmo produto saem como 'A ou B', porque cupom do ML tem limite de uso. NUNCA sai em oferta da Amazon. ANTES DE PREENCHER: o texto oficial do ML diz que o cupom nao e cumulativo com ofertas vigentes do proprio ML, e este bot so posta item em oferta -- teste um codigo num carrinho real antes de cadastrar, senao o recurso e natimorto. Lista vazia = posts sem cupom, que foi o estado dos 2.953 posts enviados entre 29/08 e 08/09.",
   "coupon": {
-    "codes": []
+    "codes": [
+      {
+        "code": "9DO9MEIANOITE",
+        "ate": "2026-09-09",
+        "desconto": 25,
+        "tipo": "PERCENT",
+        "minimo": 219,
+        "teto": 60,
+        "geral": true
+      }
+    ]
   },
   "_comment_grupos": "Grupos de WhatsApp que recebem os posts. `temas` vazio quer dizer 'recebe tudo' -- e o grupo geral. Com temas, o grupo so recebe oferta cujo TITULO cite um deles, mesma regra do `priority`: a oferta chega por busca, por categoria ou pela vitrine, e nenhuma dessas carrega o motivo de ter vindo; o titulo carrega. O `jid` do geral fica VAZIO de proposito: vazio significa o EVOLUTION_GROUP_JID do .env, e e o que mantem os 3.063 posts ja enviados contando no cooldown dele. Trocar por um JID escrito faria todos sumirem da conta e produtos recem-postados voltarem ao grupo. Uma oferta vai para TODOS os grupos que a aceitam: Wella sai no Geral e no Mulheres, monitor gamer so no Geral. Lista ausente = um destino unico, que era o comportamento ate 09/09/2026.",
   "grupos": [
