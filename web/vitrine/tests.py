@@ -7,10 +7,13 @@ existe (500 numa landing custa a visita inteira).
 
 from __future__ import annotations
 
+import os
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from django.core.management import call_command
 from django.template.loader import render_to_string
 from django.test import TestCase
 from django.urls import reverse
@@ -364,3 +367,63 @@ class VitrineFixaTests(TestCase):
         self.assertTrue(itens)
         self.assertFalse(any(item["demonstracao"] for item in itens))
         self.assertTrue(all(item["produto"].source == "mercadolivre" for item in itens))
+
+
+class SincronizaONome(TestCase):
+    """Renomear o grupo no WhatsApp não pode deixar a landing desatualizada.
+
+    Aconteceu em 09/09/2026: o grupo virou "Comunidade do Desconto - Geral
+    🇧🇷 03" e o site seguia anunciando "Comunidade do Desconto #3", o nome do
+    dia do cadastro. Nada quebrou — quem identifica o grupo é o JID —, mas
+    quem chegava pela landing via um nome que não existe mais.
+    """
+
+    def setUp(self):
+        self.grupo = Grupo.objects.create(
+            nome="Comunidade do Desconto #3",
+            convite="https://chat.whatsapp.com/x",
+            jid="120363429710613779@g.us",
+            membros=3,
+        )
+
+    def responde(self, corpo):
+        """Finge a Evolution devolvendo `corpo` em findGroupInfos."""
+        resposta = mock.Mock(status_code=200)
+        resposta.json.return_value = corpo
+        cliente = mock.MagicMock()
+        cliente.__enter__.return_value.get.return_value = resposta
+        return cliente
+
+    def sincronizar(self, corpo):
+        with mock.patch.dict(os.environ, {"EVOLUTION_API_KEY": "x"}):
+            with mock.patch("httpx.Client", return_value=self.responde(corpo)):
+                call_command("sincronizar_grupos", stdout=StringIO())
+        self.grupo.refresh_from_db()
+
+    def test_o_nome_novo_e_gravado(self):
+        self.sincronizar(
+            {"size": 141, "subject": "Comunidade do Desconto - Geral 🇧🇷 03"}
+        )
+
+        self.assertEqual(self.grupo.nome, "Comunidade do Desconto - Geral 🇧🇷 03")
+        self.assertEqual(self.grupo.membros, 141)
+
+    def test_sem_nome_na_resposta_o_antigo_fica(self):
+        """Versão da Evolution que não manda `subject` não pode apagar o nome."""
+        self.sincronizar({"size": 141})
+
+        self.assertEqual(self.grupo.nome, "Comunidade do Desconto #3")
+        self.assertEqual(self.grupo.membros, 141)
+
+    def test_nome_vazio_nao_apaga_o_atual(self):
+        self.sincronizar({"size": 141, "subject": "   "})
+
+        self.assertEqual(self.grupo.nome, "Comunidade do Desconto #3")
+
+    def test_membros_ilegiveis_nao_gravam_nada(self):
+        """Falha de leitura mantém o estado, em vez de zerar a ocupação e
+        anunciar vaga que não existe."""
+        self.sincronizar({"subject": "Nome Novo"})
+
+        self.assertEqual(self.grupo.membros, 3)
+        self.assertEqual(self.grupo.nome, "Comunidade do Desconto #3")

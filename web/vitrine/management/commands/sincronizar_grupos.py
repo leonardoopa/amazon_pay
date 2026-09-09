@@ -64,14 +64,27 @@ class Command(BaseCommand):
             timeout=options["tempo_limite"],
         ) as cliente:
             for grupo in grupos:
-                total = self._contar_membros(cliente, instancia, grupo)
-                if total is None:
+                dados = self._ler_grupo(cliente, instancia, grupo)
+                if dados is None:
                     continue
+                total, nome = dados
                 # Grava sempre o carimbo, mesmo com o número igual: é ele que
                 # diz no admin se a sincronização ainda está viva.
+                campos = ["membros", "membros_atualizados_em"]
                 grupo.membros = total
                 grupo.membros_atualizados_em = timezone.now()
-                grupo.save(update_fields=["membros", "membros_atualizados_em"])
+
+                # O nome também. Renomear o grupo no WhatsApp não quebra nada
+                # — quem identifica é o JID —, mas deixava o admin e a landing
+                # mostrando o nome do dia do cadastro. Aconteceu em 09/09/2026:
+                # o grupo virou "Comunidade do Desconto - Geral 🇧🇷 03" e o
+                # site seguia anunciando "Comunidade do Desconto #3".
+                if nome and nome != grupo.nome:
+                    self.stdout.write(f"{grupo.nome} agora se chama {nome}.")
+                    grupo.nome = nome
+                    campos.append("nome")
+
+                grupo.save(update_fields=campos)
                 atualizados += 1
                 self.stdout.write(
                     f"{grupo.nome}: {total}/{grupo.capacidade}"
@@ -82,8 +95,8 @@ class Command(BaseCommand):
             self.style.SUCCESS(f"{atualizados} de {len(grupos)} grupo(s) atualizados.")
         )
 
-    def _contar_membros(self, cliente, instancia: str, grupo: Grupo) -> int | None:
-        """Total de participantes, ou None quando a Evolution não respondeu.
+    def _ler_grupo(self, cliente, instancia: str, grupo: Grupo):
+        """(total de participantes, nome), ou None se a Evolution não respondeu.
 
         Falha de rede aqui não pode virar exceção: o comando roda em cron, e
         uma instância desconectada (o pareamento cai sozinho de vez em quando)
@@ -114,7 +127,11 @@ class Command(BaseCommand):
             self.stderr.write(f"{grupo.nome}: resposta da Evolution não era JSON.")
             return None
 
-        return self._extrair_total(corpo)
+        total = self._extrair_total(corpo)
+        if total is None:
+            return None
+        nome = corpo.get("subject") if isinstance(corpo, dict) else None
+        return total, (nome or "").strip()
 
     @staticmethod
     def _extrair_total(corpo) -> int | None:
