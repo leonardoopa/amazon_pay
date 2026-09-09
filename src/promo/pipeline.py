@@ -285,6 +285,33 @@ def cupom_para(offer: Offer, cupons: list[dict]) -> str | None:
 MAX_CUPONS_POR_POST = 2
 
 
+# O preco anunciado leva o desconto do cupom?
+#
+# NAO, desde 09/09/2026, e o motivo esta medido. O dono testou no carrinho
+# todos os codigos que o bot publicou, e todos acabaram morrendo:
+#
+#     TORCIDA      funcionou de manha, "esgotou" a noite
+#     GLORIA       funcionou de manha, "esgotou" a noite
+#     VALEMAIS     "O cupom esgotou"
+#     TUDODEBOM    "nao esta mais disponivel"
+#     SITETOD0809  "nao esta mais disponivel"
+#
+# Cupom do ML morre por CONSUMO, nao por validade -- o texto do proprio ML diz
+# "esgotou". O limite de usos nao aparece em fonte nenhuma: nem no Pelando,
+# nem no painel, nem na API. Entao nao ha como saber, na hora de escrever o
+# post, se o codigo ainda tem estoque.
+#
+# A consequencia: um preco que depende do cupom esta errado na maior parte do
+# tempo. "De R$ 159,90 por R$ 79,15" com o cupom morto vira um numero que nao
+# existe -- e preco falso e o unico erro que gasta a confianca do grupo de vez.
+# O cupom que nao aplica, sozinho, custa uma tentativa frustrada; o preco
+# falso custa a credibilidade de todos os outros posts.
+#
+# Por isso o preco anunciado voltou a ser o do anuncio, que esta sempre certo,
+# e o cupom virou o que ele de fato e: uma chance a mais, dita como chance.
+PRECO_LEVA_O_CUPOM = False
+
+
 def preco_com_cupom(offer: Offer, cupons: list[dict]) -> float | None:
     """O preco que a pessoa PAGA, quando da para afirmar isso.
 
@@ -300,6 +327,9 @@ def preco_com_cupom(offer: Offer, cupons: list[dict]) -> float | None:
     Por isso a instrucao ao copywriter e ao `fallback_copy` exige a expressao
     na mesma linha, e nunca o numero solto.
     """
+    if not PRECO_LEVA_O_CUPOM:
+        return None
+
     servem = [c for c in cupons if offer.source == "mercadolivre" and _serve(offer, c)]
     if not servem:
         return None

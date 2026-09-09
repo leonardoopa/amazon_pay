@@ -160,7 +160,11 @@ def test_recusa_instrucao_do_prompt_vazada():
 
 def test_fallback_inclui_cupom_quando_existe():
     text = fallback_copy(make_scored(), LINK, coupon="MELIDATADUPLA")
-    assert "Use o cupom: MELIDATADUPLA" in text
+    # "se ainda estiver valendo" desde 09/09/2026: cupom do ML morre por
+    # consumo, e seis de seis codigos testados no carrinho responderam
+    # "esgotou" -- incluindo um vindo do painel oficial do ML.
+    assert "MELIDATADUPLA" in text
+    assert "se ainda estiver valendo" in text
 
 
 def test_fallback_sem_cupom_nao_inventa_linha():

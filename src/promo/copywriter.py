@@ -527,7 +527,18 @@ def _facts(
             "antes do cupom."
         )
     elif coupon:
-        facts.append(f"Cupom: {coupon}")
+        # "se ainda estiver valendo" nao e enfeite. Cupom do ML morre por
+        # consumo, dentro da validade, e nenhuma fonte publica o contador --
+        # medido em 09/09/2026, cinco codigos testados no carrinho pelo dono
+        # responderam "O cupom esgotou", dois deles no mesmo dia em que
+        # funcionaram. Sem a ressalva, o post promete um desconto que na maior
+        # parte do tempo nao existe mais.
+        facts.append(
+            f"Cupom: {coupon}. Escreva a linha do cupom deixando claro que "
+            "pode ja ter esgotado -- algo como 'se ainda estiver valendo'. O "
+            "PRECO do post NAO leva o desconto do cupom: use o preco que eu "
+            "passei em 'Por'."
+        )
     else:
         facts.append("Cupom: NAO ha. NAO escreva linha de cupom.")
     facts.append(
@@ -716,7 +727,11 @@ def fallback_copy(
         else f"De R$ {brl(scored.baseline)} por *R$ {brl(offer.price)}*",
     ]
     if coupon:
-        lines.append(f"Use o cupom: {coupon} 🎟️")
+        lines.append(
+            f"Tenta o cupom {coupon} 🎟️ (se ainda estiver valendo)"
+            if preco_com_cupom is None
+            else f"Use o cupom: {coupon} 🎟️"
+        )
     if scored.lowest_ever:
         lines.append("Menor preco desde que comecamos a monitorar.")
     lines.append("")

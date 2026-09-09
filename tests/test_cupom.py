@@ -26,6 +26,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+
+import pytest
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -42,6 +44,20 @@ def escrever(tmp_path: Path, bloco: dict) -> Path:
     caminho = tmp_path / "watchlist.json"
     caminho.write_text(json.dumps({"keywords": [], "coupon": bloco}), encoding="utf-8")
     return caminho
+
+
+@pytest.fixture
+def com_preco_de_cupom(monkeypatch):
+    """Liga `PRECO_LEVA_O_CUPOM` para exercitar o CALCULO.
+
+    O calculo continua correto e testado; o que mudou em 09/09/2026 foi a
+    decisao de nao usa-lo, porque cupom do ML morre por consumo e o preco
+    ficava errado na maior parte do tempo. Manter estes testes verdes e o que
+    permite religar a chave sem reescrever nada.
+    """
+    from promo import pipeline
+
+    monkeypatch.setattr(pipeline, "PRECO_LEVA_O_CUPOM", True)
 
 
 def oferta(titulo: str, preco: float = 100.0, fonte: str = "mercadolivre") -> Offer:
@@ -674,16 +690,23 @@ def test_a_escolha_respeita_o_preco_do_produto():
 # proprio post manda cumprir.
 
 
-def test_o_preco_final_desconta_o_cupom():
+def test_o_preco_anunciado_nao_leva_o_cupom():
+    """Mudou em 09/09/2026, depois que os cinco codigos testados no carrinho
+    morreram -- dois deles no mesmo dia em que funcionaram. Cupom do ML morre
+    por CONSUMO, dentro da validade, e nenhuma fonte publica o contador. Um
+    preco que depende do cupom fica errado na maior parte do tempo, e preco
+    falso e o unico erro que gasta a confianca do grupo de vez."""
     from promo.pipeline import preco_com_cupom
 
     o = oferta("Dux Human Energy Kick Caffeine 1000g", 117.35)
     torcida = geral("TORCIDA", 10, teto=30.0, minimo=79.0)
 
-    assert preco_com_cupom(o, [torcida]) == 105.61
+    assert preco_com_cupom(o, [torcida]) is None
+    # O cupom continua sendo citado: ele e uma chance a mais, dita como chance.
+    assert cupom_para(o, [torcida]) == "TORCIDA"
 
 
-def test_o_teto_limita_o_desconto_do_preco():
+def test_o_teto_limita_o_desconto_do_preco(com_preco_de_cupom):
     """10% de R$ 500 sao R$ 50, mas o teto e R$ 30."""
     from promo.pipeline import preco_com_cupom
 
@@ -706,7 +729,7 @@ def test_cupom_abaixo_do_minimo_nao_muda_o_preco():
     assert preco_com_cupom(o, [geral("T", 10, minimo=79.0)]) is None
 
 
-def test_o_preco_final_usa_o_cupom_que_rende_mais():
+def test_o_preco_final_usa_o_cupom_que_rende_mais(com_preco_de_cupom):
     """O mesmo criterio da escolha do codigo."""
     from promo.pipeline import preco_com_cupom
 
@@ -716,7 +739,7 @@ def test_o_preco_final_usa_o_cupom_que_rende_mais():
     assert preco_com_cupom(o, cupons) == 150.0
 
 
-def test_cupom_restrito_tambem_entra_no_preco():
+def test_cupom_restrito_tambem_entra_no_preco(com_preco_de_cupom):
     """A pedido, e o texto e que carrega a condicao: "por R$ X com o cupom"."""
     from promo.pipeline import preco_com_cupom
 
@@ -767,7 +790,7 @@ def test_cupom_sem_minimo_nao_serve():
     assert preco_com_cupom(o, [fixo("TUDODEBOM", 250.0)]) is None
 
 
-def test_cupom_fixo_com_minimo_serve():
+def test_cupom_fixo_com_minimo_serve(com_preco_de_cupom):
     from promo.pipeline import preco_com_cupom
 
     o = oferta("Produto Caro", 2500.0)
@@ -775,7 +798,7 @@ def test_cupom_fixo_com_minimo_serve():
     assert preco_com_cupom(o, [fixo("MELIMAISALLSITE", 250.0, minimo=2099.0)]) == 2250.0
 
 
-def test_percentual_sem_minimo_continua_valendo():
+def test_percentual_sem_minimo_continua_valendo(com_preco_de_cupom):
     """10% de qualquer preco e proporcional ao produto; o problema era so do
     valor fixo."""
     from promo.pipeline import preco_com_cupom
@@ -802,7 +825,7 @@ def test_o_preco_final_nunca_e_zero():
     assert preco_com_cupom(oferta("Barato", 50.0), [exato]) is None
 
 
-def test_cai_para_o_proximo_cupom_quando_o_melhor_estoura():
+def test_cai_para_o_proximo_cupom_quando_o_melhor_estoura(com_preco_de_cupom):
     """Escolher so o melhor e desistir jogaria fora o segundo, que serve."""
     from promo.pipeline import preco_com_cupom
 
@@ -812,7 +835,7 @@ def test_cai_para_o_proximo_cupom_quando_o_melhor_estoura():
     assert preco_com_cupom(o, cupons) == 90.0
 
 
-def test_o_caso_real_do_protetor_solar():
+def test_o_caso_real_do_protetor_solar(com_preco_de_cupom):
     """Os cinco cupons que estavam no ar no dia, e o produto que quebrou."""
     from promo.pipeline import preco_com_cupom
 
@@ -846,7 +869,7 @@ def test_percentual_sem_minimo_tambem_e_recusado():
     assert preco_com_cupom(o, [valemais]) is None
 
 
-def test_o_caso_real_do_relogio_casio():
+def test_o_caso_real_do_relogio_casio(com_preco_de_cupom):
     """Os cupons no ar em 09/09/2026, e o post que citou VALEMAIS esgotado."""
     from promo.pipeline import preco_com_cupom
 
@@ -869,3 +892,12 @@ def test_produto_abaixo_de_todos_os_minimos_nao_leva_cupom():
     cupons = [geral("TORCIDA", 10, teto=30.0, minimo=79.0)]
 
     assert cupom_para(oferta("Meia Kit 3 Pares", 19.90), cupons) is None
+
+
+def test_em_producao_o_preco_nao_leva_o_cupom():
+    """A chave fica desligada. Liga-la de novo exige medir antes se cupom do
+    ML voltou a ser confiavel -- em 09/09/2026 cinco de cinco testados
+    responderam "esgotou" no carrinho."""
+    from promo.pipeline import PRECO_LEVA_O_CUPOM
+
+    assert PRECO_LEVA_O_CUPOM is False
