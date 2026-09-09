@@ -101,6 +101,60 @@ def load_watchlist(path: Path | None = None) -> list[Watch]:
     ]
 
 
+@dataclass(frozen=True)
+class GrupoDestino:
+    """Um grupo de WhatsApp que recebe posts, e o recorte dele.
+
+    `temas` vazio quer dizer "recebe tudo" -- e o grupo geral. Com temas, o
+    grupo so recebe oferta cujo TITULO cite um deles, que e a mesma regra de
+    `priority`: a oferta chega por busca, por categoria ou pela vitrine, e
+    nenhuma dessas carrega o motivo de ter vindo. O titulo carrega.
+    """
+
+    jid: str
+    nome: str
+    temas: tuple[str, ...] = ()
+
+    @property
+    def e_geral(self) -> bool:
+        return not self.temas
+
+    def aceita(self, offer: Offer) -> bool:
+        return self.e_geral or tem_tema(offer.title, list(self.temas))
+
+
+def load_grupos(path: Path | None = None) -> list[GrupoDestino]:
+    """Grupos de destino do watchlist.json.
+
+    Lista vazia -- que e o estado de quem nao configurou -- devolve um destino
+    unico com JID vazio, e `deliver` traduz vazio para o EVOLUTION_GROUP_JID
+    do .env. Assim quem nao usa varios grupos nao muda de comportamento, e os
+    3.000 posts que ja existem (todos com `grupo_jid` vazio) continuam
+    contando no cooldown do grupo principal.
+    """
+    path = path or ROOT / "watchlist.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    crus = data.get("grupos") or []
+
+    grupos = []
+    for cru in crus:
+        jid = (cru.get("jid") or "").strip()
+        if not jid:
+            log.warning("Grupo %r sem jid; fora.", cru.get("nome"))
+            continue
+        grupos.append(
+            GrupoDestino(
+                jid=jid,
+                nome=(cru.get("nome") or jid).strip(),
+                temas=tuple(sem_acento(x) for x in cru.get("temas") or ()),
+            )
+        )
+
+    if not grupos:
+        return [GrupoDestino(jid="", nome="principal")]
+    return grupos
+
+
 def load_coupons(path: Path | None = None) -> list[dict]:
     """Cupons de campanha do watchlist.json que ainda estao no prazo.
 
@@ -245,11 +299,37 @@ def preco_com_cupom(offer: Offer, cupons: list[dict]) -> float | None:
     if not servem:
         return None
 
-    melhor = max(servem, key=lambda c: _quanto_economiza(offer, c))
-    economia = _quanto_economiza(offer, melhor)
-    if economia <= 0:
-        return None
-    return round(offer.price - economia, 2)
+    # Do que rende mais para o que rende menos, parando no primeiro que
+    # produz um preco possivel. Escolher so o melhor e desistir se ele nao
+    # servir jogaria fora o segundo, que costuma servir.
+    for melhor in sorted(servem, key=lambda c: _quanto_economiza(offer, c), reverse=True):
+        economia = _quanto_economiza(offer, melhor)
+        if economia <= 0:
+            continue
+
+        final = round(offer.price - economia, 2)
+        if final > 0:
+            return final
+        # Preco negativo foi para o grupo em 09/09/2026: o TUDODEBOM, de
+        # R$ 250 fixos, caiu num protetor solar de R$ 69,89 e o post anunciou
+        # "por R$ -180,11 com o cupom".
+        #
+        # A causa e a fonte: o slug daquele cupom nao trazia o minimo, entao
+        # ele entrou com `minimo: 0` e passou a servir para qualquer preco.
+        # Cupom de R$ 250 sem compra minima nao existe -- o numero que faltava
+        # era justamente o que impedia isso.
+        #
+        # Aqui a guarda e sobre o RESULTADO, e nao sobre a causa, porque a
+        # causa muda: qualquer cupom que desconte mais do que o produto custa
+        # esta descrito errado, venha o erro de onde vier.
+        log.warning(
+            "Cupom %s desconta R$ %.2f de um produto de R$ %.2f; ignorado. "
+            "A regra da fonte esta incompleta.",
+            melhor.get("code"),
+            economia,
+            offer.price,
+        )
+    return None
 
 
 def _quanto_economiza(offer: Offer, cupom: dict) -> float:
@@ -298,6 +378,24 @@ def chave_da_fila(
     return (premiada, tem_cupom, scored.discount_pct, scored.offer.free_shipping)
 
 
+def _regra_incompleta(cupom: dict) -> bool:
+    """Cupom de valor FIXO sem compra minima declarada nao existe.
+
+    "R$ 250 de desconto, sem minimo" nao e uma campanha -- e um slug do qual
+    o minimo caiu na hora de escrever o titulo. Medido em 09/09/2026, tres dos
+    sete cupons ativos do Pelando estavam assim (SITETOD0809 R$ 60,
+    PREDATA0809 R$ 30, TUDODEBOM R$ 250), e foi o de R$ 250 que caiu num
+    protetor solar de R$ 69,89 e mandou "por R$ -180,11 com o cupom" para o
+    grupo.
+
+    O percentual nao tem esse problema: 10% de qualquer preco e um numero
+    proporcional ao produto, e o teto ja limita o resto.
+    """
+    if (cupom.get("tipo") or "PERCENT").upper() != "FIXED":
+        return False
+    return float(cupom.get("minimo") or 0) <= 0
+
+
 def _serve(offer: Offer, cupom: dict) -> bool:
     """Este cupom vale para esta oferta?
 
@@ -319,6 +417,8 @@ def _serve(offer: Offer, cupom: dict) -> bool:
     "saia", "calca", "legging", "terno", "bermuda", "short". Ver
     `enriquecer_com_temas`.
     """
+    if _regra_incompleta(cupom):
+        return False
     if offer.price < cupom.get("minimo", 0):
         return False
 

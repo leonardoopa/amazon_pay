@@ -637,8 +637,9 @@ def test_o_teto_decide_e_nao_a_porcentagem():
 
 
 def test_valor_fixo_compete_com_porcentagem():
-    """R$ 60 fixo bate 10% de R$ 200."""
-    cupons = [geral("PCT", 10), geral("FIXO", 60, tipo="FIXED")]
+    """R$ 60 fixo bate 10% de R$ 200. O minimo e obrigatorio no fixo desde
+    09/09/2026 -- ver `_regra_incompleta`."""
+    cupons = [geral("PCT", 10), geral("FIXO", 60, tipo="FIXED", minimo=50.0)]
 
     assert cupom_para(oferta("Produto", 200.0), cupons).startswith("FIXO")
 
@@ -649,7 +650,7 @@ def test_um_cupom_so_sai_sem_o_ou():
 
 def test_a_escolha_respeita_o_preco_do_produto():
     """10% de R$ 1000 (R$ 100) bate R$ 60 fixo; em R$ 100 e o contrario."""
-    cupons = [geral("PCT", 10), geral("FIXO", 60, tipo="FIXED")]
+    cupons = [geral("PCT", 10), geral("FIXO", 60, tipo="FIXED", minimo=50.0)]
 
     assert cupom_para(oferta("Caro", 1000.0), cupons).startswith("PCT")
     assert cupom_para(oferta("Barato", 100.0), cupons).startswith("FIXO")
@@ -731,3 +732,95 @@ def test_amazon_nao_ganha_preco_de_cupom_do_ml():
     o = oferta("Creatina 300g", 100.0, fonte="amazon")
 
     assert preco_com_cupom(o, [geral("T", 10)]) is None
+
+
+# ---------- preco negativo nunca ----------
+#
+# Foi para o grupo em 09/09/2026:
+#
+#     Protetor solar em bastao antimanchas 90FPS Sallve
+#     De R$ 100,90 por *R$ -180,11* com o cupom
+#     Use o cupom: TUDODEBOM ou SITETOD0809
+#
+# Cinco posts assim, dois entregues. A causa esta na fonte: o slug do
+# TUDODEBOM nao trazia a compra minima, entao ele entrou com `minimo: 0` e
+# passou a servir para qualquer preco -- R$ 250 fixos num produto de R$ 69,89.
+
+
+def fixo(code, valor, minimo=0.0):
+    return {
+        "code": code, "desconto": valor, "tipo": "FIXED",
+        "teto": 0.0, "minimo": minimo, "temas": [], "categorias": [],
+    }
+
+
+def test_cupom_fixo_sem_minimo_nao_serve():
+    """"R$ 250 de desconto, sem minimo" nao e campanha: e slug incompleto."""
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Protetor Solar Sallve", 69.89)
+
+    assert cupom_para(o, [fixo("TUDODEBOM", 250.0)]) is None
+    assert preco_com_cupom(o, [fixo("TUDODEBOM", 250.0)]) is None
+
+
+def test_cupom_fixo_com_minimo_serve():
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Produto Caro", 2500.0)
+
+    assert preco_com_cupom(o, [fixo("MELIMAISALLSITE", 250.0, minimo=2099.0)]) == 2250.0
+
+
+def test_percentual_sem_minimo_continua_valendo():
+    """10% de qualquer preco e proporcional ao produto; o problema era so do
+    valor fixo."""
+    from promo.pipeline import preco_com_cupom
+
+    assert preco_com_cupom(oferta("Produto", 100.0), [geral("VALEMAIS", 10)]) == 90.0
+
+
+def test_o_preco_final_nunca_e_negativo():
+    """Guarda sobre o RESULTADO, e nao sobre a causa: qualquer cupom que
+    desconte mais do que o produto custa esta descrito errado, venha o erro de
+    onde vier."""
+    from promo.pipeline import preco_com_cupom
+
+    absurdo = fixo("X", 500.0, minimo=1.0)
+
+    assert preco_com_cupom(oferta("Barato", 50.0), [absurdo]) is None
+
+
+def test_o_preco_final_nunca_e_zero():
+    from promo.pipeline import preco_com_cupom
+
+    exato = fixo("X", 50.0, minimo=1.0)
+
+    assert preco_com_cupom(oferta("Barato", 50.0), [exato]) is None
+
+
+def test_cai_para_o_proximo_cupom_quando_o_melhor_estoura():
+    """Escolher so o melhor e desistir jogaria fora o segundo, que serve."""
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Produto", 100.0)
+    cupons = [fixo("GRANDE", 500.0, minimo=1.0), geral("PEQUENO", 10)]
+
+    assert preco_com_cupom(o, cupons) == 90.0
+
+
+def test_o_caso_real_do_protetor_solar():
+    """Os cinco cupons que estavam no ar no dia, e o produto que quebrou."""
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Protetor solar em bastao antimanchas 90FPS Sallve", 69.89)
+    cupons = [
+        fixo("TUDODEBOM", 250.0),
+        fixo("SITETOD0809", 60.0),
+        fixo("MELIMAISALLSITE", 250.0, minimo=2099.0),
+        geral("TORCIDA", 10, teto=30.0, minimo=79.0),
+        geral("VALEMAIS", 10),
+    ]
+
+    assert cupom_para(o, cupons) == "VALEMAIS"
+    assert preco_com_cupom(o, cupons) == 62.9
