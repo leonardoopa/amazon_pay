@@ -1022,10 +1022,14 @@ def collect_de_outros_grupos(source) -> list[Offer]:
     # tem nada de especial.
     _VISTOS_EM_OUTRO_GRUPO.update(p.external_id for p in achadas)
 
-    # O ID sozinho nao basta -- `fetch_by_ids` quer (product_id, external_id,
-    # url). O produto ainda nao esta na carteira, entao a URL vai vazia e a
-    # fonte resolve pelo ID.
-    alvos = [(f"{source.name}:{p.external_id}", p.external_id, None) for p in achadas]
+    # `fetch_by_ids` quer (external_id, titulo, imagem) -- a mesma tupla que a
+    # reconsulta tira do banco. O titulo vem da pagina do produto; a imagem
+    # ainda nao existe aqui e a fonte preenche.
+    #
+    # Ja errei essa tupla: mandei o ID com o prefixo da fonte no primeiro
+    # campo, e cada GET virou `/products/mercadolivre:MLB.../items`. Todos 404,
+    # nenhum erro, 15 pistas viraram zero produtos por duas rodadas.
+    alvos = [(p.external_id, p.titulo, None) for p in achadas]
     try:
         found = fetch(alvos)
     except Exception as exc:  # noqa: BLE001 - fonte extra nao derruba a rodada

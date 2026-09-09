@@ -217,3 +217,131 @@ def test_fonte_sem_jid_fica_de_fora(tmp_path):
     )
 
     assert load_grupos_fonte(caminho) == []
+
+
+# ---------- a pista virando produto medido ----------
+
+
+def test_a_pista_chega_medida_a_fonte_do_ml(monkeypatch, banco_em_memoria):
+    """A tupla que sai daqui tem que ser a que `fetch_by_ids` desempacota.
+
+    Este teste nasceu de um bug em producao: `collect_de_outros_grupos`
+    montava `(f"{source.name}:{id}", id, None)` e `fetch_by_ids` desempacota
+    `(external_id, titulo, imagem)`. Cada GET virou
+    `/products/mercadolivre:MLB.../items`, todos 404, nenhum erro no log --
+    "15 pista(s), 0 produto(s) medido(s)" por duas rodadas.
+
+    Por isso a fonte aqui e a `MercadoLivre` de verdade, com transporte falso:
+    uma fonte de mentira aceitaria qualquer tupla e o contrato voltaria a
+    divergir sem ninguem ver.
+    """
+    import httpx
+
+    from promo.config import MercadoLivreConfig
+    from promo.pipeline import collect_de_outros_grupos
+    from promo.sources import grupo_wa
+    from promo.sources.mercadolivre import MercadoLivre
+
+    pedidos: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        pedidos.append(request.url.path)
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "price": 90.0,
+                        "original_price": 200.0,
+                        "condition": "new",
+                        "currency_id": "BRL",
+                        "shipping": {"free_shipping": True},
+                        "category_id": "MLB1246",
+                    }
+                ]
+            },
+        )
+
+    ml = MercadoLivre(
+        MercadoLivreConfig(
+            client_id="1", client_secret="2",
+            redirect_uri="https://example.com/callback", site_id="MLB",
+        )
+    )
+    ml._client = httpx.Client(transport=httpx.MockTransport(handler))
+    ml.access_token = lambda: "token"  # type: ignore[method-assign]
+
+    monkeypatch.setattr(
+        "promo.pipeline.load_grupos_fonte",
+        lambda *a, **k: [{"jid": "j@g.us", "nome": "xet", "limite": 3}],
+    )
+    monkeypatch.setattr(
+        grupo_wa,
+        "pistas",
+        lambda **k: [
+            grupo_wa.Pista(external_id="MLB38617889", titulo="Power Bank", origem="xet")
+        ],
+    )
+
+    from promo.config import EvolutionConfig
+
+    monkeypatch.setattr(
+        EvolutionConfig,
+        "load",
+        classmethod(
+            lambda cls, *a, **k: EvolutionConfig(
+                base_url="http://e", api_key="k", instance="i", group_jid="g@g.us"
+            )
+        ),
+    )
+
+    achados = collect_de_outros_grupos(ml)
+
+    assert pedidos == ["/products/MLB38617889/items"]
+    assert [o.external_id for o in achados] == ["MLB38617889"]
+    assert achados[0].title == "Power Bank"
+
+
+def test_um_id_que_a_api_recusa_nao_derruba_os_outros():
+    """403 num ID nao pode zerar a leva.
+
+    A rota so aceita produto de catalogo. O que vem de outro grupo as vezes e
+    ID de anuncio, e para esse a API responde 403 -- medido em 09/09/2026,
+    1 de 3 pistas. Antes, esse 403 subia por `fetch_by_ids` e a rodada inteira
+    voltava vazia.
+    """
+    import httpx
+
+    from promo.config import MercadoLivreConfig
+    from promo.sources.mercadolivre import MercadoLivre
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "MLB_ANUNCIO" in request.url.path:
+            return httpx.Response(403, json={"error": "access_denied"})
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"price": 90.0, "condition": "new", "currency_id": "BRL",
+                     "shipping": {}, "category_id": "MLB1"}
+                ]
+            },
+        )
+
+    ml = MercadoLivre(
+        MercadoLivreConfig(
+            client_id="1", client_secret="2",
+            redirect_uri="https://example.com/callback", site_id="MLB",
+        )
+    )
+    ml._client = httpx.Client(transport=httpx.MockTransport(handler))
+    ml.access_token = lambda: "token"  # type: ignore[method-assign]
+
+    achados = ml.fetch_by_ids(
+        [
+            ("MLB_ANUNCIO", "Tenis", None),
+            ("MLB_CATALOGO", "Barbeador", None),
+        ]
+    )
+
+    assert [o.external_id for o in achados] == ["MLB_CATALOGO"]
