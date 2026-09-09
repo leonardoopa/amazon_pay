@@ -52,6 +52,10 @@ CREATE TABLE IF NOT EXISTS posts (
     -- JID do grupo de destino. Vazio = o destino padrao do .env, que era o
     -- unico ate 09/09/2026.
     grupo_jid    TEXT NOT NULL DEFAULT '',
+    -- Quem passa na frente na fila de entrega; maior sai antes. So a pista
+    -- vinda de outro grupo usa isso, e todo o resto fica em 0 -- entre si,
+    -- ordenados por `created_at`, como sempre foram.
+    prioridade   INTEGER NOT NULL DEFAULT 0,
     attempts     INTEGER NOT NULL DEFAULT 0,
     -- 1 = desconto medido contra a nossa mediana. 0 = repasse da vitrine do
     -- ML, medido contra o "de/por" da loja. A distincao existia so em memoria
@@ -144,6 +148,21 @@ MIGRATIONS = [
         # ao Geral bloquearia a mesma oferta no Mulheres, e o grupo nichado
         # nunca receberia nada que o Geral tivesse acabado de mandar.
         "ALTER TABLE posts ADD COLUMN grupo_jid TEXT NOT NULL DEFAULT ''",
+    ),
+    (
+        "posts",
+        "prioridade",
+        # Quem passa na frente na fila de entrega. Maior sai antes.
+        #
+        # Ate aqui a fila era so `ORDER BY created_at`, e isso bastava porque
+        # tudo que entrava tinha o mesmo direito de esperar. A pista de outro
+        # grupo nao tem: ela vale porque acabou de ser postada, e chegar ao
+        # grupo uma hora depois -- 30 posts a 120 s de intervalo -- e a mesma
+        # coisa que nao chegar.
+        #
+        # DEFAULT 0 deixa todo post existente e todo post normal exatamente
+        # onde estavam, ordenados entre si por `created_at`.
+        "ALTER TABLE posts ADD COLUMN prioridade INTEGER NOT NULL DEFAULT 0",
     ),
 ]
 
@@ -439,18 +458,23 @@ def create_post(
     image_url: str | None = None,
     verified: bool = True,
     grupo_jid: str = "",
+    prioridade: int = 0,
 ) -> int:
     """Enfileira um post.
 
     `verified` acompanha o `ScoredOffer`: True quando a baseline e a mediana
     que apuramos, False quando e o preco riscado da loja (repasse da vitrine).
     O site le esta coluna para nao apresentar repasse como prova medida.
+
+    `prioridade` maior sai antes na fila de entrega, e so a pista vinda de
+    outro grupo usa isso hoje -- ver a migracao da coluna.
     """
     cursor = conn.execute(
         """
         INSERT INTO posts (product_id, price, baseline, discount_pct, copy,
-                           image_url, verified, grupo_jid, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                           image_url, verified, grupo_jid, prioridade,
+                           status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
         """,
         (
             product_id,
@@ -461,6 +485,7 @@ def create_post(
             image_url,
             1 if verified else 0,
             grupo_jid,
+            prioridade,
             _iso(now()),
         ),
     )
@@ -727,10 +752,15 @@ def recent_headlines(conn: sqlite3.Connection, limit: int = 12) -> list[str]:
 
 
 def pending_posts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Posts que ficaram na fila (janela de 24h fechada, erro de rede etc.)."""
+    """Posts que ficaram na fila (janela de 24h fechada, erro de rede etc.).
+
+    `prioridade DESC` antes de `created_at`: a pista de outro grupo entra com
+    prioridade e passa na frente do que ja estava esperando. Todo o resto tem
+    prioridade 0, entao entre si a ordem continua sendo a de chegada.
+    """
     return conn.execute(
         "SELECT id, copy, image_url, grupo_jid FROM posts "
-        "WHERE status = 'pending' ORDER BY created_at"
+        "WHERE status = 'pending' ORDER BY prioridade DESC, created_at"
     ).fetchall()
 
 

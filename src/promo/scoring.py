@@ -116,3 +116,41 @@ def score_campaign(
         lowest_ever=False,
         verified=False,
     )
+
+
+def score_pista(offer: Offer) -> ScoredOffer | None:
+    """Pontua o que outro grupo acabou de postar, pela curadoria deles.
+
+    A terceira porta, e a mais fraca das tres de proposito.
+
+    `score` exige historico nosso e `score_campaign` exige preco riscado no
+    anuncio. Um produto que o grupo vizinho acabou de achar nao tem nem um nem
+    outro: e novo no nosso radar, e o ML so devolve `original_price` em parte
+    dos anuncios -- medido em 09/09/2026, 9 de 13. Por isso a fonte rendia
+    quase nada: as pistas morriam antes de qualquer ordenacao.
+
+    O que sustenta esta porta nao e uma medicao nossa, e o fato de um grupo de
+    990 membros que vive disso ter escolhido esse produto agora. E uma aposta
+    diferente, e o post precisa ser honesto sobre isso: sem baseline e sem
+    riscado nao ha desconto nenhum para afirmar, entao `discount_pct` fica em
+    zero e `verified` em False. Quem escreve o texto le esses dois campos e
+    anuncia o preco, nao uma queda.
+
+    Sem piso e sem cooldown por decisao do dono em 09/09/2026: o pedido e
+    republicar tudo que der, e o filtro aqui e o deles.
+
+    Quando o anuncio TEM riscado, `score_campaign` pontua melhor e roda antes
+    -- esta funcao so recebe o que sobrou.
+    """
+    if not offer.available or offer.price <= 0:
+        return None
+
+    return ScoredOffer(
+        offer=offer,
+        baseline=offer.price,  # sem medicao: a "baseline" e o proprio preco
+        discount_pct=0.0,
+        observations=0,
+        lowest_ever=False,
+        verified=False,
+        sem_medicao=True,
+    )

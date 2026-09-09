@@ -45,3 +45,13 @@ class ScoredOffer:
     # afirmar que o preco caiu de verdade, porque alguem mediu. No segundo ele
     # so pode repetir o que a loja alega -- e a loja infla o riscado na vespera.
     verified: bool = True
+    # True = nao ha desconto NENHUM a anunciar, nem medido nem riscado.
+    #
+    # E o caso da pista vinda de outro grupo: o produto e novo no nosso radar,
+    # entao nao ha baseline, e o anuncio pode nao ter `original_price`. O que
+    # justifica o post e a curadoria de quem achou, nao um numero.
+    #
+    # Quando isto e True, `baseline` vale o proprio preco e `discount_pct` e
+    # zero -- e o texto nao pode escrever "De X por Y" nem percentual algum,
+    # porque nao ha "de". Ver `score_pista`.
+    sem_medicao: bool = False
