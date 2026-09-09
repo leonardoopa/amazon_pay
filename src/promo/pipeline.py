@@ -205,8 +205,45 @@ def cupom_para(offer: Offer, cupons: list[dict]) -> str | None:
     """
     if offer.source != "mercadolivre":
         return None
-    servem = [c["code"] for c in cupons if _serve(offer, c)]
-    return " ou ".join(servem) if servem else None
+    servem = [c for c in cupons if _serve(offer, c)]
+    if not servem:
+        return None
+
+    # Ordena pelo que sobra no bolso, e corta em dois. Sem isso o post saia
+    # com SEIS codigos numa linha -- medido em producao em 09/09/2026, quando
+    # havia seis cupons gerais no ar e todos serviam para todo produto:
+    #
+    #   TORCIDA ou GLORIA ou PREDATA0809 ou SITETOD0809 ou TUDODEBOM ou VALEMAIS
+    #
+    # E o defeito que eu apontei no grupo concorrente, que lista tres e torce.
+    # Ninguem digita seis codigos: a pessoa tenta o primeiro, falha, desiste.
+    servem.sort(key=lambda c: _quanto_economiza(offer, c), reverse=True)
+    return " ou ".join(c["code"] for c in servem[:MAX_CUPONS_POR_POST])
+
+
+# Dois, e nao um: cupom do ML tem limite de uso, e quando o primeiro estoura o
+# segundo ainda pega. Mais que isso vira lista que ninguem tenta.
+MAX_CUPONS_POR_POST = 2
+
+
+def _quanto_economiza(offer: Offer, cupom: dict) -> float:
+    """Quantos reais este cupom tira do preco, respeitando o teto.
+
+    E o criterio para escolher entre varios que servem. Ordenar por
+    porcentagem seria errado: 25% com teto de R$ 500 vale mais que 30% com
+    teto de R$ 20 em quase tudo que o grupo posta.
+    """
+    desconto = float(cupom.get("desconto") or 0)
+    if not desconto:
+        return 0.0
+
+    if (cupom.get("tipo") or "PERCENT").upper() == "PERCENT":
+        bruto = offer.price * desconto / 100
+    else:
+        bruto = desconto
+
+    teto = float(cupom.get("teto") or 0)
+    return min(bruto, teto) if teto else bruto
 
 
 def chave_da_fila(

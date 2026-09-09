@@ -588,3 +588,68 @@ def test_prioritario_com_cupom_ainda_manda_no_topo():
     geral = {"code": "VALEMAIS", "minimo": 0.0, "temas": [], "categorias": []}
 
     assert ordenar_como_a_rodada(ofertas, [geral], TEMAS)[0] == "B"
+
+
+# ---------- no maximo dois, e o que rende mais ----------
+#
+# Medido em producao em 09/09/2026, na primeira rodada com o Pelando ligado:
+# havia seis cupons gerais no ar, todos serviam para todo produto, e o post
+# saia com os seis numa linha:
+#
+#   TORCIDA ou GLORIA ou PREDATA0809 ou SITETOD0809 ou TUDODEBOM ou VALEMAIS
+#
+# E o defeito que eu apontei no grupo concorrente, que lista tres e torce.
+# Ninguem digita seis codigos: tenta o primeiro, falha, desiste.
+
+
+def geral(code, desconto, tipo="PERCENT", teto=0.0, minimo=0.0):
+    return {
+        "code": code, "desconto": desconto, "tipo": tipo,
+        "teto": teto, "minimo": minimo, "temas": [], "categorias": [],
+    }
+
+
+def test_no_maximo_dois_cupons_por_post():
+    cupons = [geral("A", 10), geral("B", 12), geral("C", 15), geral("D", 20)]
+
+    saida = cupom_para(oferta("Produto Qualquer", 200.0), cupons)
+
+    assert saida.count(" ou ") == 1
+
+
+def test_o_que_economiza_mais_vem_primeiro():
+    """Dois, e nao um: cupom do ML tem limite de uso, e quando o primeiro
+    estoura o segundo ainda pega."""
+    cupons = [geral("FRACO", 5), geral("FORTE", 25)]
+
+    assert cupom_para(oferta("Produto", 200.0), cupons) == "FORTE ou FRACO"
+
+
+def test_o_teto_decide_e_nao_a_porcentagem():
+    """25% com teto de R$ 500 vale mais que 30% com teto de R$ 20 em quase
+    tudo que o grupo posta. Ordenar por porcentagem premiaria o pior."""
+    cupons = [
+        geral("TETOBAIXO", 30, teto=20.0),
+        geral("TETOALTO", 25, teto=500.0),
+    ]
+
+    assert cupom_para(oferta("Produto", 200.0), cupons).startswith("TETOALTO")
+
+
+def test_valor_fixo_compete_com_porcentagem():
+    """R$ 60 fixo bate 10% de R$ 200."""
+    cupons = [geral("PCT", 10), geral("FIXO", 60, tipo="FIXED")]
+
+    assert cupom_para(oferta("Produto", 200.0), cupons).startswith("FIXO")
+
+
+def test_um_cupom_so_sai_sem_o_ou():
+    assert cupom_para(oferta("Produto", 200.0), [geral("UNICO", 10)]) == "UNICO"
+
+
+def test_a_escolha_respeita_o_preco_do_produto():
+    """10% de R$ 1000 (R$ 100) bate R$ 60 fixo; em R$ 100 e o contrario."""
+    cupons = [geral("PCT", 10), geral("FIXO", 60, tipo="FIXED")]
+
+    assert cupom_para(oferta("Caro", 1000.0), cupons).startswith("PCT")
+    assert cupom_para(oferta("Barato", 100.0), cupons).startswith("FIXO")
