@@ -218,6 +218,16 @@ def record_offer(conn: sqlite3.Connection, offer: Offer) -> None:
 
     Guardar 1 linha por dia (o minimo) mantem a baseline estavel mesmo se o
     coletor rodar de hora em hora.
+
+    A foto e a unica coluna que uma reconsulta sem foto NAO apaga. Ela nao
+    muda com o preco, e nem toda fonte a traz: a pista de outro grupo chegou
+    sem imagem por um dia inteiro e, ao reencontrar produto que ja estava na
+    carteira, zerou a foto dele. Medido em 09/09/2026, cinco produtos com post
+    antigo ilustrado ficaram sem `image_url` -- e o proximo post deles sairia
+    so com texto, mesmo nao tendo nada a ver com a fonte nova.
+
+    O resto continua vindo da leitura mais recente, que e o que se quer:
+    titulo, URL e categoria mudam no anuncio e a versao nova e a correta.
     """
     ts = _iso(now())
     today = now().date().isoformat()
@@ -230,7 +240,9 @@ def record_offer(conn: sqlite3.Connection, offer: Offer) -> None:
         ON CONFLICT(id) DO UPDATE SET
             title        = excluded.title,
             url          = excluded.url,
-            image_url    = excluded.image_url,
+            image_url    = COALESCE(
+                NULLIF(excluded.image_url, ''), products.image_url
+            ),
             category     = excluded.category,
             last_seen_at = excluded.last_seen_at
         """,

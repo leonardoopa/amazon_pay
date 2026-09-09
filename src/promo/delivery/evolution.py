@@ -18,6 +18,7 @@ dois esta rodando.
 from __future__ import annotations
 
 import logging
+import time
 
 import httpx
 
@@ -26,6 +27,15 @@ log = logging.getLogger("promo")
 # Mesmo teto da Cloud API. O WhatsApp corta legenda de imagem por volta disso
 # nos dois caminhos, entao o limite nao e da API oficial -- e do app.
 CAPTION_LIMIT = 1024
+
+# Segundos de espera DEPOIS de cada tentativa de mandar a foto. O tamanho da
+# lista e o numero de tentativas; o ultimo valor e zero porque nao ha o que
+# esperar depois da ultima.
+#
+# Existe por causa de `getaddrinfo EAI_AGAIN`, que e o resolver do container da
+# Evolution falhando por alguns segundos. Retry imediato nao ajuda nesse caso:
+# ele repete a pergunta para o mesmo resolver ainda indisponivel.
+ESPERAS_DA_MIDIA = (2.0, 6.0, 0.0)
 
 # Listar grupos e a chamada mais lenta da API: ela espera a sincronizacao do
 # Baileys com o celular. Numa conta com ~170 grupos passa de 30s.
@@ -182,26 +192,36 @@ class Evolution:
         instancia caida.
         """
         if image_url and len(text) <= CAPTION_LIMIT:
-            # Duas tentativas antes de desistir da imagem.
+            # Tres tentativas, com espera crescente entre elas.
             #
             # Quem baixa a foto e a Evolution, do lado dela, e a falha vista em
             # producao foi `getaddrinfo EAI_AGAIN http2.mlstatic.com`: DNS
             # temporariamente indisponivel dentro do container. Nao ha nada de
-            # errado com a URL, e a segunda tentativa resolve.
+            # errado com a URL.
             #
-            # Sem o retry, um soluco de DNS de meio segundo custava a foto do
-            # post -- e post de oferta sem imagem no WhatsApp passa despercebido
-            # na rolagem, que e o mesmo que nao ter sido enviado.
-            for tentativa in range(2):
+            # A espera importa mais que o numero de tentativas. Em 09/09/2026 o
+            # retry existia mas era imediato: as duas tentativas cairam em 5
+            # segundos, o resolver ainda nao tinha se recuperado, e o post saiu
+            # sem foto. Com 2 s e 6 s a segunda janela e outra.
+            #
+            # Post de oferta sem imagem no WhatsApp passa despercebido na
+            # rolagem, que e o mesmo que nao ter sido enviado.
+            for tentativa, espera in enumerate(ESPERAS_DA_MIDIA, start=1):
                 try:
                     return self.send_image(image_url, text, to)
                 except NotConnected:
                     raise  # instancia caida nao e problema da imagem
                 except Exception as exc:  # noqa: BLE001 - recusa da midia vira texto
                     log.warning(
-                        "Envio da imagem falhou (tentativa %d/2): %s",
-                        tentativa + 1,
+                        "Envio da imagem falhou (tentativa %d/%d): %s",
+                        tentativa,
+                        len(ESPERAS_DA_MIDIA),
                         exc,
                     )
-            log.warning("Post sai sem imagem: a Evolution recusou a midia duas vezes.")
+                    if espera:
+                        time.sleep(espera)
+            log.warning(
+                "Post sai sem imagem: a Evolution recusou a midia %d vezes.",
+                len(ESPERAS_DA_MIDIA),
+            )
         return self.send_text(text, to)
