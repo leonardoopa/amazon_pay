@@ -138,12 +138,23 @@ def test_item_id_ausente_nao_casa():
 # ---------- a pista nao carrega o post ----------
 
 
-def test_a_pista_leva_so_id_e_titulo():
-    """Nada do texto deles atravessa. O `titulo` vem do `og:title` do ML, que
-    e o nome do produto no anuncio -- nao a headline que eles escreveram."""
+def test_a_pista_leva_so_o_que_o_ml_publica():
+    """Nada do texto deles atravessa.
+
+    `titulo` e `imagem` vem do `og:title` e do `og:image` da pagina do ML --
+    o nome e a foto do anuncio, nao a headline nem a arte que eles montaram.
+    """
     p = Pista(external_id="MLB1", titulo="Tenis Osklen Casual", origem="xet")
 
-    assert set(vars(p)) == {"external_id", "titulo", "origem"}
+    assert set(vars(p)) == {"external_id", "titulo", "origem", "imagem"}
+
+
+def test_a_pista_sem_foto_e_valida():
+    """Anuncio sem `og:image` nao pode derrubar a pista: o post sai sem foto,
+    como saia antes de existir este campo."""
+    p = Pista(external_id="MLB1", titulo="Tenis Osklen Casual", origem="xet")
+
+    assert p.imagem == ""
 
 
 # ---------- prioridade na fila ----------

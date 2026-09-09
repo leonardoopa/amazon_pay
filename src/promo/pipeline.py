@@ -1027,13 +1027,17 @@ def collect_de_outros_grupos(source) -> list[Offer]:
     _VISTOS_EM_OUTRO_GRUPO.update(p.external_id for p in achadas)
 
     # `fetch_by_ids` quer (external_id, titulo, imagem) -- a mesma tupla que a
-    # reconsulta tira do banco. O titulo vem da pagina do produto; a imagem
-    # ainda nao existe aqui e a fonte preenche.
+    # reconsulta tira do banco. Titulo e imagem vem da pagina do produto, que
+    # `pistas` ja baixou; a fonte repassa os dois sem uma segunda chamada.
     #
-    # Ja errei essa tupla: mandei o ID com o prefixo da fonte no primeiro
+    # A imagem ia vazia ate 09/09/2026, e o post da pista saia so com texto --
+    # 57 dos 90 primeiros. `fetch_by_ids` nao busca foto: ele confia em quem
+    # chama, porque na reconsulta normal ela vem do banco.
+    #
+    # Ja errei essa tupla antes: mandei o ID com o prefixo da fonte no primeiro
     # campo, e cada GET virou `/products/mercadolivre:MLB.../items`. Todos 404,
     # nenhum erro, 15 pistas viraram zero produtos por duas rodadas.
-    alvos = [(p.external_id, p.titulo, None) for p in achadas]
+    alvos = [(p.external_id, p.titulo, p.imagem or None) for p in achadas]
     try:
         found = fetch(alvos)
     except Exception as exc:  # noqa: BLE001 - fonte extra nao derruba a rodada
@@ -1433,7 +1437,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
                 continue
             if not _veio_de_outro_grupo(offer):
                 continue
-            scored = score_pista(offer)
+            scored = score_pista(conn, offer, regras_do_tema(offer, rules, temas))
             if scored is not None:
                 pistas_agora.append(scored)
 
@@ -1605,6 +1609,22 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     if pistas_agora:
         ja = {s.offer.product_id for s in picked}
         novas = [s for s in pistas_agora if s.offer.product_id not in ja]
+
+        # Uma por familia, com a assinatura FINA -- e so ela que serve aqui.
+        #
+        # A grossa (`CATEGORIA`, duas palavras) juntaria "lattafa perfume" e
+        # deixaria um Lattafa so; a fina separa por marca e modelo. Medido em
+        # 09/09/2026 com os titulos reais que sairam juntos: "eau tradicional
+        # zaad", "asdaaf lattafa perfume", "carolina herrera perfume" e
+        # "calvin klein perfume" -- quatro familias distintas, os quatro
+        # perfumes saem.
+        #
+        # E o pedido do dono: quatro perfumes de uma vez pode, desde que sejam
+        # perfumes diferentes. O que esta linha barra e o MESMO produto vindo
+        # de anuncios de vendedores diferentes, que e o caso que o ML produz
+        # aos montes e que o leitor le como repeticao.
+        novas = _uma_por_familia(novas, 3)
+
         cabem = max(0, max_pending_queue() - na_fila - len(picked))
         if len(novas) > cabem:
             log.info(
