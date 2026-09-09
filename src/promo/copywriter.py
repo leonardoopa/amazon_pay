@@ -610,7 +610,32 @@ def _enforce_disclosure(text: str, source: str) -> str:
 
     if not achou:
         saida.append(disclosure)
-    return "\n".join(saida)
+
+    return _cola_no_link(saida, disclosure)
+
+
+def _cola_no_link(linhas: list[str], disclosure: str) -> str:
+    """Junta a divulgacao a linha do link, tirando a linha em branco entre as
+    duas.
+
+    A divulgacao nao pode sair -- publicidade tem que ser reconhecivel como tal
+    (CDC art. 36), e o programa de afiliados exige. Mas ela nao precisa ocupar
+    um paragrafo proprio: colada ao link, some uma linha em branco do post e a
+    identificacao continua inteira, no mesmo lugar que a pessoa olha antes de
+    clicar.
+
+    So mexe quando a divulgacao e a ultima linha e o link e a anterior (fora a
+    linha em branco). Qualquer outro arranjo fica como esta -- reposicionar as
+    cegas produziria post torto.
+    """
+    if len(linhas) < 3 or linhas[-1] != disclosure:
+        return "\n".join(linhas)
+
+    miolo, branco, fim = linhas[:-2], linhas[-2], linhas[-1]
+    if branco.strip() or not miolo or not miolo[-1].startswith("http"):
+        return "\n".join(linhas)
+
+    return "\n".join(miolo[:-1] + [f"{miolo[-1]}\n{fim}"])
 
 
 def fallback_copy(scored: ScoredOffer, link: str, coupon: str | None = None) -> str:

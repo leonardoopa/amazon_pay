@@ -684,3 +684,64 @@ def test_write_restaura_o_titulo_de_ponta_a_ponta():
     resultado = Copywriter(client=FakeClient(texto)).write(scored, LINK)
     assert TITULO in resultado
     assert resultado.startswith("PRECO ABSURDO")
+
+
+# ---------- a divulgacao cola no link ----------
+#
+# Pedido em 09/09/2026 foi remover a divulgacao. Ela NAO sai: publicidade tem
+# que ser reconhecivel como tal (CDC art. 36) e os dois programas de afiliados
+# exigem. O que da para fazer, e foi feito, e tirar a linha em branco entre o
+# link e ela -- a identificacao continua inteira, no lugar que a pessoa olha
+# antes de clicar, e o post perde uma linha.
+
+
+def test_a_divulgacao_cola_na_linha_do_link():
+    from promo.copywriter import _enforce_disclosure
+
+    texto = (
+        "OLHA O PRECO\n\nBlusa Feminina\n\nDe R$ 78,90 por *R$ 24,21*\n\n"
+        "https://meli.la/2SCSX2J"
+    )
+
+    saida = _enforce_disclosure(texto, "mercadolivre")
+
+    assert saida.endswith("https://meli.la/2SCSX2J\nLink de afiliado.")
+    assert "\n\nLink de afiliado." not in saida
+
+
+def test_a_divulgacao_continua_presente():
+    """O ponto que nao cede."""
+    from promo.copywriter import _enforce_disclosure
+
+    saida = _enforce_disclosure("CHAMADA\n\nProduto\n\nhttps://x", "mercadolivre")
+
+    assert "Link de afiliado." in saida
+
+
+def test_nao_cola_quando_a_ultima_linha_nao_e_link():
+    """Reposicionar as cegas produziria post torto."""
+    from promo.copywriter import _enforce_disclosure
+
+    texto = "CHAMADA\n\nProduto\n\nhttps://x\n\nLoja oficial no ML"
+
+    saida = _enforce_disclosure(texto, "mercadolivre")
+
+    assert saida.endswith("Loja oficial no ML\nLink de afiliado.")
+
+
+def test_a_divulgacao_da_amazon_sai_literal():
+    """Clausula 5 do Contrato Operacional: frase exata. Colar no link nao pode
+    virar desculpa para reescrever."""
+    from promo.copywriter import DISCLOSURES, _enforce_disclosure
+
+    saida = _enforce_disclosure("CHAMADA\n\nProduto\n\nhttps://x", "amazon")
+
+    assert DISCLOSURES["amazon"] in saida
+
+
+def test_duplicata_continua_sendo_descartada():
+    from promo.copywriter import _enforce_disclosure
+
+    texto = "CHAMADA\n\nhttps://x\n\nLink de afiliado.\nLink de afiliado."
+
+    assert _enforce_disclosure(texto, "mercadolivre").count("Link de afiliado.") == 1
