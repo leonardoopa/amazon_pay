@@ -226,6 +226,32 @@ def cupom_para(offer: Offer, cupons: list[dict]) -> str | None:
 MAX_CUPONS_POR_POST = 2
 
 
+def preco_com_cupom(offer: Offer, cupons: list[dict]) -> float | None:
+    """O preco que a pessoa PAGA, quando da para afirmar isso.
+
+    Devolve None so quando nenhum cupom serve para esta oferta.
+
+    O numero fica ATRELADO ao cupom no texto -- "por R$ 105,61 com o cupom"
+    --, e essa amarra e o que o torna verdadeiro. Cupom que vale "em itens
+    selecionados" as vezes nao aplica: medido em 09/09/2026, o TORCIDA passou
+    num pre-treino e numa progressiva e falhou num whey. Escrito como preco do
+    anuncio, o numero seria falso nesses casos; escrito como preco COM o
+    cupom, ele descreve a condicao que o proprio post manda cumprir.
+
+    Por isso a instrucao ao copywriter e ao `fallback_copy` exige a expressao
+    na mesma linha, e nunca o numero solto.
+    """
+    servem = [c for c in cupons if offer.source == "mercadolivre" and _serve(offer, c)]
+    if not servem:
+        return None
+
+    melhor = max(servem, key=lambda c: _quanto_economiza(offer, c))
+    economia = _quanto_economiza(offer, melhor)
+    if economia <= 0:
+        return None
+    return round(offer.price - economia, 2)
+
+
 def _quanto_economiza(offer: Offer, cupom: dict) -> float:
     """Quantos reais este cupom tira do preco, respeitando o teto.
 
@@ -1293,11 +1319,12 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             sem_link.append(scored)
             continue
         cupom = cupom_para(scored.offer, cupons)
+        final = preco_com_cupom(scored.offer, cupons)
         try:
-            text = copywriter.write(scored, link, cupom, recentes)
+            text = copywriter.write(scored, link, cupom, recentes, final)
         except Exception as exc:  # noqa: BLE001 - sem IA ainda da pra postar
             log.warning("Gemini falhou, usando texto padrao: %s", exc)
-            text = fallback_copy(scored, link, cupom)
+            text = fallback_copy(scored, link, cupom, final)
         # Alimenta a proxima chamada desta mesma rodada: sem isso as 5 ofertas
         # do lote saem com a mesma formula, que e o caso mais visivel de todos.
         recentes.append(text.strip().splitlines()[0].strip())

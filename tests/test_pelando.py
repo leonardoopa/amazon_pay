@@ -146,13 +146,17 @@ def html_com_codigo(code: str, inativo: str = "false") -> str:
 
 
 def test_acha_o_codigo_da_oferta():
-    assert codigo_da_pagina(html_com_codigo("TORCIDA")) == ("TORCIDA", True)
+    assert codigo_da_pagina(html_com_codigo("TORCIDA")) == ("TORCIDA", True, False)
 
 
 def test_cupom_marcado_inativo_vem_como_inativo():
     """O `data-inactive` e a unica validacao que esta fonte oferece: o site
     marca quando a comunidade reporta que parou de funcionar."""
-    assert codigo_da_pagina(html_com_codigo("VELHO", inativo="true")) == ("VELHO", False)
+    assert codigo_da_pagina(html_com_codigo("VELHO", inativo="true")) == (
+        "VELHO",
+        False,
+        False,
+    )
 
 
 def test_ignora_os_codigos_da_lateral():
@@ -165,7 +169,7 @@ def test_ignora_os_codigos_da_lateral():
         + html_com_codigo("TORCIDA")
     )
 
-    assert codigo_da_pagina(html) == ("TORCIDA", True)
+    assert codigo_da_pagina(html) == ("TORCIDA", True, False)
 
 
 def test_pagina_sem_codigo_devolve_none():
@@ -228,3 +232,28 @@ def test_cupom_postado_ha_muito_tempo_ja_vence():
     d = cupom(postado_em=velho).como_dict(3)
 
     assert date.fromisoformat(d["ate"]) < date.today()
+
+
+def test_le_o_recorte_do_corpo_da_pagina():
+    """Medido em 09/09/2026: o TORCIDA tinha slug limpo
+    ("10porcento-off-acima-de-rdollar79") e a restricao so no corpo --
+    "Publicado por reginaoliveira73 2 h Em itens Selecionados". O post saiu
+    no grupo com o cupom num whey onde ele nao aplicava, e funcionou num
+    pre-treino e numa progressiva onde aplicava, que e o pior dos mundos:
+    parece aleatorio para quem le."""
+    html = html_com_codigo("TORCIDA") + "<span>Em itens Selecionados</span>"
+
+    assert codigo_da_pagina(html) == ("TORCIDA", True, True)
+
+
+def test_o_recorte_do_corpo_nao_descarta_o_cupom():
+    """Ele funciona em parte do catalogo: descartar tiraria os posts que deram
+    certo. O que o recorte proibe e mexer no PRECO anunciado."""
+    cupom_restrito = cupom(restrito=True).como_dict(3)
+
+    assert cupom_restrito["code"] == "TORCIDA"
+    assert cupom_restrito["restrito"] is True
+
+
+def test_cupom_sem_recorte_nao_vem_marcado():
+    assert cupom().como_dict(3)["restrito"] is False

@@ -653,3 +653,81 @@ def test_a_escolha_respeita_o_preco_do_produto():
 
     assert cupom_para(oferta("Caro", 1000.0), cupons).startswith("PCT")
     assert cupom_para(oferta("Barato", 100.0), cupons).startswith("FIXO")
+
+
+# ---------- o preco anunciado ja e o do cupom ----------
+#
+# Pedido em 09/09/2026: "quando coloque que e cupom, coloque o valor do
+# produto ja com o desconto do cupom". O post saia assim --
+#
+#     De R$ 189,00 por R$ 117,35
+#     Use o cupom: TORCIDA
+#
+# -- e o numero que interessa (R$ 105,61) ficava escondido numa conta que o
+# leitor tinha que fazer.
+#
+# O numero fica ATRELADO ao cupom no texto, e essa amarra e o que o torna
+# verdadeiro: cupom "em itens selecionados" as vezes nao aplica -- o TORCIDA
+# passou num pre-treino e numa progressiva e falhou num whey. Como preco do
+# anuncio seria falso; como preco COM o cupom, descreve a condicao que o
+# proprio post manda cumprir.
+
+
+def test_o_preco_final_desconta_o_cupom():
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Dux Human Energy Kick Caffeine 1000g", 117.35)
+    torcida = geral("TORCIDA", 10, teto=30.0, minimo=79.0)
+
+    assert preco_com_cupom(o, [torcida]) == 105.61
+
+
+def test_o_teto_limita_o_desconto_do_preco():
+    """10% de R$ 500 sao R$ 50, mas o teto e R$ 30."""
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Produto Caro", 500.0)
+
+    assert preco_com_cupom(o, [geral("T", 10, teto=30.0)]) == 470.0
+
+
+def test_sem_cupom_nao_ha_preco_final():
+    from promo.pipeline import preco_com_cupom
+
+    assert preco_com_cupom(oferta("Produto", 100.0), []) is None
+
+
+def test_cupom_abaixo_do_minimo_nao_muda_o_preco():
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Barato", 50.0)
+
+    assert preco_com_cupom(o, [geral("T", 10, minimo=79.0)]) is None
+
+
+def test_o_preco_final_usa_o_cupom_que_rende_mais():
+    """O mesmo criterio da escolha do codigo."""
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Produto", 200.0)
+    cupons = [geral("FRACO", 5), geral("FORTE", 25)]
+
+    assert preco_com_cupom(o, cupons) == 150.0
+
+
+def test_cupom_restrito_tambem_entra_no_preco():
+    """A pedido, e o texto e que carrega a condicao: "por R$ X com o cupom"."""
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Kit Progressiva Titanium Liss", 149.99)
+    torcida = dict(geral("TORCIDA", 10, teto=30.0, minimo=79.0), restrito=True)
+
+    assert preco_com_cupom(o, [torcida]) == 134.99
+
+
+def test_amazon_nao_ganha_preco_de_cupom_do_ml():
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Creatina 300g", 100.0, fonte="amazon")
+
+    assert preco_com_cupom(o, [geral("T", 10)]) is None

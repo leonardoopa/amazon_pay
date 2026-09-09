@@ -745,3 +745,59 @@ def test_duplicata_continua_sendo_descartada():
     texto = "CHAMADA\n\nhttps://x\n\nLink de afiliado.\nLink de afiliado."
 
     assert _enforce_disclosure(texto, "mercadolivre").count("Link de afiliado.") == 1
+
+
+# ---------- o preco com cupom tem que dizer que e com cupom ----------
+
+
+def test_o_fallback_monta_a_linha_com_o_cupom():
+    from promo.copywriter import fallback_copy
+
+    texto = fallback_copy(
+        make_scored(baseline=189.0), "https://x",
+        coupon="TORCIDA", preco_com_cupom=105.61,
+    )
+
+    assert "por *R$ 105,61* com o cupom" in texto
+    assert "Use o cupom: TORCIDA" in texto
+
+
+def test_o_fallback_sem_cupom_usa_o_preco_do_anuncio():
+    from promo.copywriter import fallback_copy
+
+    texto = fallback_copy(make_scored(baseline=189.0), "https://x")
+
+    assert "por *R$ 150,00*" in texto
+
+
+def test_preco_de_cupom_solto_e_recusado():
+    """O numero so e verdadeiro atrelado a condicao."""
+    from promo.copywriter import _reject_preco_de_cupom_solto
+
+    with pytest.raises(RuntimeError, match="sem dizer que e com o"):
+        _reject_preco_de_cupom_solto(
+            "De R$ 189,00 por *R$ 105,61*", "TORCIDA", 105.61
+        )
+
+
+def test_preco_de_cupom_com_a_expressao_passa():
+    from promo.copywriter import _reject_preco_de_cupom_solto
+
+    _reject_preco_de_cupom_solto(
+        "De R$ 189,00 por *R$ 105,61* com o cupom", "TORCIDA", 105.61
+    )
+
+
+def test_numero_errado_na_linha_do_preco_e_recusado():
+    from promo.copywriter import _reject_preco_de_cupom_solto
+
+    with pytest.raises(RuntimeError, match="nao traz o preco com cupom"):
+        _reject_preco_de_cupom_solto(
+            "De R$ 189,00 por *R$ 117,35* com o cupom", "TORCIDA", 105.61
+        )
+
+
+def test_sem_cupom_a_guarda_nao_interfere():
+    from promo.copywriter import _reject_preco_de_cupom_solto
+
+    _reject_preco_de_cupom_solto("De R$ 189,00 por *R$ 117,35*", None, None)

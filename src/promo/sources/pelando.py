@@ -50,6 +50,13 @@ USER_AGENT = "promo-bot/1.0 (leitor de cupons; contato via comunidadedodesconto.
 # O codigo da oferta mora aqui. `data-copy-code` e a lateral de relacionados,
 # e traz cupom de outra oferta -- medido: os mesmos 8 codigos em 4 paginas
 # diferentes.
+# O recorte tambem aparece no CORPO da pagina, e nem sempre no slug. Medido em
+# 09/09/2026: o TORCIDA saiu como se valesse para tudo -- o slug dizia so
+# "10porcento-off-acima-de-rdollar79" --, e a pagina trazia "Em itens
+# Selecionados". O post foi para o grupo com o cupom num whey onde ele nao
+# aplicava.
+RECORTE_NA_PAGINA = re.compile(r"Em\s+itens?\s+Selecionados?", re.I)
+
 CODIGO = re.compile(
     r'class="coupon-code-copiable"[^>]*data-inactive="(?P<inativo>[^"]*)"'
     r'[^>]*>\s*<span class="code"[^>]*>(?P<code>[^<]{3,24})</span>',
@@ -93,6 +100,10 @@ class CupomPelando:
     teto: float
     url: str
     temas: tuple[str, ...] = ()
+    # Vale so "em itens selecionados", sem dizer quais. Nao impede o cupom de
+    # sair -- ele funciona em parte do catalogo --, mas impede o post de
+    # anunciar o preco ja com o desconto dele.
+    restrito: bool = False
 
     def como_dict(self, validade_dias: int) -> dict:
         """No formato que `cupom_para` entende.
@@ -118,6 +129,7 @@ class CupomPelando:
             "titulo": f"{self.desconto:g}{'%' if self.tipo == 'PERCENT' else ' BRL'} OFF",
             "categorias": [],
             "temas": list(self.temas),
+            "restrito": self.restrito,
             "fonte": "pelando",
         }
 
@@ -159,18 +171,26 @@ def regra_do_slug(url: str) -> dict:
     return dados
 
 
-def codigo_da_pagina(html: str) -> tuple[str, bool] | None:
-    """(codigo, ativo) da oferta principal, ou None se a pagina nao tiver.
+def codigo_da_pagina(html: str) -> tuple[str, bool, bool] | None:
+    """(codigo, ativo, restrito) da oferta principal, ou None se nao houver.
 
-    O `data-inactive` e a unica validacao que esta fonte oferece: o site marca
-    quando a comunidade reporta que o cupom parou de funcionar. Nao e garantia
-    -- e conteudo de usuario --, mas e melhor do que publicar tudo.
+    `ativo` vem do `data-inactive`: o site marca quando a comunidade reporta
+    que o cupom parou de funcionar. Nao e garantia -- e conteudo de usuario --,
+    mas e melhor do que publicar tudo.
+
+    `restrito` vem do texto "Em itens Selecionados", e ele NAO esta sempre no
+    slug. Medido em 09/09/2026: o TORCIDA tinha slug limpo
+    ("10porcento-off-acima-de-rdollar79") e a restricao so no corpo. O post
+    saiu no grupo com o cupom num whey onde ele nao aplicava, e funcionou num
+    pre-treino onde aplicava -- que e o pior dos mundos, porque parece
+    aleatorio para quem le.
     """
     achado = CODIGO.search(html)
     if not achado:
         return None
     inativo = achado.group("inativo").strip().lower() in {"true", "1"}
-    return achado.group("code").strip(), not inativo
+    restrito = bool(RECORTE_NA_PAGINA.search(html))
+    return achado.group("code").strip(), not inativo, restrito
 
 
 def _e_do_mercado_livre(url: str) -> bool:
@@ -202,7 +222,6 @@ def buscar(limite: int = 20, pausa: float = 1.2, timeout: float = 25.0) -> list[
 
         cupons: list[CupomPelando] = []
         vistos: set[str] = set()
-        descartados_por_recorte = 0
         for url in urls[:limite]:
             regra = regra_do_slug(url)
             if "desconto" not in regra or "postado_em" not in regra:
@@ -212,10 +231,6 @@ def buscar(limite: int = 20, pausa: float = 1.2, timeout: float = 25.0) -> list[
             # publicar um deles como se valesse para tudo e o erro que o cupom
             # deveria evitar: a pessoa clica, tenta e falha. Nao ha de onde
             # tirar a lista -- ela so existe dentro do carrinho do ML.
-            if regra.get("restrito"):
-                descartados_por_recorte += 1
-                continue
-
             try:
                 pagina = cliente.get(url)
                 pagina.raise_for_status()
@@ -227,10 +242,20 @@ def buscar(limite: int = 20, pausa: float = 1.2, timeout: float = 25.0) -> list[
             time.sleep(pausa)
             if not achado:
                 continue
-            codigo, ativo = achado
+            codigo, ativo, restrito_na_pagina = achado
             if not ativo:
                 log.debug("Pelando: %s marcado inativo; fora.", codigo)
                 continue
+            # O slug nem sempre diz; a pagina diz. Medido em 09/09/2026: o
+            # TORCIDA tinha slug limpo e "Em itens Selecionados" no corpo.
+            #
+            # Restrito NAO descarta o cupom. Ele funciona em parte do catalogo
+            # -- o mesmo TORCIDA aplicou num pre-treino e numa progressiva, e
+            # nao aplicou num whey. Descartar tiraria os dois que deram certo.
+            # O que ele proibe e mexer no PRECO: anunciar o valor ja com
+            # desconto de um cupom que talvez nao aplique e pior do que nao
+            # citar cupom nenhum.
+            restrito = restrito_na_pagina or bool(regra.get("restrito"))
             if codigo in vistos:
                 continue
             vistos.add(codigo)
@@ -245,14 +270,16 @@ def buscar(limite: int = 20, pausa: float = 1.2, timeout: float = 25.0) -> list[
                     teto=regra.get("teto", 0.0),
                     url=url,
                     temas=tuple(regra.get("temas") or ()),
+                    restrito=restrito,
                 )
             )
 
+    restritos = sum(1 for c in cupons if c.restrito)
     log.info(
-        "Pelando: %d cupom(ns) ativo(s) do ML (%s); %d fora por valerem so "
-        "'em selecionados' sem dizer quais.",
+        "Pelando: %d cupom(ns) ativo(s) do ML (%s); %d valem so em itens "
+        "selecionados e por isso nao entram no preco anunciado.",
         len(cupons),
         ", ".join(c.code for c in cupons) or "nenhum",
-        descartados_por_recorte,
+        restritos,
     )
     return cupons
