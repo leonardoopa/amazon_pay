@@ -147,13 +147,13 @@ def test_cupom_de_roupa_nao_sai_em_secador():
 
 
 def test_cupom_sem_tema_vale_para_tudo():
-    cupons = [{"code": "VALEMAIS", "temas": [], "minimo": 0.0}]
+    cupons = [{"code": "VALEMAIS", "temas": [], "minimo": 1.0}]
 
     assert cupom_para(oferta("Secador de Cabelos Taiff", 133.0), cupons) == "VALEMAIS"
 
 
 def test_o_tema_ignora_acento_e_caixa():
-    cupons = [{"code": "X", "temas": ["oleo capilar"], "minimo": 0.0}]
+    cupons = [{"code": "X", "temas": ["oleo capilar"], "minimo": 1.0}]
 
     assert cupom_para(oferta("ÓLEO CAPILAR Extraordinário", 30.0), cupons) == "X"
 
@@ -179,8 +179,8 @@ def test_no_minimo_exato_vale():
 def test_dois_cupons_validos_saem_como_alternativa():
     """Cupom do ML tem limite de uso: quando um estoura, o outro ainda pega."""
     cupons = [
-        {"code": "OFERTASEMPRE", "temas": [], "minimo": 0.0},
-        {"code": "VALEMAIS", "temas": [], "minimo": 0.0},
+        {"code": "OFERTASEMPRE", "temas": [], "minimo": 1.0},
+        {"code": "VALEMAIS", "temas": [], "minimo": 1.0},
     ]
 
     assert cupom_para(oferta("Terno Italiano Slim", 123.0), cupons) == (
@@ -192,8 +192,8 @@ def test_a_alternativa_que_nao_serve_fica_de_fora():
     """A diferenca para o concorrente: eles listam tres e torcem, e por isso
     precisam avisar 'se der erro, tente pela aba anonima'."""
     cupons = [
-        {"code": "OFERTASEMPRE", "temas": [], "minimo": 0.0},
-        {"code": "PAGUEMENOS", "temas": ["cueca"], "minimo": 0.0},
+        {"code": "OFERTASEMPRE", "temas": [], "minimo": 1.0},
+        {"code": "PAGUEMENOS", "temas": ["cueca"], "minimo": 1.0},
     ]
 
     assert cupom_para(oferta("Secador Taiff", 133.0), cupons) == "OFERTASEMPRE"
@@ -205,13 +205,13 @@ def test_a_alternativa_que_nao_serve_fica_de_fora():
 def test_cupom_do_ml_nunca_sai_em_oferta_da_amazon():
     """Sao cupons de campanha do ML. O checkout da Amazon nao aceita, e o post
     mandaria a pessoa tentar um codigo que nunca vai funcionar."""
-    cupons = [{"code": "VALEMAIS", "temas": [], "minimo": 0.0}]
+    cupons = [{"code": "VALEMAIS", "temas": [], "minimo": 1.0}]
 
     assert cupom_para(oferta("Creatina 300g", 40.85, fonte="amazon"), cupons) is None
 
 
 def test_a_mesma_oferta_no_ml_leva_o_cupom():
-    cupons = [{"code": "VALEMAIS", "temas": [], "minimo": 0.0}]
+    cupons = [{"code": "VALEMAIS", "temas": [], "minimo": 1.0}]
 
     assert cupom_para(oferta("Creatina 300g", 40.85), cupons) == "VALEMAIS"
 
@@ -351,7 +351,7 @@ def test_cupom_do_watchlist_sem_categoria_continua_por_tema():
 
 
 def test_painel_e_watchlist_convivem_na_mesma_lista():
-    manual = {"code": "MANUAL", "minimo": 0.0, "categorias": [], "temas": []}
+    manual = {"code": "MANUAL", "minimo": 1.0, "categorias": [], "temas": []}
     tenis = com_categoria("Tenis adidas", "MLB1430", 129.0)
 
     assert cupom_para(tenis, [OFERTASEMPRE, manual]) == "OFERTASEMPRE ou MANUAL"
@@ -546,7 +546,7 @@ def test_o_cache_sobrevive_a_um_ciclo_de_gravar_e_reler(tmp_path, monkeypatch):
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
 
-    cupons = [{"code": "VALEMAIS", "ate": AMANHA, "minimo": 0.0, "temas": []}]
+    cupons = [{"code": "VALEMAIS", "ate": AMANHA, "minimo": 1.0, "temas": []}]
     set_meta(conn, pipeline.CUPONS_META, _json.dumps(cupons))
     set_meta(conn, pipeline.CUPONS_LIDOS_EM, now().isoformat())
 
@@ -585,7 +585,7 @@ def test_prioritario_com_cupom_ainda_manda_no_topo():
         pontuada("A", "Cafeteira Eletrica", 40.0, "MLB1276", 200.0),
         pontuada("B", "Tenis adidas Runfalcon", 10.0, "MLB1276", 129.0),
     ]
-    geral = {"code": "VALEMAIS", "minimo": 0.0, "temas": [], "categorias": []}
+    geral = {"code": "VALEMAIS", "minimo": 1.0, "temas": [], "categorias": []}
 
     assert ordenar_como_a_rodada(ofertas, [geral], TEMAS)[0] == "B"
 
@@ -602,7 +602,7 @@ def test_prioritario_com_cupom_ainda_manda_no_topo():
 # Ninguem digita seis codigos: tenta o primeiro, falha, desiste.
 
 
-def geral(code, desconto, tipo="PERCENT", teto=0.0, minimo=0.0):
+def geral(code, desconto, tipo="PERCENT", teto=0.0, minimo=1.0):
     return {
         "code": code, "desconto": desconto, "tipo": tipo,
         "teto": teto, "minimo": minimo, "temas": [], "categorias": [],
@@ -748,14 +748,17 @@ def test_amazon_nao_ganha_preco_de_cupom_do_ml():
 
 
 def fixo(code, valor, minimo=0.0):
+    """Minimo 0 por padrao de proposito: e o formato que a fonte entrega
+    incompleto, e o que os testes desta secao exercitam."""
     return {
         "code": code, "desconto": valor, "tipo": "FIXED",
         "teto": 0.0, "minimo": minimo, "temas": [], "categorias": [],
     }
 
 
-def test_cupom_fixo_sem_minimo_nao_serve():
-    """"R$ 250 de desconto, sem minimo" nao e campanha: e slug incompleto."""
+def test_cupom_sem_minimo_nao_serve():
+    """Campanha do ML tem minimo. Sem ele, o slug veio incompleto -- e o
+    dono confirmou no carrinho que os sem minimo estao mortos."""
     from promo.pipeline import preco_com_cupom
 
     o = oferta("Protetor Solar Sallve", 69.89)
@@ -824,3 +827,45 @@ def test_o_caso_real_do_protetor_solar():
 
     assert cupom_para(o, cupons) == "VALEMAIS"
     assert preco_com_cupom(o, cupons) == 62.9
+
+
+def test_percentual_sem_minimo_tambem_e_recusado():
+    """O VALEMAIS respondeu "O cupom esgotou" no checkout em 09/09/2026. Ele e
+    percentual, entao nunca produziu preco absurdo -- 10% e proporcional ao
+    produto --, mas estava morto igual aos fixos. O minimo previu os cinco
+    casos testados; o tipo nao previu nenhum."""
+    from promo.pipeline import preco_com_cupom
+
+    valemais = {
+        "code": "VALEMAIS", "desconto": 10.0, "tipo": "PERCENT",
+        "teto": 0.0, "minimo": 0.0, "temas": [], "categorias": [],
+    }
+    o = oferta("Relogio Casio Vintage", 382.57)
+
+    assert cupom_para(o, [valemais]) is None
+    assert preco_com_cupom(o, [valemais]) is None
+
+
+def test_o_caso_real_do_relogio_casio():
+    """Os cupons no ar em 09/09/2026, e o post que citou VALEMAIS esgotado."""
+    from promo.pipeline import preco_com_cupom
+
+    cupons = [
+        geral("OFERTASEMPRE", 18, teto=50.0, minimo=79.0),
+        geral("TORCIDA", 10, teto=30.0, minimo=79.0),
+        geral("GLORIA", 10, teto=30.0, minimo=79.0),
+        geral("VALEMAIS", 10, minimo=0.0),
+        fixo("TUDODEBOM", 250.0),
+    ]
+    o = oferta("Relogio Casio Vintage Digital B640wc-5adf Rose", 382.57)
+
+    assert cupom_para(o, cupons) == "OFERTASEMPRE ou TORCIDA"
+    assert preco_com_cupom(o, cupons) == 332.57
+
+
+def test_produto_abaixo_de_todos_os_minimos_nao_leva_cupom():
+    """Com todo cupom exigindo minimo, produto barato fica sem -- e e o certo:
+    o cupom nao aplicaria mesmo."""
+    cupons = [geral("TORCIDA", 10, teto=30.0, minimo=79.0)]
+
+    assert cupom_para(oferta("Meia Kit 3 Pares", 19.90), cupons) is None
