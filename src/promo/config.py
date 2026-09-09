@@ -125,12 +125,20 @@ def grupos_fonte_intervalo_horas() -> float:
 
     Cada leitura sao 50 mensagens da Evolution mais uma pagina de ~370 KB do
     ML por link -- o link de afiliado nao carrega o ID do anuncio na URL, so
-    no corpo. Meia hora acompanha um grupo que posta a cada poucos minutos sem
-    virar trafego de rodada.
+    no corpo.
+
+    O padrao virou 0.25 h em 09/09/2026, que e menos que o intervalo da rodada
+    (`RUN_INTERVAL_SECONDS=900`): assim a leitura acontece em TODA rodada, e o
+    atraso entre eles postarem e nos postarmos passa a ser o da rodada, nao a
+    soma dos dois. O pedido foi republicar assim que aparecer.
+
+    O trafego nao cresce na mesma proporcao: os links repetem entre leituras --
+    eles postam ~28 por dia e a janela lida sao 50 mensagens --, e o teto de
+    `limite` por grupo continua valendo.
 
     0 desliga a fonte.
     """
-    return float(_optional("GRUPOS_FONTE_INTERVALO_HORAS", "0.5"))
+    return float(_optional("GRUPOS_FONTE_INTERVALO_HORAS", "0.25"))
 
 
 def delivery_backend() -> str:

@@ -70,7 +70,7 @@ from .db import (
 )
 from .delivery import NotConnected, WindowClosed, build_delivery
 from .models import Offer, ScoredOffer
-from .scoring import score, score_campaign
+from .scoring import score, score_campaign, score_pista
 from .sources.amazon import Amazon
 from .sources.mercadolivre import MercadoLivre
 from .sources.ml_ofertas import MLOfertas
@@ -455,8 +455,12 @@ def _veio_de_outro_grupo(offer: Offer) -> bool:
     e o produto ja provou que atrai clique em publico parecido.
 
     O que se herda e so isso: a pista. O texto e o link continuam sendo
-    nossos, e o produto passa por todos os filtros de preco, desconto e
-    cooldown como qualquer outro.
+    nossos.
+
+    Desde 09/09/2026 a pista tambem dispensa os pisos de desconto e os
+    cooldowns -- ver `_pistas_do_dia`. O dono pediu que tudo que der para
+    medir do grupo deles saia no nosso, e a curadoria deles passa a ser o
+    filtro no lugar dos nossos numeros.
     """
     return offer.external_id in _VISTOS_EM_OUTRO_GRUPO
 
@@ -1413,6 +1417,26 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             if scored is not None:
                 repasses.append(scored)
 
+        # A terceira porta, so para o que o grupo vizinho postou agora.
+        #
+        # Sem ela a fonte quase nao rendia: a pista e produto novo no nosso
+        # radar, entao `score` nao tem historico, e `score_campaign` so aceita
+        # quem tem preco riscado -- medido em 09/09/2026, 9 de 13. As outras
+        # viravam so coleta e talvez saissem dias depois.
+        #
+        # Fica por ultimo de proposito: quem passou nas duas primeiras ja saiu
+        # com desconto medido ou riscado, que e post melhor.
+        ja_escolhido |= {s.offer.product_id for s in repasses}
+        pistas_agora: list[ScoredOffer] = []
+        for offer in unique.values():
+            if offer.product_id in ja_escolhido:
+                continue
+            if not _veio_de_outro_grupo(offer):
+                continue
+            scored = score_pista(offer)
+            if scored is not None:
+                pistas_agora.append(scored)
+
     # A ordem tem tres criterios, do que mais manda para o que so desempata.
     #
     # 1. PRIORITARIO COM CUPOM vai na frente de tudo. E a unica oferta que
@@ -1480,12 +1504,18 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # dezenas de anuncios de vendedores diferentes: `product_id` distinto,
     # produto igual. O grupo recebeu quatro "Short Saia Esportivo Ausare" em
     # quinze minutos, cada um de um anuncio, cada um com um preco.
+    # A exclusao vale para TUDO, pista inclusive: ela nao e um filtro de
+    # qualidade que a curadoria do outro grupo possa substituir, e a lista de
+    # coisas que o dono nao quer no grupo -- celular, por exemplo.
     barrados = load_exclude()
     if barrados:
-        antes = len(picked) + len(repasses)
+        antes = len(picked) + len(repasses) + len(pistas_agora)
         picked = [s for s in picked if not e_barrada(s.offer, barrados, temas)]
         repasses = [s for s in repasses if not e_barrada(s.offer, barrados, temas)]
-        fora = antes - len(picked) - len(repasses)
+        pistas_agora = [
+            s for s in pistas_agora if not e_barrada(s.offer, barrados, temas)
+        ]
+        fora = antes - len(picked) - len(repasses) - len(pistas_agora)
         if fora:
             log.info("%d oferta(s) fora pela lista de exclusao.", fora)
 
@@ -1504,6 +1534,18 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
 
         picked = [s for s in picked if passa(s)]
         repasses = [s for s in repasses if passa(s)]
+
+        # A pista fura os cooldowns de FAMILIA e de CATEGORIA -- eles barram
+        # produtos diferentes so por se parecerem, e a escolha de mandar dois
+        # perfumes seguidos passa a ser do grupo vizinho.
+        #
+        # A trava do MESMO produto continua, e ela nao e negociavel aqui: a
+        # fonte rele as mesmas 50 mensagens a cada rodada, entao a mesma pista
+        # reaparece de 15 em 15 minutos. Sem esta linha o grupo receberia o
+        # mesmo item a manha inteira -- que nao e "toda vez que eles mandarem",
+        # e sim toda vez que NOS lermos.
+        pistas_agora = [s for s in pistas_agora if s.offer.product_id not in bloqueados]
+
         repetidos = antes - len(picked) - len(repasses)
         if repetidos:
             log.info(
@@ -1549,6 +1591,35 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             if familia_do_titulo(s.offer.title, assinatura) not in familias_usadas
         ]
         picked += _priorizar_temas(restantes, espaco - len(picked), temas)
+
+    # A pista entra FORA da cota e na FRENTE, nao dentro dela.
+    #
+    # Dentro, ela competiria com as nossas medidas por seis vagas e perderia
+    # quase sempre -- `chave_da_fila` ordena por desconto, e a pista nao tem
+    # desconto nenhum para mostrar. Foi o pedido do dono em 09/09/2026:
+    # prioridade total para o que o grupo vizinho postar.
+    #
+    # O teto que sobra e o da fila (`max_pending_queue`), respeitado logo
+    # abaixo: sem ele uma enxurrada do outro grupo encheria a fila de post que
+    # morre como `expired` antes de sair.
+    if pistas_agora:
+        ja = {s.offer.product_id for s in picked}
+        novas = [s for s in pistas_agora if s.offer.product_id not in ja]
+        cabem = max(0, max_pending_queue() - na_fila - len(picked))
+        if len(novas) > cabem:
+            log.info(
+                "%d pista(s) do outro grupo ficaram de fora: a fila comporta "
+                "mais %d post(s).",
+                len(novas) - cabem,
+                cabem,
+            )
+        picked = novas[:cabem] + picked
+        if novas[:cabem]:
+            log.info(
+                "%d oferta(s) do outro grupo na frente da fila, fora da cota.",
+                len(novas[:cabem]),
+            )
+
     verificadas = sum(1 for s in picked if s.verified)
     log.info(
         "%d ofertas selecionadas (%d verificadas, %d repasse da vitrine)",
@@ -1705,6 +1776,11 @@ def _gravar_post(conn, scored: ScoredOffer, text: str, grupo_jid: str) -> None:
         # desconto medido por nos.
         verified=scored.verified,
         grupo_jid=grupo_jid,
+        # A pista passa na frente do que ja esta na fila. Sem isso ela herdaria
+        # a posicao pelo `created_at` e esperaria a fila inteira drenar a 120 s
+        # por post -- ate uma hora com a fila cheia, para uma oferta que vale
+        # porque acabou de ser postada.
+        prioridade=1 if _veio_de_outro_grupo(scored.offer) else 0,
     )
 
 

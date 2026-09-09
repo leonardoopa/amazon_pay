@@ -422,6 +422,21 @@ ACOMPANHAMENTO = re.compile(
 )
 
 
+# Afirmacao de queda de preco, para o post que nao tem preco antigo nenhum.
+#
+# Duas familias: o percentual ("30% off", "-30%", "30% de desconto") e o verbo
+# de queda com o preco antigo implicito ("de R$ 200 por", "caiu para", "era
+# R$ 200"). "desconto" sozinho fica de fora de proposito: cupom e desconto, e
+# a pista pode receber cupom como qualquer outra oferta.
+AFIRMA_DESCONTO = re.compile(
+    r"\d+\s*%"
+    r"|de\s+R\$\s*[\d.,]+\s+por"
+    r"|\b(era|estava|custava)\b\s+R\$"
+    r"|\b(caiu|baixou|despencou|desabou)\b",
+    re.IGNORECASE,
+)
+
+
 # As chamadas de exemplo do SYSTEM. Medido: 5 de 9 posts saiam com uma delas
 # literal -- o modelo trata a lista como cardapio, e a instrucao de nao repetir
 # perde pra ela. Rejeitar e o unico jeito que funciona.
@@ -472,6 +487,18 @@ def _reject_unfounded_claims(text: str, scored: ScoredOffer) -> None:
                 "oferta e repasse da vitrine do ML -- nao medimos nada nela."
             )
 
+    # Sem numero nenhum por tras, qualquer afirmacao de queda e invencao. O
+    # prompt ja diz para nao escrever, e o modelo escreve assim mesmo -- e a
+    # razao de todo `_reject_*` deste arquivo existir.
+    if scored.sem_medicao:
+        achado = AFIRMA_DESCONTO.search(text)
+        if achado:
+            raise RuntimeError(
+                f"O texto afirma desconto ({achado.group(0)!r}), mas nao ha "
+                "preco antigo nem medicao nossa neste produto -- ele veio da "
+                "pista de outro grupo."
+            )
+
     achado = VAZOU_PROMPT.search(text)
     if achado:
         raise RuntimeError(f"Instrucao do prompt vazou pro post ({achado.group(0)!r}).")
@@ -492,17 +519,32 @@ def _facts(
     preco_com_cupom: float | None = None,
 ) -> str:
     offer = scored.offer
-    facts = [
-        f"Produto: {offer.title}",
-        # O "De" e a nossa mediana, nao o preco riscado da loja -- esse vem
-        # nulo na maioria dos anuncios, e quando vem e o numero inflado na
-        # vespera que o projeto inteiro existe pra ignorar.
-        f"De (media de {scored.observations} dias): R$ {brl(scored.baseline)}",
-        f"Por (preco agora): R$ {brl(offer.price)}",
-        f"Desconto contra a media: {scored.discount_pct:.0f}%",
-        f"Loja: {store_name(offer.source)}",
-        f"Link: {link}",
-    ]
+    if scored.sem_medicao:
+        # Sem "De" e sem percentual porque nao existe nenhum dos dois: nao ha
+        # baseline nossa, e o anuncio nao trouxe preco riscado. Mandar
+        # `baseline` assim mesmo produziria "De R$ 155,00 por R$ 155,00" e
+        # "0% de desconto", que e pior que nao falar de preco antigo.
+        facts = [
+            f"Produto: {offer.title}",
+            f"Preco: R$ {brl(offer.price)}",
+            "NAO ha preco antigo nem desconto. NAO escreva 'De R$ ...', NAO "
+            "escreva porcentagem, NAO diga que baixou, caiu ou esta mais "
+            "barato. Escreva sobre o produto e o preco de hoje.",
+            f"Loja: {store_name(offer.source)}",
+            f"Link: {link}",
+        ]
+    else:
+        facts = [
+            f"Produto: {offer.title}",
+            # O "De" e a nossa mediana, nao o preco riscado da loja -- esse vem
+            # nulo na maioria dos anuncios, e quando vem e o numero inflado na
+            # vespera que o projeto inteiro existe pra ignorar.
+            f"De (media de {scored.observations} dias): R$ {brl(scored.baseline)}",
+            f"Por (preco agora): R$ {brl(offer.price)}",
+            f"Desconto contra a media: {scored.discount_pct:.0f}%",
+            f"Loja: {store_name(offer.source)}",
+            f"Link: {link}",
+        ]
     if scored.lowest_ever:
         facts.append("Este e o menor preco desde que comecamos a monitorar.")
     if offer.free_shipping:
@@ -719,13 +761,22 @@ def fallback_copy(
     perdida, e melhor ainda que post mentiroso.
     """
     offer = scored.offer
-    lines = [
-        offer.title,
-        "",
-        f"De R$ {brl(scored.baseline)} por *R$ {brl(preco_com_cupom)}* com o cupom"
-        if coupon and preco_com_cupom is not None
-        else f"De R$ {brl(scored.baseline)} por *R$ {brl(offer.price)}*",
-    ]
+    if scored.sem_medicao:
+        # Sem preco antigo o "De ... por ..." viraria "De R$ 155,00 por
+        # R$ 155,00": o template repetiria o mesmo numero duas vezes e o post
+        # anunciaria um desconto que nao existe.
+        preco = (
+            f"*R$ {brl(preco_com_cupom)}* com o cupom"
+            if coupon and preco_com_cupom is not None
+            else f"*R$ {brl(offer.price)}*"
+        )
+    else:
+        preco = (
+            f"De R$ {brl(scored.baseline)} por *R$ {brl(preco_com_cupom)}* com o cupom"
+            if coupon and preco_com_cupom is not None
+            else f"De R$ {brl(scored.baseline)} por *R$ {brl(offer.price)}*"
+        )
+    lines = [offer.title, "", preco]
     if coupon:
         lines.append(
             f"Tenta o cupom {coupon} 🎟️ (se ainda estiver valendo)"
