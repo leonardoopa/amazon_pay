@@ -57,6 +57,7 @@ from .db import (
     mark_post_sent,
     hot_products,
     hours_since,
+    now,
     pending_posts,
     products_in_cooldown,
     recent_headlines,
@@ -208,6 +209,32 @@ def cupom_para(offer: Offer, cupons: list[dict]) -> str | None:
     return " ou ".join(servem) if servem else None
 
 
+def chave_da_fila(
+    scored: ScoredOffer, cupons: list[dict], temas: list[str]
+) -> tuple:
+    """A ordem da fila, em quatro criterios. Maior ganha.
+
+    1. PRIORITARIO COM CUPOM. E a unica oferta que junta as duas coisas que o
+       grupo responde -- um tema que ele pediu, e um desconto a mais que
+       ninguem ve no anuncio.
+    2. QUALQUER oferta com cupom. Cupom e desconto que nao aparece no anuncio:
+       quem acha o produto sozinho no ML paga o preco cheio, e so quem esta no
+       grupo sabe do codigo. E a unica coisa que este bot publica que a pessoa
+       nao acharia por conta propria.
+    3. Desconto, como sempre foi.
+    4. Frete gratis, so como desempate. O custo do frete e o que some do preco
+       anunciado na hora do checkout, mas ele nao pode passar na frente de um
+       desconto maior.
+
+    Funcao nomeada, e nao um `lambda` dentro de `run`, porque o teste precisa
+    ordenar pela MESMA chave. Quando isto era uma copia no teste, ela ficou
+    defasada em uma versao e passou a testar a ordem antiga.
+    """
+    tem_cupom = bool(cupom_para(scored.offer, cupons))
+    premiada = tem_cupom and e_prioritaria(scored.offer, temas)
+    return (premiada, tem_cupom, scored.discount_pct, scored.offer.free_shipping)
+
+
 def _serve(offer: Offer, cupom: dict) -> bool:
     """Este cupom vale para esta oferta?
 
@@ -244,7 +271,13 @@ def _serve(offer: Offer, cupom: dict) -> bool:
     return not temas or tem_tema(offer.title, temas)
 
 
+# Duas chaves, e nao uma. `hours_since` le a chave que recebe e faz
+# `datetime.fromisoformat` no valor -- guardar o JSON dos cupons na mesma
+# chave da idade fazia toda leitura estourar com "Invalid isoformat string",
+# e a excecao zerava a lista. O sintoma era o pior possivel: nenhum post com
+# cupom, e um WARNING que so aparecia no log.
 CUPONS_META = "cupons_ml"
+CUPONS_LIDOS_EM = "cupons_ml_lidos_em"
 CUPONS_HORAS = 3.0
 
 # Quantos dias um cupom do Pelando vale, contados da postagem. O site nao
@@ -294,7 +327,7 @@ def cupons_vigentes(path: Path | None = None) -> list[dict]:
     do_painel: list[dict] = []
     try:
         with connect() as conn:
-            idade = hours_since(conn, CUPONS_META)
+            idade = hours_since(conn, CUPONS_LIDOS_EM)
             guardados = get_meta(conn, CUPONS_META)
 
             if idade is None or idade >= CUPONS_HORAS:
@@ -328,6 +361,7 @@ def cupons_vigentes(path: Path | None = None) -> list[dict]:
                 if lidos:
                     do_painel = lidos
                     set_meta(conn, CUPONS_META, json.dumps(do_painel))
+                    set_meta(conn, CUPONS_LIDOS_EM, now().isoformat())
                 else:
                     do_painel = json.loads(guardados) if guardados else []
             elif guardados:
@@ -1062,9 +1096,14 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     #    recebido cupom. Quando um aparece, ele nao pode perder a vaga para
     #    mais um desconto grande de um produto qualquer.
     #
-    # 2. Desconto, como sempre foi.
+    # 2. QUALQUER oferta com cupom vem depois dela, antes do resto. Cupom e
+    #    desconto que nao aparece no anuncio: quem ve o produto no ML paga o
+    #    preco cheio, e so quem esta no grupo sabe do codigo. E a unica coisa
+    #    que este bot publica que a pessoa nao acharia sozinha.
     #
-    # 3. Frete gratis DESEMPATA, e nao ordena. O custo do frete e o que some do
+    # 3. Desconto, como sempre foi.
+    #
+    # 4. Frete gratis DESEMPATA, e nao ordena. O custo do frete e o que some do
     #    preco anunciado na hora do checkout -- oferta boa com frete de R$ 25 e
     #    pior que oferta media com frete zero, e o grupo so descobre depois de
     #    clicar. Medido em 06/09/2026, 74,3% da vitrine tem frete gratis, entao
@@ -1072,8 +1111,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     cupons = cupons_vigentes()
 
     def ordem(s: ScoredOffer) -> tuple:
-        premiada = bool(cupom_para(s.offer, cupons)) and e_prioritaria(s.offer, temas)
-        return (premiada, s.discount_pct, s.offer.free_shipping)
+        return chave_da_fila(s, cupons, temas)
 
     picked.sort(key=ordem, reverse=True)
     repasses.sort(key=ordem, reverse=True)
