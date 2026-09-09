@@ -379,20 +379,31 @@ def chave_da_fila(
 
 
 def _regra_incompleta(cupom: dict) -> bool:
-    """Cupom de valor FIXO sem compra minima declarada nao existe.
+    """Cupom sem compra minima declarada nao entra.
 
-    "R$ 250 de desconto, sem minimo" nao e uma campanha -- e um slug do qual
-    o minimo caiu na hora de escrever o titulo. Medido em 09/09/2026, tres dos
-    sete cupons ativos do Pelando estavam assim (SITETOD0809 R$ 60,
-    PREDATA0809 R$ 30, TUDODEBOM R$ 250), e foi o de R$ 250 que caiu num
-    protetor solar de R$ 69,89 e mandou "por R$ -180,11 com o cupom" para o
-    grupo.
+    Campanha do ML tem minimo. Quando ele nao aparece, o que houve foi o slug
+    da fonte omitir o numero -- e o resto da regra provavelmente veio
+    incompleto junto.
 
-    O percentual nao tem esse problema: 10% de qualquer preco e um numero
-    proporcional ao produto, e o teto ja limita o resto.
+    Isso comecou como guarda so para o valor FIXO, depois do post com
+    R$ -180,11. O dono entao testou os codigos no carrinho, um a um, e o
+    minimo previu os cinco casos:
+
+        TORCIDA      funciona   10%       minimo R$ 79
+        GLORIA       funciona   10%       minimo R$ 79
+        VALEMAIS     esgotado   10%       minimo R$ 0
+        TUDODEBOM    morto      R$ 250    minimo R$ 0
+        SITETOD0809  morto      R$ 60     minimo R$ 0
+
+    Nao e o tipo que separa os vivos dos mortos, e o minimo. O percentual sem
+    minimo tambem falha -- o VALEMAIS respondeu "O cupom esgotou" no checkout
+    --, e ele so nao produziu preco absurdo porque 10% de qualquer preco e
+    proporcional ao produto.
+
+    Custa alcance: dos oito cupons lidos em 09/09/2026, quatro ficam de fora.
+    Vale o custo, porque cupom que nao aplica gasta a confianca do grupo, e a
+    confianca e o unico ativo que este projeto tem.
     """
-    if (cupom.get("tipo") or "PERCENT").upper() != "FIXED":
-        return False
     return float(cupom.get("minimo") or 0) <= 0
 
 
