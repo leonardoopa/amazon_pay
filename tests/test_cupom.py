@@ -24,6 +24,7 @@ valor minimo conferidos antes, por produto.
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -379,14 +380,17 @@ def test_cupom_do_painel_tambem_nao_sai_na_amazon():
 
 
 def ordenar_como_a_rodada(ofertas, cupons, temas):
-    """Reproduz a chave de ordenacao de `run`."""
-    from promo.pipeline import cupom_para, e_prioritaria
+    """Ordena pela chave REAL de `run`, e nao por uma copia.
 
-    def ordem(s):
-        premiada = bool(cupom_para(s.offer, cupons)) and e_prioritaria(s.offer, temas)
-        return (premiada, s.discount_pct, s.offer.free_shipping)
+    A copia existiu e ficou defasada: quando o cupom virou criterio da fila, o
+    teste continuou ordenando pela regra antiga e passou a afirmar o que o
+    codigo nao fazia mais."""
+    from promo.pipeline import chave_da_fila
 
-    return [s.offer.external_id for s in sorted(ofertas, key=ordem, reverse=True)]
+    ordenadas = sorted(
+        ofertas, key=lambda s: chave_da_fila(s, cupons, temas), reverse=True
+    )
+    return [s.offer.external_id for s in ordenadas]
 
 
 def pontuada(external_id, titulo, desconto, categoria=None, preco=100.0):
@@ -433,14 +437,27 @@ def test_prioritario_sem_cupom_nao_ganha_o_topo():
     assert ordenar_como_a_rodada(ofertas, [CUPOM], TEMAS)[0] == "A"
 
 
-def test_cupom_sem_tema_prioritario_nao_ganha_o_topo():
-    """Nem o cupom sozinho."""
+def test_cupom_sem_tema_prioritario_ganha_de_quem_nao_tem_cupom():
+    """Desde 08/09/2026 o cupom sozinho ja sobe: e desconto que nao aparece no
+    anuncio. Antes disso so a dupla tema+cupom subia, e a cafeteira com 40%
+    passava na frente da camisa com cupom."""
     ofertas = [
         pontuada("A", "Cafeteira Eletrica", 40.0, "MLB1276", 200.0),
         pontuada("B", "Camisa Social Lisa", 20.0, "MLB1430", 129.0),
     ]
 
-    assert ordenar_como_a_rodada(ofertas, [CUPOM], TEMAS)[0] == "A"
+    assert ordenar_como_a_rodada(ofertas, [CUPOM], TEMAS)[0] == "B"
+
+
+def test_entre_dois_com_cupom_o_desconto_decide():
+    """O cupom ordena contra quem NAO tem; entre iguais, o desconto volta a
+    mandar."""
+    ofertas = [
+        pontuada("A", "Camisa Social Lisa", 15.0, "MLB1430", 129.0),
+        pontuada("B", "Calca Jeans Reta", 35.0, "MLB1430", 129.0),
+    ]
+
+    assert ordenar_como_a_rodada(ofertas, [CUPOM], TEMAS) == ["B", "A"]
 
 
 def test_entre_duas_premiadas_o_desconto_decide():
@@ -495,3 +512,79 @@ def test_cupom_de_categoria_sem_tema_nao_alcanca_produto_sem_categoria():
     da_vitrine = com_categoria("Kit 5 Camisetas Hering", None, 129.0)
 
     assert cupom_para(da_vitrine, [cupom]) is None
+
+
+# ---------- o cache guarda dado e idade em chaves separadas ----------
+#
+# Medido em producao em 08/09/2026, na primeira leitura depois do deploy:
+#
+#     WARNING Nao consegui ler os cupons guardados:
+#             Invalid isoformat string: '[{"code": "OFERTASEMPRE", ...
+#
+# `hours_since` faz `datetime.fromisoformat` no valor da chave que recebe.
+# Guardar o JSON dos cupons na MESMA chave da idade fazia toda leitura
+# estourar, e a excecao zerava a lista inteira. O sintoma foi o pior
+# possivel: zero posts com cupom, e um aviso que so aparecia no log.
+#
+# Nenhum teste pegou porque nenhum exercitava gravar e reler.
+
+
+def test_a_idade_e_os_dados_nao_dividem_chave():
+    from promo.pipeline import CUPONS_LIDOS_EM, CUPONS_META
+
+    assert CUPONS_META != CUPONS_LIDOS_EM
+
+
+def test_o_cache_sobrevive_a_um_ciclo_de_gravar_e_reler(tmp_path, monkeypatch):
+    """O ciclo inteiro: grava, carimba a idade, e le de volta sem estourar."""
+    import json as _json
+
+    from promo import pipeline
+    from promo.db import SCHEMA, get_meta, hours_since, now, set_meta
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA)
+
+    cupons = [{"code": "VALEMAIS", "ate": AMANHA, "minimo": 0.0, "temas": []}]
+    set_meta(conn, pipeline.CUPONS_META, _json.dumps(cupons))
+    set_meta(conn, pipeline.CUPONS_LIDOS_EM, now().isoformat())
+
+    # A leitura da idade nao pode estourar por causa do que foi guardado.
+    assert hours_since(conn, pipeline.CUPONS_LIDOS_EM) < 1
+    assert _json.loads(get_meta(conn, pipeline.CUPONS_META))[0]["code"] == "VALEMAIS"
+
+
+def test_qualquer_oferta_com_cupom_vem_antes_das_sem():
+    """Pedido em 08/09/2026: produto com cupom e mais atraente. Cupom e
+    desconto que nao aparece no anuncio -- quem ve o produto no ML paga o
+    preco cheio, e so quem esta no grupo sabe do codigo."""
+    ofertas = [
+        pontuada("A", "Cafeteira Eletrica", 40.0, "MLB1276", 200.0),
+        pontuada("B", "Panela de Pressao", 25.0, "MLB1276", 129.0),
+    ]
+    geral = {"code": "VALEMAIS", "minimo": 100.0, "temas": [], "categorias": []}
+
+    # B tem cupom (preco 129 >= minimo 100), A tambem (200 >= 100).
+    # Com os dois elegiveis, o desconto decide.
+    assert ordenar_como_a_rodada(ofertas, [geral], TEMAS) == ["A", "B"]
+
+    # Com minimo alto, so A alcanca -- e sobe mesmo se tivesse menos desconto.
+    caro = {"code": "VALEMAIS", "minimo": 150.0, "temas": [], "categorias": []}
+    invertidas = [
+        pontuada("A", "Cafeteira Eletrica", 10.0, "MLB1276", 200.0),
+        pontuada("B", "Panela de Pressao", 40.0, "MLB1276", 129.0),
+    ]
+
+    assert ordenar_como_a_rodada(invertidas, [caro], TEMAS)[0] == "A"
+
+
+def test_prioritario_com_cupom_ainda_manda_no_topo():
+    """A ordem dos criterios: prioritario-com-cupom, depois qualquer-cupom."""
+    ofertas = [
+        pontuada("A", "Cafeteira Eletrica", 40.0, "MLB1276", 200.0),
+        pontuada("B", "Tenis adidas Runfalcon", 10.0, "MLB1276", 129.0),
+    ]
+    geral = {"code": "VALEMAIS", "minimo": 0.0, "temas": [], "categorias": []}
+
+    assert ordenar_como_a_rodada(ofertas, [geral], TEMAS)[0] == "B"
