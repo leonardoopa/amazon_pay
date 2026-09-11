@@ -544,23 +544,29 @@ def _serve(offer: Offer, cupom: dict) -> bool:
         return False
 
     # `restrito` e o "Em itens Selecionados" da pagina do cupom: ele vale num
-    # recorte, e o recorte nao esta publicado em lugar nenhum. Sem tema e sem
-    # categoria, o codigo e a unica pista do recorte -- e ele costuma ser a
-    # propria marca.
+    # recorte que o ML nao publica. Sem tema e sem categoria, o codigo e a
+    # unica pista -- e ele separa dois tipos bem diferentes de cupom.
     #
-    # Medido em 09/09/2026, os nove cupons no ar eram TODOS restritos, TODOS
-    # sem tema e sem categoria. Sem esta regra o `return` abaixo os tratava
-    # como "vale para tudo", e o grupo recebeu "Aparador de Pelos Kemei, use o
-    # cupom AVENE15 ou MANTECORP14" -- dois cupons de dermocosmetico num
-    # aparador de pelos. E a queixa que o dono repetiu quatro vezes: o cupom
-    # nao pega.
+    # CUPOM DE MARCA. `AVENE15`, `MANTECORP14`, `MAYBELLINENOMELI`. O recorte
+    # e a marca, e ela esta no proprio codigo. Medido em 09/09/2026, sem esta
+    # regra o grupo recebeu "Aparador de Pelos Kemei, use o cupom AVENE15 ou
+    # MANTECORP14" -- dermocosmetico num aparador de pelos. E a queixa que o
+    # dono repetiu quatro vezes: o cupom nao pega.
+    #
+    # CUPOM DE CAMPANHA. `EXCLUSIVONOMELI`, `ITENSDECASA`, `SAINDOBARRATO`,
+    # `MELIOFF`. Sao campanhas amplas do ML, e pegam em muita coisa: o grupo
+    # vizinho publicou `EXCLUSIVONOMELI` numa camiseta Lupo e funcionou. Estes
+    # continuam valendo para qualquer produto.
+    #
+    # A primeira versao desta regra tratava os dois iguais e recusava os dois
+    # quando nao achava marca. Isso zerava o cupom: dos dezesseis codigos no ar
+    # em 10/09/2026, NENHUM e de marca -- todos sao campanha. Recusar o que nao
+    # se reconhece parece conservador, mas aqui joga fora justamente o cupom que
+    # funciona.
     if not temas and cupom.get("restrito"):
         marca = _marca_do_codigo(cupom.get("code") or "")
-        if not marca:
-            # Restrito, sem tema, sem categoria e sem marca no codigo: nao ha
-            # como afirmar que se aplica a nada. Falha fechado, igual acima.
-            return False
-        temas = [marca]
+        if marca:
+            temas = [marca]
 
     return not temas or tem_tema(offer.title, temas)
 
@@ -572,15 +578,24 @@ _SUFIXOS_DO_CODIGO = ("NOMELI", "NOML", "MELI", "OFF")
 
 
 def _marca_do_codigo(code: str) -> str:
-    """A marca escondida no codigo do cupom, ou "" quando nao da para dizer.
+    """A MARCA escondida no codigo do cupom, ou "" quando o codigo e campanha.
 
-    `AVENE15` -> "avene". `MANTECORP14` -> "mantecorp". `MAYBELLINENOMELI` ->
-    "maybelline". `TUDOMELI` -> "" (sobra "tudo", que nao e marca de nada).
+    `AVENE15` -> "avene". `MAYBELLINENOMELI` -> "maybelline".
+    `EXCLUSIVONOMELI` -> "" (campanha). `ITENSDECASA` -> "" (campanha).
 
-    Serve so para cupom restrito sem tema: o codigo vira o recorte que o ML nao
-    publica. Errar aqui para MENOS e barato -- o post sai sem cupom, como
-    saia antes de existirem cupons. Errar para MAIS e o que custa: manda a
-    pessoa digitar um codigo que o checkout recusa.
+    A distincao decide o alcance do cupom: com marca ele vale so nos produtos
+    dela; sem marca ele e campanha ampla do ML e vale em qualquer um.
+
+    Lista BRANCA, e nao negra, porque os codigos mudam toda semana e a
+    esmagadora maioria e campanha. Em 09/09/2026 estavam no ar `TUDOMELI`,
+    `OFERTAHOJE` e `SOHOJE`; em 10/09 nenhum desses sobrevivia, e os dezesseis
+    novos -- `SAINDOBARRATO`, `OPAECONOMIZEI`, `MELIACHAPROMO` -- eram todos
+    inventados no dia. Enumerar o generico seria perseguir um alvo movel;
+    enumerar marca funciona porque marca nao se inventa.
+
+    Marca desconhecida vira "" e o cupom passa a valer para tudo. E a escolha
+    certa para o erro: campanha tratada como marca some do post, e campanha e
+    justamente o cupom que pega.
     """
     limpo = re.sub(r"\d+", "", (code or "").upper())
     for sufixo in _SUFIXOS_DO_CODIGO:
@@ -588,41 +603,42 @@ def _marca_do_codigo(code: str) -> str:
             limpo = limpo[: -len(sufixo)]
             break
 
-    # Palavras genericas de campanha nao recortam nada: "OFERTAHOJE" e "SOHOJE"
-    # valem em itens selecionados que ninguem sabe quais sao.
-    if limpo.lower() in _CODIGOS_SEM_MARCA or len(limpo) < 4:
-        return ""
-    return limpo.lower()
+    limpo = limpo.lower()
+    return limpo if limpo in _MARCAS_EM_CUPOM else ""
 
 
-# Codigos que sobram sem marca nenhuma depois de tirar numero e sufixo. Vieram
-# dos que estavam no ar em 09/09/2026; a lista existe para eles nao virarem
-# "tema" e casarem com titulo por acaso.
-_CODIGOS_SEM_MARCA = frozenset(
+# Marcas que o ML ja usou em codigo de cupom, mais as que a watchlist persegue.
+# Uma palavra so, sem numero e sem o sufixo do ML.
+#
+# Crescer esta lista e barato e seguro: marca a mais so restringe o cupom
+# daquela marca. Esquecer uma custa o oposto -- o cupom da marca sai em produto
+# que nao e dela, que foi o "AVENE15 num aparador de pelos" de 09/09/2026.
+_MARCAS_EM_CUPOM = frozenset(
     {
-        "tudo",
-        "ofertahoje",
-        "sohoje",
-        "internacional",
-        "sports",
-        "meianoite",
-        "promo",
-        "desconto",
-        "cupom",
-        "oferta",
-        "hoje",
-        "sitetod",
-        "predata",
-        "tudodebom",
-        "valemais",
-        "torcida",
-        "gloria",
-        # Sobras de "9DO9...", o prefixo da campanha 9.9. Tirar os digitos
-        # deixa "DOSPORTS" e "DOMEIANOITE", que nao sao marca de nada. Sem
-        # estes dois a funcao ja falharia fechado -- titulo nenhum contem
-        # "dosports" --, mas depender disso seria depender de acaso.
-        "dosports",
-        "domeianoite",
+        # dermocosmetico e farmacia
+        "avene", "mantecorp", "cerave", "laroche", "vichy", "neutrogena",
+        "eucerin", "bioderma", "sallve", "principia", "adcos", "dermage",
+        "nivea", "dove", "episol", "isdin",
+        # maquiagem
+        "maybelline", "rubyrose", "vult", "payot", "dailus", "eudora",
+        "avon", "natura", "boticario", "quemdisseberenice", "oceane",
+        "marimaria", "brunatavares", "franciny", "bocarosa",
+        # cabelo
+        "wella", "kerastase", "loreal", "redken", "cadiveu", "brae",
+        "truss", "lolacosmetics", "widicare", "salonline", "haskell",
+        "inoar", "amend", "pantene", "elseve", "seda", "tresemme",
+        "bioextratus", "nioxin", "joico", "schwarzkopf",
+        # esporte e vestuario
+        "nike", "adidas", "puma", "olympikus", "mizuno", "asics",
+        "newbalance", "fila", "lupo", "hering", "reserva", "colcci",
+        # suplemento
+        "growth", "maxtitanium", "integralmedica", "probiotica", "dux",
+        "atlhetica", "blackskull", "darkness", "yopro", "whey",
+        # eletro e casa
+        "philips", "mondial", "electrolux", "britania", "arno", "oster",
+        "tramontina", "brinox", "cadence", "wap", "philco", "multilaser",
+        "samsung", "xiaomi", "motorola", "positivo", "lenovo", "acer",
+        "jbl", "sony", "lg", "intelbras", "tplink",
     }
 )
 

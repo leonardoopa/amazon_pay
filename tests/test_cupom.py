@@ -757,14 +757,24 @@ def test_cupom_restrito_entra_no_preco_quando_o_codigo_diz_a_marca(
     assert preco_com_cupom(o, [avene]) == 134.99
 
 
-def test_cupom_restrito_sem_marca_no_codigo_nao_mexe_no_preco(com_preco_de_cupom):
-    """"TORCIDA" nao recorta nada, entao nao ha preco com cupom a prometer."""
+def test_cupom_de_campanha_entra_no_preco_de_qualquer_produto(com_preco_de_cupom):
+    """"TORCIDA" e campanha: nao recorta por marca, entao vale aqui tambem."""
     from promo.pipeline import preco_com_cupom
 
     o = oferta("Kit Progressiva Titanium Liss", 149.99)
     torcida = dict(geral("TORCIDA", 10, teto=30.0, minimo=79.0), restrito=True)
 
-    assert preco_com_cupom(o, [torcida]) is None
+    assert preco_com_cupom(o, [torcida]) == 134.99
+
+
+def test_cupom_de_marca_nao_mexe_no_preco_de_outra_marca(com_preco_de_cupom):
+    """Aqui o recorte vale: AVENE15 nao desconta um kit de progressiva."""
+    from promo.pipeline import preco_com_cupom
+
+    o = oferta("Kit Progressiva Titanium Liss", 149.99)
+    avene = dict(geral("AVENE15", 10, teto=30.0, minimo=79.0), restrito=True)
+
+    assert preco_com_cupom(o, [avene]) is None
 
 
 def test_amazon_nao_ganha_preco_de_cupom_do_ml():
@@ -958,14 +968,33 @@ def test_o_codigo_da_marca_vira_o_recorte_do_cupom():
     assert cupom_para(oferta_ml("Aparador de Pelos Kemei KM-6511"), cupons) is None
 
 
-def test_codigo_sem_marca_nao_oferece_o_cupom():
-    """"TUDOMELI" vira "tudo" depois de tirar numero e sufixo -- nao recorta
-    nada. Errar para menos custa um post sem cupom; errar para mais manda a
-    pessoa digitar um codigo que o checkout recusa."""
+def test_codigo_de_campanha_vale_para_qualquer_produto():
+    """Campanha do ML nao recorta por marca, e e o cupom que de fato pega.
+
+    A primeira versao desta regra recusava tudo que nao reconhecia como marca.
+    Medido em 10/09/2026 sobre os 300 posts mais recentes: os dezesseis codigos
+    no ar eram TODOS campanha, e o resultado foi 0% dos posts com cupom. O
+    grupo vizinho publicou `EXCLUSIVONOMELI` numa camiseta Lupo no mesmo dia, e
+    funcionou -- era justamente esse cupom que estava sendo jogado fora.
+    """
     from promo.pipeline import cupom_para
 
-    for code in ("TUDOMELI", "OFERTAHOJE", "SOHOJE", "INTERNACIONALNOMELI"):
-        assert cupom_para(oferta_ml("Qualquer Produto 500g"), [cupom_restrito(code)]) is None
+    for code in ("TUDOMELI", "EXCLUSIVONOMELI", "ITENSDECASA", "SAINDOBARRATO"):
+        assert (
+            cupom_para(oferta_ml("Qualquer Produto 500g"), [cupom_restrito(code)])
+            == code
+        )
+
+
+def test_cupom_de_marca_nao_sai_em_produto_de_outra_marca():
+    """O caso inverso, que originou a regra: o recorte da marca vale."""
+    from promo.pipeline import cupom_para
+
+    for code in ("AVENE15", "MANTECORP14", "MAYBELLINENOMELI"):
+        assert (
+            cupom_para(oferta_ml("Aparador de Pelos Kemei KM-6511"), [cupom_restrito(code)])
+            is None
+        )
 
 
 def test_cupom_nao_restrito_continua_valendo_para_tudo():
@@ -991,12 +1020,20 @@ def test_o_sufixo_do_ml_sai_antes_da_marca():
     assert _marca_do_codigo("MANTECORP14") == "mantecorp"
 
 
-def test_sobra_de_campanha_nao_vira_marca():
-    """"9DO9SPORTS" perde os digitos e vira "DOSPORTS", que nao e marca."""
+def test_so_marca_conhecida_recorta():
+    """Lista branca, e nao negra: os codigos de campanha mudam toda semana.
+
+    Em 09/09/2026 estavam no ar TUDOMELI, OFERTAHOJE e SOHOJE; em 10/09 nenhum
+    sobrevivia, e os dezesseis novos eram outros. Enumerar o generico persegue
+    alvo movel; enumerar marca funciona porque marca nao se inventa.
+    """
     from promo.pipeline import _marca_do_codigo
 
     assert _marca_do_codigo("9DO9SPORTS") == ""
-    assert _marca_do_codigo("9DO9MEIANOITE") == ""
+    assert _marca_do_codigo("EXCLUSIVONOMELI") == ""
+    assert _marca_do_codigo("MELIACHAPROMO") == ""
+    assert _marca_do_codigo("LUPONOMELI") == "lupo"
+    assert _marca_do_codigo("NIKENOMELI") == "nike"
 
 
 def test_o_tema_declarado_vence_o_codigo():
