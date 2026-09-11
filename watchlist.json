@@ -908,6 +908,134 @@
     {
       "term": "cafe moido",
       "max_price": null
+    },
+    {
+      "term": "maybelline",
+      "max_price": null
+    },
+    {
+      "term": "ruby rose",
+      "max_price": null
+    },
+    {
+      "term": "vult",
+      "max_price": null
+    },
+    {
+      "term": "boca rosa beauty",
+      "max_price": null
+    },
+    {
+      "term": "natura una",
+      "max_price": null
+    },
+    {
+      "term": "avon maquiagem",
+      "max_price": null
+    },
+    {
+      "term": "eudora maquiagem",
+      "max_price": null
+    },
+    {
+      "term": "payot",
+      "max_price": null
+    },
+    {
+      "term": "dailus",
+      "max_price": null
+    },
+    {
+      "term": "bruna tavares",
+      "max_price": null
+    },
+    {
+      "term": "oceane maquiagem",
+      "max_price": null
+    },
+    {
+      "term": "mari maria makeup",
+      "max_price": null
+    },
+    {
+      "term": "quem disse berenice",
+      "max_price": null
+    },
+    {
+      "term": "batom liquido matte",
+      "max_price": 120
+    },
+    {
+      "term": "corretivo facial",
+      "max_price": 150
+    },
+    {
+      "term": "po compacto",
+      "max_price": 150
+    },
+    {
+      "term": "primer facial",
+      "max_price": 200
+    },
+    {
+      "term": "delineador caneta",
+      "max_price": 100
+    },
+    {
+      "term": "paleta de contorno",
+      "max_price": 200
+    },
+    {
+      "term": "gloss labial",
+      "max_price": 100
+    },
+    {
+      "term": "jogo de cama casal",
+      "max_price": 400
+    },
+    {
+      "term": "edredom casal",
+      "max_price": 400
+    },
+    {
+      "term": "jogo de panelas",
+      "max_price": 700
+    },
+    {
+      "term": "faqueiro inox",
+      "max_price": 400
+    },
+    {
+      "term": "potes hermeticos",
+      "max_price": 250
+    },
+    {
+      "term": "tapete sala",
+      "max_price": 400
+    },
+    {
+      "term": "cortina blackout",
+      "max_price": 350
+    },
+    {
+      "term": "luminaria de mesa",
+      "max_price": 250
+    },
+    {
+      "term": "escorredor de louca",
+      "max_price": 200
+    },
+    {
+      "term": "porta temperos",
+      "max_price": 200
+    },
+    {
+      "term": "organizador de gaveta",
+      "max_price": 200
+    },
+    {
+      "term": "ferro de passar",
+      "max_price": 400
     }
   ],
   "_comment_coupon": "Cupons de campanha do MERCADO LIVRE, preenchidos A MAO: sondadas em 08/09/2026, 17 rotas de cupom da API do ML devolvem 404 e a pagina /cupons devolve 403 para servidor, entao nao ha de onde ler sozinho. Campos: `ate` (validade, OBRIGATORIO), `temas` (so entra em titulo que cite um deles), `geral: true` (afirmacao explicita de que vale para tudo -- exigida no lugar de `temas`), `minimo` (valor minimo da compra). Falta de regra NAO e permissao: sem `ate`, ou sem `temas` e sem `geral`, o cupom nao entra. Motivo medido: dos 37 cupons do ML publicados no Promobit, 12 (32%) vinham sem regra nenhuma, 3 ja estavam vencidos e ainda listados como validos, e 6 venciam no mesmo dia. Varios validos para o mesmo produto saem como 'A ou B', porque cupom do ML tem limite de uso. NUNCA sai em oferta da Amazon. ANTES DE PREENCHER: o texto oficial do ML diz que o cupom nao e cumulativo com ofertas vigentes do proprio ML, e este bot so posta item em oferta -- teste um codigo num carrinho real antes de cadastrar, senao o recurso e natimorto. Lista vazia = posts sem cupom, que foi o estado dos 2.953 posts enviados entre 29/08 e 08/09.",
@@ -999,7 +1127,52 @@
         "vitamina c",
         "desodorante",
         "sabonete",
-        "depilador"
+        "depilador",
+        "maybelline",
+        "ruby rose",
+        "vult",
+        "boca rosa beauty",
+        "natura una",
+        "avon maquiagem",
+        "eudora maquiagem",
+        "payot",
+        "dailus",
+        "bruna tavares",
+        "oceane maquiagem",
+        "mari maria makeup",
+        "quem disse berenice",
+        "batom liquido matte",
+        "corretivo facial",
+        "po compacto",
+        "primer facial",
+        "delineador caneta",
+        "paleta de contorno",
+        "gloss labial",
+        "jogo de cama casal",
+        "edredom casal",
+        "jogo de panelas",
+        "faqueiro inox",
+        "potes hermeticos",
+        "tapete sala",
+        "cortina blackout",
+        "luminaria de mesa",
+        "escorredor de louca",
+        "porta temperos",
+        "organizador de gaveta",
+        "sanduicheira",
+        "ferro de passar",
+        "purificador de agua",
+        "maquiagem",
+        "blush",
+        "jogo de cama",
+        "panela",
+        "toalha",
+        "edredom",
+        "travesseiro",
+        "cortina",
+        "tapete",
+        "luminaria",
+        "organizador"
       ],
       "exclui": [
         "cueca",
@@ -1084,7 +1257,20 @@
     "cafe em capsula",
     "the north face",
     "north face",
-    "capsula"
+    "capsula",
+    "maybelline",
+    "ruby rose",
+    "vult",
+    "boca rosa beauty",
+    "natura una",
+    "avon maquiagem",
+    "eudora maquiagem",
+    "payot",
+    "dailus",
+    "bruna tavares",
+    "oceane maquiagem",
+    "mari maria makeup",
+    "quem disse berenice"
   ],
   "_comment_exclude": "O oposto de priority: titulo que casa aqui NAO vira post. Para o produto que sai bem no ranking e ainda assim nao serve ao grupo -- mochila e barata e tem desconto alto, entao ganhava vaga toda rodada (10 dos ultimos 80 posts). A barra nao e absoluta: titulo que tambem casa em priority passa, e e assim que 'Mochila adidas' fica e 'Mochila de Viagem 50L' sai. Comparacao sem acento e em minusculo, igual a de priority.",
   "exclude": [
