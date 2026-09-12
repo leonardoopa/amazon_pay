@@ -158,6 +158,7 @@ def test_a_pista_leva_so_o_que_o_ml_publica():
         "url",
         "preco",
         "preco_antes",
+        "cupons",
     }
 
 

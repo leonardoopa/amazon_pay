@@ -570,6 +570,99 @@ _VAZIAS = {
 CATEGORIA = 2
 
 
+# O que muda entre duas versoes do MESMO produto: sabor, tamanho, embalagem.
+# Sao justamente as palavras que fazem dois anuncios do mesmo whey parecerem
+# produtos diferentes, entao saem da comparacao.
+_APRESENTACAO = {
+    "sabor", "sabores", "refil", "pote", "pacote", "embalagem", "frasco",
+    "unidade", "unidades", "uni", "pares", "par", "pack", "caixa",
+    "kg", "kgs", "grama", "gramas", "ml", "litro", "litros", "lt",
+    "chocolate", "baunilha", "morango", "coco", "cookies", "banana", "leite",
+    "neutro", "mocaccino", "caramelo", "doce", "avela", "frutas", "cereja",
+    "limao", "uva", "abacaxi", "maracuja", "manga", "creme",
+    "original", "novo", "nova", "premium", "plus",
+}
+
+
+def _tokens_do_produto(titulo: str) -> set[str]:
+    """As palavras que identificam o produto, sem as que so variam a versao.
+
+    Numero sai fora junto com as variantes de cor, genero e tamanho -- e o que
+    separa "1,8kg" de "900g" do mesmo item. O que sobra e marca mais nome.
+    """
+    return {
+        palavra
+        for palavra in re.findall(r"[a-z]+", sem_acento(titulo))
+        if len(palavra) > 2
+        and palavra not in _VAZIAS
+        and palavra not in _VARIANTES
+        and palavra not in _APRESENTACAO
+    }
+
+
+# Quanto dois titulos precisam se sobrepor para serem o mesmo produto.
+#
+# 0,6 foi medido contra os casos reais que sairam no grupo, e e o unico valor
+# que acerta os dois lados. Acima do limiar (o mesmo produto, e para barrar):
+# Whey Isolate Fuse da Dark Lab em dois tamanhos 1,00; Growth Supplements em
+# dois formatos de titulo 0,67; camiseta Hering listrada 0,75; bicicleta
+# ergometrica 0,83; air fryer Oven da WAP 0,78; copo Stanley Quencher 0,67.
+# Abaixo (marcas diferentes, e para passar): Whey Protein Concentrado da Sx
+# contra o da Optimum 0,50; Dux contra Growth 0,50; Vitafor contra Dux 0,17;
+# New Balance contra Kappa 0,17.
+#
+# A margem e estreita de proposito -- 0,50 e o maior valor entre os que devem
+# passar e 0,67 o menor entre os que devem barrar.
+LIMIAR_MESMO_PRODUTO = 0.6
+
+
+def mesmo_produto(
+    titulo_a: str, titulo_b: str, limiar: float = LIMIAR_MESMO_PRODUTO
+) -> bool:
+    """Dois titulos descrevem o mesmo produto da mesma marca?
+
+    Substitui a assinatura de N primeiras palavras, que errava dos dois lados.
+    Ela lia so o comeco do titulo, e a marca costuma vir depois: "Whey Protein
+    Concentrado 1Kg Sabor Mocaccino Sx" e "Whey Protein Concentrado 100% Puro
+    Optimum Nutrition" viravam a MESMA familia ("concentrado protein whey"),
+    entao duas marcas diferentes se bloqueavam. Na direcao oposta, "Suplemento
+    em po Growth Supplements Whey" e "100% Whey Concentrado Growth Supplements"
+    viravam familias diferentes, e o mesmo whey da mesma marca saia duas vezes.
+
+    Comparar o CONJUNTO de palavras resolve os dois: a marca conta onde quer
+    que ela apareca, e a ordem deixa de importar.
+
+    Sao dois caminhos, e o segundo existe porque o primeiro sozinho perdia um
+    caso real. Os quatro anuncios do "Short Saia Esportivo Ausare" que sairam
+    juntos so se parecem em cinco palavras; o resto de cada titulo e cauda de
+    marketing diferente ("de Lycra com Protecao Solar", "para Treino e Beach
+    Tennis"), e a sobreposicao cai para 0,36. O segundo caminho olha o comeco
+    do titulo -- igual nos quatro -- e exige que eles tenham ALGO EM COMUM
+    ALEM dele. Nos shorts esse algo e "ausare", a marca.
+
+    E e justamente isso que separa os shorts dos wheys. "Whey Protein
+    Concentrado 1Kg Sabor Mocaccino Sx" e "Whey Protein Concentrado 100% Puro
+    Optimum Nutrition" tambem comecam igual, mas o unico que tem em comum E o
+    comeco: passando dele, uma diz "sx" e a outra "optimum nutrition". Duas
+    marcas, dois posts.
+
+    Pedido do dono em 12/09/2026: "pode ser enviado whey varias vezes, portanto
+    que sejam de marcas diferentes; se o nome e a marca forem as mesmas, nao
+    envia, so envia no outro dia".
+    """
+    a = _tokens_do_produto(titulo_a)
+    b = _tokens_do_produto(titulo_b)
+    if not a or not b:
+        return False
+    if len(a & b) / len(a | b) >= limiar:
+        return True
+
+    comeco = familia_do_titulo(titulo_a)
+    if not comeco or comeco != familia_do_titulo(titulo_b):
+        return False
+    return bool((a & b) - set(comeco.split()))
+
+
 def familia_do_titulo(titulo: str, palavras: int = 3) -> str:
     """Assinatura grosseira do produto, para pegar anuncio repetido.
 
@@ -620,6 +713,18 @@ def tem_tema(titulo: str, temas: list[str]) -> bool:
     """O titulo cita algum dos temas, ja normalizados por `sem_acento`."""
     normalizado = sem_acento(titulo)
     return any(tema in normalizado for tema in temas)
+
+
+def titulos_recentes(
+    conn: sqlite3.Connection, cooldown_minutes: int, grupo_jid: str = ""
+) -> list[str]:
+    """Os titulos que foram para o grupo na janela, para comparar um a um.
+
+    A familia e a categoria resumem o titulo a duas ou tres palavras antes de
+    comparar, e esse resumo e que errava -- ver `mesmo_produto`. Aqui os
+    titulos vao inteiros, e quem compara decide.
+    """
+    return [row["title"] for row in _titulos_postados(conn, cooldown_minutes, grupo_jid)]
 
 
 def _titulos_postados(

@@ -88,6 +88,19 @@ DINHEIRO = re.compile(
     r'aria-label="(?:(Antes|Agora): )?(\d+) reais(?: com (\d+) centavos)?"'
 )
 
+# O cupom citado na mensagem. Ver `cupons_da_mensagem` para o porque de exigir
+# o rotulo e o delimitador.
+ROTULO_DE_CUPOM = re.compile(r"cupom|cupon|c[oó]digo", re.I)
+CODIGO_DE_CUPOM = re.compile(r"[`*\"'“”]([A-Z][A-Z0-9]{4,24})[`*\"'“”]")
+
+# Palavra em caixa alta que aparece entre delimitadores e nao e codigo. Lista
+# curta de proposito: so o que ja apareceu de verdade, e so por igualdade
+# exata -- "LEVEAGORA" e cupom, "AGORA" nao.
+_NAO_SAO_CUPOM = frozenset(
+    {"AGORA", "APENAS", "AQUI", "CLIQUE", "COMPRE", "FRETE", "GRATIS",
+     "HOJE", "LINK", "OFERTA", "PROMO", "ULTIMAS"}
+)
+
 # Quanto do corpo, depois do titulo, ainda e o cartao do produto. Um cartao
 # inteiro (foto, titulo, preco de antes, preco de agora, parcelamento) mede
 # cerca de 2.500 bytes; 4.000 cobre com folga sem alcancar o cartao seguinte.
@@ -116,6 +129,9 @@ class Pista:
     url: str = ""
     preco: float = 0.0  # "Agora" do cartao; 0.0 quando a pagina nao trouxe
     preco_antes: float = 0.0  # "Antes" riscado; 0.0 quando nao ha desconto
+    # Codigos de cupom citados na MESMA mensagem que trouxe o link. O codigo e
+    # da campanha do ML, nao deles: funciona no carrinho de qualquer um.
+    cupons: tuple[str, ...] = ()
 
 
 def _texto_da_mensagem(registro: dict) -> str:
@@ -135,16 +151,62 @@ def _texto_da_mensagem(registro: dict) -> str:
     )
 
 
-def links_das_mensagens(registros: list[dict]) -> list[str]:
-    """Todo link do ML citado, sem repetir, na ordem em que apareceram."""
-    vistos: list[str] = []
+def cupons_da_mensagem(texto: str) -> tuple[str, ...]:
+    """Os codigos de cupom citados na mensagem, na ordem em que aparecem.
+
+    O codigo e um fato sobre a campanha do ML, igual ao preco: qualquer um que
+    abra o site do ML acha o mesmo cupom, e ele funciona no carrinho de quem
+    quer que seja. O que nao se aproveita e o texto em volta.
+
+    Os dois grupos delimitam o codigo, e e isso que torna a leitura segura --
+    sem delimitador, "PIX" e "OFF" virariam cupom. O xet usa crase
+    ("Use o cupom: `EXCLUSIVONOMELI`") e o Economizei usa asterisco
+    ("Cupom: *EXCLUSIVONOMELI*"). Medido em 12/09/2026: 36 das 50 mensagens do
+    xet e 13 das 15 do Economizei citavam cupom, sempre assim.
+
+    Exige a palavra "cupom" na mensagem: sem ela, qualquer palavra em caixa
+    alta entre asteriscos -- que e como os dois grupos dao enfase -- viraria
+    codigo.
+    """
+    if not ROTULO_DE_CUPOM.search(texto):
+        return ()
+    achados: list[str] = []
+    for codigo in CODIGO_DE_CUPOM.findall(texto):
+        if codigo in _NAO_SAO_CUPOM or codigo in achados:
+            continue
+        achados.append(codigo)
+    return tuple(achados)
+
+
+def links_e_cupons(registros: list[dict]) -> list[tuple[str, tuple[str, ...]]]:
+    """(link do ML, cupons da MESMA mensagem), sem repetir link.
+
+    O par importa: o cupom desses grupos e quase sempre de marca ou de loja,
+    e o que diz a quem ele serve e o produto que veio junto dele. Um cupom
+    lido de uma mensagem e colado noutro produto seria codigo que o checkout
+    recusa.
+
+    Mensagem de outra loja nao contamina: o `LINK` so casa dominio do ML,
+    entao o post de Netshoes com `XETPROMOCOES` nao produz par nenhum.
+    """
+    vistos: list[tuple[str, tuple[str, ...]]] = []
+    ja: set[str] = set()
     for registro in registros:
-        for bruto in LINK.findall(_texto_da_mensagem(registro)):
+        texto = _texto_da_mensagem(registro)
+        cupons = cupons_da_mensagem(texto)
+        for bruto in LINK.findall(texto):
             # Pontuacao gruda no fim do link quando a frase termina nele.
             url = bruto.rstrip(".,);:!?\"'")
-            if url not in vistos:
-                vistos.append(url)
+            if url in ja:
+                continue
+            ja.add(url)
+            vistos.append((url, cupons))
     return vistos
+
+
+def links_das_mensagens(registros: list[dict]) -> list[str]:
+    """Todo link do ML citado, sem repetir, na ordem em que apareceram."""
+    return [url for url, _cupons in links_e_cupons(registros)]
 
 
 def ler_mensagens(
@@ -291,30 +353,33 @@ def pistas(
         log.warning("Nao consegui ler o grupo %s: %s", nome or jid, exc)
         return []
 
-    urls = links_das_mensagens(registros)
+    pares = links_e_cupons(registros)
     log.info(
         "Grupo %s: %d mensagens, %d link(s) do ML; resolvendo os %d mais recentes.",
         nome or jid,
         len(registros),
-        len(urls),
-        min(limite_links, len(urls)),
+        len(pares),
+        min(limite_links, len(pares)),
     )
 
     achadas: list[Pista] = []
     vistos: set[str] = set()
-    for url in urls[:limite_links]:
+    for url, cupons in pares[:limite_links]:
         pista = produto_do_link(url)
         time.sleep(pausa)
         if pista is None or pista.external_id in vistos:
             continue
         vistos.add(pista.external_id)
-        achadas.append(replace(pista, origem=nome or jid))
+        achadas.append(replace(pista, origem=nome or jid, cupons=cupons))
 
     com_preco = sum(1 for p in achadas if p.preco > 0)
+    com_cupom = sum(1 for p in achadas if p.cupons)
     log.info(
-        "Grupo %s: %d produto(s) identificado(s), %d com preco na propria pagina.",
+        "Grupo %s: %d produto(s) identificado(s), %d com preco na propria "
+        "pagina, %d com cupom citado na mensagem.",
         nome or jid,
         len(achadas),
         com_preco,
+        com_cupom,
     )
     return achadas

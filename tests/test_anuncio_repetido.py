@@ -32,7 +32,7 @@ from promo.db import (  # noqa: E402
     record_offer,
 )
 from promo.models import Offer, ScoredOffer  # noqa: E402
-from promo.pipeline import _uma_por_familia  # noqa: E402
+from promo.pipeline import _um_por_produto  # noqa: E402
 
 SHORTS = [
     "Short Saia Esportivo Feminino Ausare de Lycra com Toque Gelado e Proteção UV 50+",
@@ -103,7 +103,7 @@ def escolhida(titulo: str, preco: float, external_id: str) -> ScoredOffer:
 def test_so_um_anuncio_da_familia_sobrevive_a_rodada():
     candidatos = [escolhida(t, 95.0 + i, f"MLB{i}") for i, t in enumerate(SHORTS)]
 
-    saida = _uma_por_familia(candidatos)
+    saida = _um_por_produto(candidatos)
 
     assert len(saida) == 1
 
@@ -115,7 +115,7 @@ def test_fica_com_o_primeiro_que_e_o_de_maior_desconto():
         escolhida(SHORTS[1], 126.51, "MLB2"),
     ]
 
-    assert _uma_por_familia(candidatos)[0].offer.price == 89.90
+    assert _um_por_produto(candidatos)[0].offer.price == 89.90
 
 
 def test_familias_diferentes_passam_todas():
@@ -125,11 +125,11 @@ def test_familias_diferentes_passam_todas():
         escolhida("Kit Cobre Leito Colcha Casal", 76.62, "MLB3"),
     ]
 
-    assert len(_uma_por_familia(candidatos)) == 3
+    assert len(_um_por_produto(candidatos)) == 3
 
 
 def test_lista_vazia_nao_estoura():
-    assert _uma_por_familia([]) == []
+    assert _um_por_produto([]) == []
 
 
 # ---------- cooldown entre rodadas ----------

@@ -456,8 +456,36 @@ def post_cooldown_minutes() -> int:
     return _int("POST_COOLDOWN_MINUTES", 60)
 
 
+def family_cooldown_minutes() -> int:
+    """Silencio minimo entre dois posts do mesmo produto da MESMA MARCA.
+
+    Um nivel acima do `POST_COOLDOWN_MINUTES`, que olha o anuncio. Este olha o
+    produto como o leitor o reconhece: dois anuncios do Whey Isolate Fuse da
+    Dark Lab, um de 900g e outro de 1,8kg, sao dois `product_id` e um unico
+    produto. A comparacao e por sobreposicao de titulo -- ver
+    `db.mesmo_produto` --, e nao por assinatura de N primeiras palavras, que
+    errava nos dois sentidos.
+
+    Marca diferente nao colide: quatro wheys de quatro fabricantes continuam
+    saindo, porque e a marca no titulo que separa um do outro.
+
+    Producao usa 1440 -- um dia. E o pedido do dono em 12/09/2026: mesmo nome
+    e mesma marca so voltam no dia seguinte. Medido sobre os 1.316 posts das
+    72 horas anteriores, essa janela corta 18%.
+
+    0 desliga a regra.
+    """
+    return _int("FAMILY_COOLDOWN_MINUTES", 1440)
+
+
 def category_cooldown_minutes() -> int:
     """Silencio minimo entre dois posts do mesmo TIPO de produto.
+
+    DESLIGADA desde 12/09/2026, por decisao do dono: ela nao ve marca. A
+    assinatura de duas palavras junta "whey protein" da Growth, da Dux e da
+    Optimum num balde so, e o pedido e o oposto -- whey varias vezes pode,
+    desde que de marcas diferentes. Quem cuida da repeticao agora e o
+    `FAMILY_COOLDOWN_MINUTES`, que compara o titulo inteiro.
 
     Um nivel acima do `POST_COOLDOWN_MINUTES`, que olha o produto e a familia.
     Este olha a assinatura de duas palavras -- "whey protein", "camisetas

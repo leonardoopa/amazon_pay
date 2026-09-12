@@ -372,7 +372,7 @@ def test_quatro_perfumes_diferentes_saem_juntos():
     "lattafa perfume" com "carolina perfume" pela metade e derrubaria tres dos
     quatro.
     """
-    from promo.pipeline import _uma_por_familia
+    from promo.pipeline import _um_por_produto
 
     titulos = [
         "Zaad Tradicional Eau De Parfum 95ml - O Boticário",
@@ -393,13 +393,13 @@ def test_quatro_perfumes_diferentes_saem_juntos():
         for i, t in enumerate(titulos)
     ]
 
-    assert len(_uma_por_familia(pistas, 3)) == 4
+    assert len(_um_por_produto(pistas)) == 4
 
 
 def test_o_mesmo_perfume_em_dois_anuncios_sai_uma_vez():
     """O caso que a linha existe para barrar: o ML lista o mesmo produto sob
     dezenas de vendedores, com `product_id` diferente e titulo quase igual."""
-    from promo.pipeline import _uma_por_familia
+    from promo.pipeline import _um_por_produto
 
     pistas = [
         score_pista(
@@ -419,7 +419,7 @@ def test_o_mesmo_perfume_em_dois_anuncios_sai_uma_vez():
         )
     ]
 
-    assert len(_uma_por_familia(pistas, 3)) == 1
+    assert len(_um_por_produto(pistas)) == 1
 
 
 # ---------- a foto que a carteira ja tinha ----------
