@@ -1,29 +1,27 @@
-"""Uma rajada do mesmo TIPO de produto nao e cinco ofertas, e uma repeticao.
+"""O cooldown por TIPO de produto -- escrito em 04/09/2026, DESLIGADO em 12/09.
 
-Os dois cooldowns que ja existiam olham para baixo: `products_in_cooldown` ve o
-anuncio, `families_in_cooldown` ve o produto. Nenhum dos dois ve o tipo, e e o
-tipo que o leitor percebe.
-
-Medido em producao em 04/09/2026, nos ultimos 200 posts (11h30 de grupo):
-
-    product_id repetido               0
-    familia de 3 palavras repetida   27  (a menor distancia, 3h18)
-    assinatura de 2 palavras         48  (a menor distancia, 0h02)
-
-E a terceira linha que o grupo estava recebendo:
+A regra nasceu de uma medicao boa e de uma leitura errada do que ela dizia.
+Nos 200 posts de 04/09/2026 havia 48 repeticoes de assinatura de duas
+palavras, e o grupo recebia isto:
 
     Whey Protein Isolado Iso Blend Complex Zero Acucar
     Whey Protein 1kg Whey Pro Max Titanium Sabor Morango     +54 min
     Whey protein concentrado 900g doce de leite              +78 min
     Whey Protein Concentrado 1kg Sabor Chocolate            +100 min
 
-Quatro fabricantes, quatro precos, quatro `product_id`. Para a regra sao quatro
-produtos; para quem le sao whey, whey, whey e whey.
+A conclusao na epoca foi "para quem le sao whey, whey, whey e whey". O dono
+disse o contrario em 12/09/2026: sao quatro fabricantes, e quatro fabricantes
+sao quatro ofertas. "Pode ser enviado whey varias vezes, portanto que sejam de
+marcas diferentes."
 
-A janela e propria e curta. Whey, tenis e camiseta Hering sao justamente os
-temas prioritarios, e sao os que mais colidem aqui -- reusar as 12h do produto
-tiraria do ar o que mais converte. Duas horas espacam a rajada e ainda deixam
-doze posts de tenis por dia.
+O que ele NAO quer e o mesmo produto da mesma marca voltando -- e para isso a
+assinatura de duas palavras era a ferramenta errada dos dois lados: ela junta
+marcas diferentes que comecam igual, e separa a mesma marca quando o titulo
+comeca diferente. Quem cuida disso agora e `db.mesmo_produto`, que compara os
+titulos inteiros; ver `tests/test_mesmo_produto.py`.
+
+O codigo continua aqui, com `CATEGORY_COOLDOWN_MINUTES=0` em producao. Os
+testes abaixo guardam o comportamento da funcao para quem quiser religa-la.
 """
 
 from __future__ import annotations
@@ -48,7 +46,7 @@ from promo.db import (  # noqa: E402
     record_offer,
 )
 from promo.models import Offer, ScoredOffer  # noqa: E402
-from promo.pipeline import _uma_por_familia  # noqa: E402
+from promo.pipeline import _um_por_produto  # noqa: E402
 
 
 def make_conn() -> sqlite3.Connection:
@@ -114,10 +112,7 @@ def test_a_categoria_junta_o_que_a_familia_separa():
 
 
 def test_a_categoria_e_prefixo_da_familia():
-    """Mesma familia implica mesma categoria -- a curta e um corte da longa.
-
-    E o que deixa uma passagem so de `_uma_por_familia` cobrir os dois niveis.
-    """
+    """Mesma familia implica mesma categoria -- a curta e um corte da longa."""
     titulos = [
         "Tenis De Corrida Masculino Questar 4 adidas Branco",
         "Tenis De Corrida Feminino Questar 4 adidas Preto",
@@ -234,51 +229,58 @@ def test_a_janela_da_categoria_e_menor_que_a_do_produto():
 
 
 # ---------- dentro da mesma rodada ----------
+#
+# A selecao da rodada passou a usar `_um_por_produto`, que compara titulo com
+# titulo. Estes testes guardam a regra NOVA, que e o oposto da que estava aqui:
+# quatro wheys de quatro marcas saem juntos, e dois anuncios do mesmo whey nao.
 
 
-def test_uma_por_categoria_corta_a_rajada_da_rodada():
-    """O cooldown olha o que ja saiu; isto olha o que esta sendo escolhido
-    agora. Sem os dois, os tres wheys entram juntos na mesma rodada e o
-    cooldown so pega a partir da proxima."""
+def test_wheys_de_marcas_diferentes_saem_todos_na_mesma_rodada():
+    """Pedido do dono em 12/09/2026, com os titulos que motivaram a regra
+    antiga -- que barrava tres dos quatro."""
     escolhidas = [
         oferta("MLB1", "Whey Protein Isolado Iso Blend", 50.0),
         oferta("MLB2", "Whey Protein 1kg Pro Max Titanium", 40.0),
-        oferta("MLB3", "Whey protein concentrado 900g doce de leite", 30.0),
+        oferta("MLB3", "Whey Protein Concentrado Growth Supplements", 30.0),
         oferta("MLB4", "Cadeira Gamer ThunderX3 EC3", 25.0),
     ]
 
-    saida = _uma_por_familia(escolhidas, CATEGORIA)
+    saida = _um_por_produto(escolhidas)
 
-    assert [s.offer.external_id for s in saida] == ["MLB1", "MLB4"]
+    assert [s.offer.external_id for s in saida] == ["MLB1", "MLB2", "MLB3", "MLB4"]
 
 
-def test_uma_por_categoria_fica_com_o_melhor_desconto():
-    """A lista chega ordenada por desconto, entao a primeira de cada categoria
-    e a melhor dela."""
+def test_o_mesmo_whey_em_dois_anuncios_sai_uma_vez_so():
+    """Mesma marca, mesmo produto, tamanhos diferentes: e um post."""
     escolhidas = [
-        oferta("MLB1", "Whey Protein Isolado Iso Blend", 60.0),
-        oferta("MLB2", "Whey Protein 1kg Pro Max Titanium", 20.0),
+        oferta("MLB1", "Whey Isolate Protein Fuse Refil 1,8kg Dark Lab", 50.0),
+        oferta("MLB2", "Whey Isolate Protein Fuse 900g Dark Lab", 40.0),
     ]
 
-    saida = _uma_por_familia(escolhidas, CATEGORIA)
-
-    assert [s.discount_pct for s in saida] == [60.0]
+    assert len(_um_por_produto(escolhidas)) == 1
 
 
-def test_tres_palavras_continua_sendo_o_padrao():
-    """Sem argumento, o comportamento e o de antes: dois tenis adidas de
-    modelos diferentes passam."""
+def test_fica_com_o_primeiro_que_e_o_de_maior_desconto():
+    """A lista chega ordenada por desconto."""
+    escolhidas = [
+        oferta("MLB1", "Whey Isolate Protein Fuse Refil 1,8kg Dark Lab", 60.0),
+        oferta("MLB2", "Whey Isolate Protein Fuse 900g Dark Lab", 20.0),
+    ]
+
+    assert [s.discount_pct for s in _um_por_produto(escolhidas)] == [60.0]
+
+
+def test_dois_tenis_adidas_de_modelos_diferentes_passam():
     escolhidas = [
         oferta("MLB1", "Tenis adidas Solado Boost Run Corrida"),
         oferta("MLB2", "Tenis adidas Sem Genero Ih4039 Liso"),
     ]
 
-    assert len(_uma_por_familia(escolhidas)) == 2
-    assert len(_uma_por_familia(escolhidas, CATEGORIA)) == 1
+    assert len(_um_por_produto(escolhidas)) == 2
 
 
 def test_titulo_sem_palavra_significativa_nao_agrupa_com_ninguem():
-    """Assinatura vazia nao pode virar um balde que engole tudo."""
+    """Titulo sem conteudo nao pode virar um balde que engole tudo."""
     escolhidas = [oferta("MLB1", "de a com"), oferta("MLB2", "para o na")]
 
-    assert len(_uma_por_familia(escolhidas, CATEGORIA)) == 2
+    assert len(_um_por_produto(escolhidas)) == 2

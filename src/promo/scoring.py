@@ -53,7 +53,7 @@ def score(conn: sqlite3.Connection, offer: Offer, rules: Rules) -> ScoredOffer |
     if baseline - offer.price < rules.min_discount_brl:
         return None
 
-    if _in_cooldown(conn, offer, discount_pct, rules):
+    if _in_cooldown(conn, offer, rules):
         return None
 
     return ScoredOffer(
@@ -65,10 +65,30 @@ def score(conn: sqlite3.Connection, offer: Offer, rules: Rules) -> ScoredOffer |
     )
 
 
-def _in_cooldown(
-    conn: sqlite3.Connection, offer: Offer, discount_pct: float, rules: Rules
-) -> bool:
-    """Evita repetir o mesmo produto no grupo, salvo se caiu bem mais."""
+# Quanto o preco precisa cair, dentro do cooldown, para o mesmo produto sair
+# de novo. Dez por cento e o que o leitor percebe como "baixou mais"; abaixo
+# disso ele so ve o mesmo post outra vez.
+QUEDA_QUE_LIBERA = 0.10
+
+
+def _in_cooldown(conn: sqlite3.Connection, offer: Offer, rules: Rules) -> bool:
+    """Evita repetir o mesmo produto no grupo, salvo se o PRECO caiu bem mais.
+
+    A excecao olha o preco, e nao o desconto, porque desconto aqui nao e uma
+    coisa so: o mesmo produto, pelo mesmo preco, mede 28,6% contra a nossa
+    mediana e 54,6% contra o riscado da loja. As duas portas -- `score` e
+    `score_campaign` -- pontuam o mesmo anuncio com reguas diferentes, e a
+    diferenca entre elas passava dos 10 pontos que liberavam a repeticao.
+
+    O efeito disso em producao, medido em 12/09/2026 sobre 72 horas: 568
+    repeticoes do mesmo produto, 487 delas (86%) com o preco IDENTICO ao do
+    post anterior. Kit de meias a R$ 49,99 as 12:20 e de novo as 13:41, bicicleta
+    ergometrica a R$ 420,80 em quatro dias seguidos. Nenhum preco havia mudado
+    -- so a regua.
+
+    Com o preco como criterio a pergunta volta a ser a certa: "ficou mais
+    barato do que quando eu postei?". Se nao ficou, e o mesmo post.
+    """
     previous = last_post(conn, offer.product_id)
     if previous is None:
         return False
@@ -79,8 +99,11 @@ def _in_cooldown(
     ):
         return False
 
-    # Dentro do cooldown, so repassa se o desconto melhorou 10 p.p. ou mais.
-    return discount_pct < previous["discount_pct"] + 10
+    anterior = previous["price"] or 0.0
+    if anterior <= 0:
+        return True  # post antigo sem preco gravado: na duvida, nao repete
+
+    return offer.price > anterior * (1 - QUEDA_QUE_LIBERA)
 
 
 def score_campaign(
@@ -105,7 +128,7 @@ def score_campaign(
     if offer.original_price - offer.price < rules.min_discount_brl:
         return None
 
-    if _in_cooldown(conn, offer, desconto, rules):
+    if _in_cooldown(conn, offer, rules):
         return None
 
     return ScoredOffer(
@@ -148,17 +171,20 @@ def score_pista(
     "nova" enquanto o post dela nao envelhecer. Sem esta trava a repeticao nao
     e um risco, e o comportamento garantido.
 
-    `discount_pct` zero tambem torna o cooldown definitivo aqui: a excecao de
-    `_in_cooldown` libera quem melhorou 10 pontos percentuais, e zero nunca
-    melhora. Uma pista sai uma vez por `REPOST_COOLDOWN_DAYS`, e pronto.
+    O cooldown e definitivo aqui: a excecao de `_in_cooldown` so libera quem
+    ficou 10% mais barato do que estava no post anterior, e a pista que a fonte
+    rele de 15 em 15 minutos volta sempre pelo mesmo preco. Uma pista sai uma
+    vez por `REPOST_COOLDOWN_DAYS`, e pronto.
 
     Quando o anuncio TEM riscado, `score_campaign` pontua melhor e roda antes
-    -- esta funcao so recebe o que sobrou.
+    -- esta funcao so recebe o que sobrou. Desde que o preco passou a ser lido
+    da propria pagina do produto, isso e a maioria: 22 dos 25 links medidos em
+    12/09/2026 vieram com riscado.
     """
     if not offer.available or offer.price <= 0:
         return None
 
-    if _in_cooldown(conn, offer, 0.0, rules):
+    if _in_cooldown(conn, offer, rules):
         return None
 
     return ScoredOffer(

@@ -317,12 +317,12 @@ def test_a_pista_inedita_passa_pelo_cooldown():
     assert score_pista(oferta(), conn=conn) is not None
 
 
-def test_o_cooldown_da_pista_nao_tem_a_saida_dos_10_pontos():
-    """`_in_cooldown` libera quem melhorou 10 pontos percentuais de desconto.
+def test_o_cooldown_da_pista_so_cede_a_preco_menor():
+    """`_in_cooldown` libera quem ficou 10% mais barato que no post anterior.
 
-    A pista tem `discount_pct` zero por construcao, entao ela nunca melhora e
-    a trava vale integralmente ate `REPOST_COOLDOWN_DAYS` passar. E o que faz
-    "uma vez por dia" ser uma garantia aqui, e nao uma tendencia.
+    A pista que a fonte rele a cada rodada volta sempre pelo mesmo preco,
+    entao a trava vale integralmente ate `REPOST_COOLDOWN_DAYS` passar. E o
+    que faz "uma vez por dia" ser uma garantia aqui, e nao uma tendencia.
     """
     from promo.db import create_post, mark_post_sent, record_offer
 
@@ -372,7 +372,7 @@ def test_quatro_perfumes_diferentes_saem_juntos():
     "lattafa perfume" com "carolina perfume" pela metade e derrubaria tres dos
     quatro.
     """
-    from promo.pipeline import _uma_por_familia
+    from promo.pipeline import _um_por_produto
 
     titulos = [
         "Zaad Tradicional Eau De Parfum 95ml - O Boticário",
@@ -393,13 +393,13 @@ def test_quatro_perfumes_diferentes_saem_juntos():
         for i, t in enumerate(titulos)
     ]
 
-    assert len(_uma_por_familia(pistas, 3)) == 4
+    assert len(_um_por_produto(pistas)) == 4
 
 
 def test_o_mesmo_perfume_em_dois_anuncios_sai_uma_vez():
     """O caso que a linha existe para barrar: o ML lista o mesmo produto sob
     dezenas de vendedores, com `product_id` diferente e titulo quase igual."""
-    from promo.pipeline import _uma_por_familia
+    from promo.pipeline import _um_por_produto
 
     pistas = [
         score_pista(
@@ -419,7 +419,7 @@ def test_o_mesmo_perfume_em_dois_anuncios_sai_uma_vez():
         )
     ]
 
-    assert len(_uma_por_familia(pistas, 3)) == 1
+    assert len(_um_por_produto(pistas)) == 1
 
 
 # ---------- a foto que a carteira ja tinha ----------

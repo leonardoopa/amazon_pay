@@ -372,7 +372,10 @@ comissão zero.
    hoje** (senão a própria queda puxaria a média pra baixo).
 2. Exige no mínimo 7 dias distintos de histórico antes de confiar na baseline.
 3. Só passa com desconto ≥ 15% contra a baseline.
-4. Cooldown de 14 dias por produto, salvo se o desconto melhorou 10 p.p. ou mais.
+4. Cooldown de 14 dias por produto, salvo se o **preço** caiu 10% ou mais desde
+   o post anterior. O critério é o preço, e não o desconto, porque o mesmo
+   anúncio mede percentuais diferentes contra a nossa mediana e contra o
+   riscado da loja — e essa diferença sozinha liberava a repetição.
 
 Tudo ajustável no `.env`. Mediana em vez de média é proposital: aguenta um pico
 de preço isolado sem distorcer.

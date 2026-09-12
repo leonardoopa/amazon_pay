@@ -26,6 +26,7 @@ from .config import (
     hot_margin_pct,
     hot_track_limit,
     category_cooldown_minutes,
+    family_cooldown_minutes,
     max_pending_queue,
     ofertas_pages,
     post_cooldown_minutes,
@@ -53,7 +54,6 @@ from .db import (
     create_post,
     expire_stale_posts,
     familia_do_titulo,
-    families_in_cooldown,
     get_meta,
     mark_post_failed,
     mark_post_sent,
@@ -61,7 +61,10 @@ from .db import (
     hours_since,
     now,
     pending_posts,
+    mesmo_produto,
     products_in_cooldown,
+    produtos_ja_postados,
+    titulos_recentes,
     recent_headlines,
     record_offer,
     sem_acento,
@@ -298,9 +301,28 @@ def cupom_para(offer: Offer, cupons: list[dict]) -> str | None:
     """
     if offer.source != "mercadolivre":
         return None
-    servem = [c for c in cupons if _serve(offer, c)]
-    if not servem:
+
+    # O cupom que o outro grupo citou junto DESTE produto vem antes de tudo.
+    #
+    # E a evidencia mais forte que existe de que o codigo serve: alguem que
+    # vive disso publicou os dois lado a lado hoje. As outras origens sao
+    # inferencia -- o Pelando e comunidade, e a regra por tema acerta a
+    # categoria, nao o anuncio.
+    #
+    # Pedido do dono em 12/09/2026: "quando os grupos mandarem cupons, coloque
+    # esses cupons nas nossas publicacoes tambem, pois assim e mais facil de
+    # vendermos". Medido no mesmo dia: 36 das 50 mensagens do xet e 13 das 15
+    # do Economizei citam cupom.
+    deles = list(_CUPONS_DO_OUTRO_GRUPO.get(offer.external_id, ()))
+
+    servem = [c for c in cupons if _serve(offer, c) and c["code"] not in deles]
+    if not deles and not servem:
         return None
+    if deles:
+        # Os deles na frente; os nossos so completam a vaga que sobrar.
+        servem.sort(key=lambda c: _quanto_economiza(offer, c), reverse=True)
+        codigos = deles + [c["code"] for c in servem]
+        return " ou ".join(codigos[:MAX_CUPONS_POR_POST])
 
     # Ordena pelo que sobra no bolso, e corta em dois. Sem isso o post saia
     # com SEIS codigos numa linha -- medido em producao em 09/09/2026, quando
@@ -458,6 +480,16 @@ def chave_da_fila(
 # sobre a DESCOBERTA e nao sobre o produto: o mesmo anuncio pode aparecer
 # amanha pela vitrine, e ai nao tem nada de especial.
 _VISTOS_EM_OUTRO_GRUPO: set[str] = set()
+
+# Cupons que o outro grupo citou na mesma mensagem de cada produto:
+# `MLB123... -> ("EXCLUSIVONOMELI",)`. Preenchido por
+# `collect_de_outros_grupos` e lido por `cupom_para`.
+#
+# Fica por produto, e nao numa lista geral, porque o codigo desses grupos e
+# quase sempre de marca ou de loja: colar num produto qualquer daria codigo
+# que o checkout recusa. O que diz a quem o cupom serve e o anuncio que veio
+# junto dele.
+_CUPONS_DO_OUTRO_GRUPO: dict[str, tuple[str, ...]] = {}
 
 
 def _veio_de_outro_grupo(offer: Offer) -> bool:
@@ -1089,12 +1121,41 @@ def refetch_hot(source) -> list[Offer]:
     return found
 
 
+def _offer_da_pista(pista) -> Offer | None:
+    """A oferta montada com o que a propria pagina do produto mostrou.
+
+    Existe porque a API de catalogo cobria pouco da fonte: ela so responde por
+    produto de catalogo, e a maior parte do que o outro grupo posta e anuncio
+    de vendedor. Medido em 09/09/2026, 13 dos 43 links resolvidos tinham preco
+    pela API -- os outros 30 morriam sem nunca chegar ao grupo.
+
+    A pagina que o `grupo_wa` ja baixa tem tudo: preco, riscado, foto, titulo e
+    o endereco canonico do anuncio. Medido em 12/09/2026, 24 dos 25 links
+    viraram oferta completa por aqui, e onde a API tambem respondia os dois
+    precos bateram em 5 de 5 -- os outros dois casos divergiram porque a API
+    devolve o menor anuncio do catalogo e a pagina devolve o anuncio que eles
+    linkaram, que e justamente o preco que o membro deles viu.
+
+    Sem preco nao ha oferta: o resto do funil so sabe comparar numero.
+    """
+    if not pista.preco or pista.preco <= 0 or not pista.url:
+        return None
+    return Offer(
+        source="mercadolivre",
+        external_id=pista.external_id,
+        title=pista.titulo,
+        price=pista.preco,
+        url=pista.url,
+        original_price=pista.preco_antes or None,
+        image_url=pista.imagem or None,
+    )
+
+
 def collect_de_outros_grupos(source) -> list[Offer]:
     """Produtos que grupos concorrentes acabaram de postar.
 
-    Descoberta, e nao repasse: daqui sai uma lista de IDs, e eles entram na
-    carteira para serem MEDIDOS como qualquer outro produto. O texto, o link e
-    todos os filtros continuam sendo nossos -- ver `sources/grupo_wa`.
+    O produto e o preco vem deles; o texto, o link de afiliado e todos os
+    filtros continuam sendo nossos -- ver `sources/grupo_wa`.
 
     Vale a pena porque a curadoria ja foi feita por quem vive disso: um grupo
     de 990 membros que posta ha meses escolheu aquele produto hoje. Essa e a
@@ -1104,8 +1165,11 @@ def collect_de_outros_grupos(source) -> list[Offer]:
     from .sources.grupo_wa import pistas
 
     fontes = load_grupos_fonte()
-    fetch = getattr(source, "fetch_by_ids", None)
-    if not fontes or fetch is None:
+    # `fetch_by_ids` cobre so o que a pagina nao trouxe, entao a fonte sem ele
+    # ainda rende. Antes ele era obrigatorio, porque era o unico jeito de ter
+    # preco.
+    fetch = getattr(source, "fetch_by_ids", None) or (lambda _alvos: [])
+    if not fontes:
         return []
     if not _due("last_grupos_fonte", grupos_fonte_intervalo_horas()):
         return []
@@ -1136,6 +1200,19 @@ def collect_de_outros_grupos(source) -> list[Offer]:
     # produto: o mesmo anuncio pode reaparecer amanha pela vitrine, e ai nao
     # tem nada de especial.
     _VISTOS_EM_OUTRO_GRUPO.update(p.external_id for p in achadas)
+    for pista in achadas:
+        if pista.cupons:
+            _CUPONS_DO_OUTRO_GRUPO[pista.external_id] = pista.cupons
+
+    # A pagina do produto vem primeiro, e a API so cobre o que sobrou.
+    #
+    # A ordem importa e ja foi a inversa. Enquanto a API vinha primeiro, dois
+    # tercos da fonte se perdiam na rota `/products/{id}`, que responde 403
+    # para anuncio de vendedor. E onde as duas respondem, a da pagina e a mais
+    # fiel ao pedido: e o anuncio que eles linkaram, com o preco que o membro
+    # deles viu, e nao o menor anuncio do catalogo.
+    da_pagina = [o for o in (_offer_da_pista(p) for p in achadas) if o is not None]
+    resolvidos = {o.external_id for o in da_pagina}
 
     # `fetch_by_ids` quer (external_id, titulo, imagem) -- a mesma tupla que a
     # reconsulta tira do banco. Titulo e imagem vem da pagina do produto, que
@@ -1148,17 +1225,26 @@ def collect_de_outros_grupos(source) -> list[Offer]:
     # Ja errei essa tupla antes: mandei o ID com o prefixo da fonte no primeiro
     # campo, e cada GET virou `/products/mercadolivre:MLB.../items`. Todos 404,
     # nenhum erro, 15 pistas viraram zero produtos por duas rodadas.
-    alvos = [(p.external_id, p.titulo, p.imagem or None) for p in achadas]
-    try:
-        found = fetch(alvos)
-    except Exception as exc:  # noqa: BLE001 - fonte extra nao derruba a rodada
-        log.warning("Nao consegui medir os produtos dos outros grupos: %s", exc)
-        return []
+    alvos = [
+        (p.external_id, p.titulo, p.imagem or None)
+        for p in achadas
+        if p.external_id not in resolvidos
+    ]
+    da_api: list[Offer] = []
+    if alvos:
+        try:
+            da_api = fetch(alvos)
+        except Exception as exc:  # noqa: BLE001 - fonte extra nao derruba a rodada
+            log.warning("Nao consegui medir os produtos dos outros grupos: %s", exc)
 
+    found = da_pagina + da_api
     log.info(
-        "Outros grupos: %d pista(s), %d produto(s) medido(s) e no topo da fila.",
+        "Outros grupos: %d pista(s), %d produto(s) no topo da fila "
+        "(%d pela pagina, %d pela API).",
         len(achadas),
         len(found),
+        len(da_pagina),
+        len(da_api),
     )
     return found
 
@@ -1201,30 +1287,25 @@ def _time_to_discover() -> bool:
     return False
 
 
-def _uma_por_familia(
-    escolhidas: list[ScoredOffer], palavras: int = 3
-) -> list[ScoredOffer]:
-    """Deixa so a melhor oferta de cada familia de produto na rodada.
+def _um_por_produto(escolhidas: list[ScoredOffer]) -> list[ScoredOffer]:
+    """Deixa so a melhor oferta de cada produto na rodada.
 
-    O cooldown por familia olha o que ja foi para o grupo; isto olha o que esta
-    sendo escolhido agora. Sem os dois, os quatro anuncios do mesmo short
-    entravam juntos na mesma rodada e o cooldown so pegava a partir da segunda.
+    O cooldown olha o que ja foi para o grupo; isto olha o que esta sendo
+    escolhido agora. Sem os dois, os quatro anuncios do mesmo short entravam
+    juntos na mesma rodada e o cooldown so pegava a partir da segunda.
 
     A lista chega ordenada por desconto, entao ficar com a primeira de cada
-    familia e ficar com a melhor.
+    produto e ficar com a melhor.
 
-    Com `palavras=CATEGORIA` a assinatura fica grossa e a regra vira "um item
-    de cada TIPO por rodada" -- o que impede a rajada de tres tenis adidas
-    saindo juntos, que a assinatura de tres palavras nao ve.
+    Compara titulo com titulo, como o cooldown -- ver `db.mesmo_produto`. A
+    assinatura de N primeiras palavras que estava aqui antes juntava marcas
+    diferentes pelo comeco do titulo, e era ela que impedia dois wheys de
+    fabricantes distintos de sairem na mesma rodada.
     """
-    vistas: set[str] = set()
     saida: list[ScoredOffer] = []
     for scored in escolhidas:
-        familia = familia_do_titulo(scored.offer.title, palavras)
-        if familia and familia in vistas:
+        if any(mesmo_produto(s.offer.title, scored.offer.title) for s in saida):
             continue
-        if familia:
-            vistas.add(familia)
         saida.append(scored)
     return saida
 
@@ -1552,6 +1633,46 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             if scored is not None:
                 pistas_agora.append(scored)
 
+        # O que sai porque ELES postaram sai uma vez so, para sempre.
+        #
+        # O cooldown por si nao resolve este caso. A fonte rele as mesmas 50
+        # mensagens a cada rodada, entao a mesma oferta volta a ser "nova"
+        # assim que o cooldown vence -- e um post que fica dias no grupo deles
+        # renderia um post nosso por dia, indefinidamente. Foi a queixa do
+        # dono em 12/09/2026, junto com a camisa da Reserva e a bicicleta
+        # ergometrica.
+        #
+        # Vale so para o que NAO e medicao nossa: `score` afirma que o preco
+        # caiu contra o nosso historico, e essa e razao propria para postar de
+        # novo, venha o produto de onde vier. `score_campaign` e `score_pista`
+        # nao tem razao propria nenhuma -- a razao e que eles postaram.
+        de_fora = [
+            s
+            for s in repasses + pistas_agora
+            if _veio_de_outro_grupo(s.offer)
+        ]
+        if de_fora:
+            ja_saiu = produtos_ja_postados(
+                conn, [s.offer.product_id for s in de_fora]
+            )
+            if ja_saiu:
+                repasses = [
+                    s
+                    for s in repasses
+                    if not (
+                        _veio_de_outro_grupo(s.offer)
+                        and s.offer.product_id in ja_saiu
+                    )
+                ]
+                pistas_agora = [
+                    s for s in pistas_agora if s.offer.product_id not in ja_saiu
+                ]
+                log.info(
+                    "%d oferta(s) do outro grupo fora: o grupo ja recebeu esse "
+                    "produto antes.",
+                    len(ja_saiu),
+                )
+
     # A ordem tem tres criterios, do que mais manda para o que so desempata.
     #
     # 1. PRIORITARIO COM CUPOM vai na frente de tudo. E a unica oferta que
@@ -1604,8 +1725,10 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         expire_stale_posts(conn)
         na_fila = len(pending_posts(conn))
         bloqueados = products_in_cooldown(conn)
-        familias_bloqueadas = families_in_cooldown(conn)
         categorias_bloqueadas = categories_in_cooldown(conn)
+        # Titulos inteiros, e nao assinaturas: a comparacao acontece em
+        # `mesmo_produto`, que ve a marca onde quer que ela esteja no titulo.
+        recentes = titulos_recentes(conn, family_cooldown_minutes())
 
     # Fora antes de escolher, e nao depois: assim o produto repetido nao ocupa
     # uma vaga da cota que outra oferta poderia usar, e nao gasta chamada do
@@ -1634,13 +1757,16 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         if fora:
             log.info("%d oferta(s) fora pela lista de exclusao.", fora)
 
-    if bloqueados or familias_bloqueadas or categorias_bloqueadas:
+    if bloqueados or recentes or categorias_bloqueadas:
         antes = len(picked) + len(repasses)
 
         def passa(s: ScoredOffer) -> bool:
             if s.offer.product_id in bloqueados:
                 return False
-            if familia_do_titulo(s.offer.title) in familias_bloqueadas:
+            # Mesmo nome e mesma marca so voltam no dia seguinte. Marca
+            # diferente passa: quatro wheys de quatro fabricantes sao quatro
+            # ofertas, e so a assinatura curta os via como uma.
+            if any(mesmo_produto(t, s.offer.title) for t in recentes):
                 return False
             return (
                 familia_do_titulo(s.offer.title, CATEGORIA)
@@ -1650,25 +1776,34 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         picked = [s for s in picked if passa(s)]
         repasses = [s for s in repasses if passa(s)]
 
-        # A pista fura os cooldowns de FAMILIA e de CATEGORIA -- eles barram
-        # produtos diferentes so por se parecerem, e a escolha de mandar dois
-        # perfumes seguidos passa a ser do grupo vizinho.
+        # A pista fura o cooldown de CATEGORIA -- ele barra produtos diferentes
+        # so por se parecerem, e a escolha de mandar dois perfumes seguidos
+        # passa a ser do grupo vizinho.
         #
         # A trava do MESMO produto continua, e ela nao e negociavel aqui: a
         # fonte rele as mesmas 50 mensagens a cada rodada, entao a mesma pista
         # reaparece de 15 em 15 minutos. Sem esta linha o grupo receberia o
         # mesmo item a manha inteira -- que nao e "toda vez que eles mandarem",
         # e sim toda vez que NOS lermos.
-        pistas_agora = [s for s in pistas_agora if s.offer.product_id not in bloqueados]
+        #
+        # A trava de nome e marca tambem vale para ela, e pelo mesmo motivo do
+        # resto: eles postam o mesmo whey em dois anuncios no mesmo dia.
+        pistas_agora = [
+            s
+            for s in pistas_agora
+            if s.offer.product_id not in bloqueados
+            and not any(mesmo_produto(t, s.offer.title) for t in recentes)
+        ]
 
         repetidos = antes - len(picked) - len(repasses)
         if repetidos:
             log.info(
                 "%d oferta(s) fora por repeticao: mesmo produto nos ultimos "
-                "%d min, mesmo tipo nos ultimos %d min, ou ainda na fila.",
+                "%d min, mesmo nome e marca nos ultimos %d min, ou ainda na "
+                "fila.",
                 repetidos,
                 post_cooldown_minutes(),
-                category_cooldown_minutes(),
+                family_cooldown_minutes(),
             )
 
     # Na janela de silencio a entrega anda devagar; produzir no ritmo normal so
@@ -1687,23 +1822,16 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # Repasse preenche o que sobrou da cota, nunca desloca uma verificada. A
     # ordem entre as duas listas continua sendo essa; o que muda dentro de cada
     # uma e de qual fonte vem cada vaga.
-    # Uma por familia antes de cortar a cota: assim o anuncio repetido nao
+    # Um por produto antes de cortar a cota: assim o anuncio repetido nao
     # ocupa vaga que outro produto poderia usar.
-    #
-    # Quando o cooldown de categoria esta ligado, a assinatura usada aqui e a
-    # grossa: a de tres palavras separa "Tenis adidas Boost Run" de "Tenis
-    # adidas Ih4039", e os dois saiam na mesma rodada. Como a assinatura curta
-    # e prefixo da longa, uma so passagem cobre os dois niveis.
-    assinatura = CATEGORIA if category_cooldown_minutes() > 0 else 3
-    picked = _priorizar_temas(_uma_por_familia(picked, assinatura), espaco, temas)
+    picked = _priorizar_temas(_um_por_produto(picked), espaco, temas)
     if len(picked) < espaco:
-        familias_usadas = {
-            familia_do_titulo(s.offer.title, assinatura) for s in picked
-        }
         restantes = [
             s
-            for s in _uma_por_familia(repasses, assinatura)
-            if familia_do_titulo(s.offer.title, assinatura) not in familias_usadas
+            for s in _um_por_produto(repasses)
+            if not any(
+                mesmo_produto(j.offer.title, s.offer.title) for j in picked
+            )
         ]
         picked += _priorizar_temas(restantes, espaco - len(picked), temas)
 
@@ -1721,20 +1849,14 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         ja = {s.offer.product_id for s in picked}
         novas = [s for s in pistas_agora if s.offer.product_id not in ja]
 
-        # Uma por familia, com a assinatura FINA -- e so ela que serve aqui.
-        #
-        # A grossa (`CATEGORIA`, duas palavras) juntaria "lattafa perfume" e
-        # deixaria um Lattafa so; a fina separa por marca e modelo. Medido em
-        # 09/09/2026 com os titulos reais que sairam juntos: "eau tradicional
-        # zaad", "asdaaf lattafa perfume", "carolina herrera perfume" e
-        # "calvin klein perfume" -- quatro familias distintas, os quatro
-        # perfumes saem.
+        # Um por produto, pela mesma comparacao de titulo do resto.
         #
         # E o pedido do dono: quatro perfumes de uma vez pode, desde que sejam
-        # perfumes diferentes. O que esta linha barra e o MESMO produto vindo
-        # de anuncios de vendedores diferentes, que e o caso que o ML produz
-        # aos montes e que o leitor le como repeticao.
-        novas = _uma_por_familia(novas, 3)
+        # perfumes diferentes -- e whey varias vezes tambem, desde que sejam
+        # marcas diferentes. O que esta linha barra e o MESMO produto vindo de
+        # anuncios de vendedores diferentes, que e o caso que o ML produz aos
+        # montes e que o leitor le como repeticao.
+        novas = _um_por_produto(novas)
 
         cabem = max(0, max_pending_queue() - na_fila - len(picked))
         if len(novas) > cabem:
