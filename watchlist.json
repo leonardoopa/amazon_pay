@@ -1181,12 +1181,17 @@
       ]
     }
   ],
-  "_comment_grupos_fonte": "Grupos de WhatsApp lidos como fonte de DESCOBERTA -- o numero precisa estar neles. O que se aproveita e a PISTA (qual produto esta em oferta), que e um fato e nao tem dono. O texto e o link deles NAO sao copiados: o produto entra na carteira e passa pelo funil inteiro -- medicao contra a nossa mediana, piso de desconto, cupom, cooldown e texto proprio. Copiar o post e trocar o link seria ficar com a redacao e a comissao de quem achou a oferta, e ainda entregaria post pior: sem a nossa medicao e sem os nossos filtros. Esses produtos vao para o TOPO da fila, porque a curadoria ja foi feita por quem vive disso. `limite` e quantos links resolver por leitura: cada um custa uma pagina de ~370 KB do ML, porque o link de afiliado nao carrega o ID do anuncio na URL. Intervalo no .env, em GRUPOS_FONTE_INTERVALO_HORAS.",
+  "_comment_grupos_fonte": "Grupos de WhatsApp lidos como fonte de DESCOBERTA -- o numero precisa estar neles. O que se aproveita e o FATO: qual anuncio esta em oferta e por quanto. Preco, riscado, foto e endereco canonico saem da propria pagina do produto no ML, que e publica. O texto e o link de afiliado deles NAO sao copiados: o post sai com redacao nossa, cupom nosso e link nosso, e a comissao fica com quem publicou. Esses produtos vao para o TOPO da fila, porque a curadoria ja foi feita por quem vive disso, e saem UMA VEZ so -- ja postado nao volta. `limite` e quantos links resolver por leitura: cada um custa uma pagina de ~370 KB do ML, porque o link de afiliado nao carrega o ID do anuncio na URL. Intervalo no .env, em GRUPOS_FONTE_INTERVALO_HORAS.",
   "grupos_fonte": [
     {
       "nome": "xet das promocoes | 39",
       "jid": "120363241588284782@g.us",
-      "limite": 15
+      "limite": 25
+    },
+    {
+      "nome": "Economizei | 26",
+      "jid": "120363046034439841@g.us",
+      "limite": 25
     }
   ],
   "_comment_priority": "Temas com vaga garantida por rodada (PRIORITY_RESERVE no .env diz quantas). Sao pedacos de TITULO, nao termos de busca: a mesma oferta chega pela busca por termo, pelos mais vendidos da categoria e pela vitrine, e nao carrega qual das tres a trouxe -- o titulo carrega. Comparacao sem acento e em minusculo. Cuidado com pedaco curto demais: 'oleo' pegaria oleo de motor.",

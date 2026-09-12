@@ -139,14 +139,26 @@ def test_item_id_ausente_nao_casa():
 
 
 def test_a_pista_leva_so_o_que_o_ml_publica():
-    """Nada do texto deles atravessa.
+    """Nada do texto nem do link deles atravessa.
 
-    `titulo` e `imagem` vem do `og:title` e do `og:image` da pagina do ML --
-    o nome e a foto do anuncio, nao a headline nem a arte que eles montaram.
+    Todo campo aqui sai da pagina do produto no ML, que e publica: `titulo` e
+    `imagem` do `og:title` e do `og:image`, `preco` e `preco_antes` do cartao
+    do anuncio, `url` do endereco canonico dele. Nenhum vem da mensagem que
+    eles escreveram, e nenhum e o link de afiliado deles.
+
+    `origem` e so o nome do grupo, para o log.
     """
     p = Pista(external_id="MLB1", titulo="Tenis Osklen Casual", origem="xet")
 
-    assert set(vars(p)) == {"external_id", "titulo", "origem", "imagem"}
+    assert set(vars(p)) == {
+        "external_id",
+        "titulo",
+        "origem",
+        "imagem",
+        "url",
+        "preco",
+        "preco_antes",
+    }
 
 
 def test_a_pista_sem_foto_e_valida():
@@ -207,13 +219,14 @@ def test_sem_pista_a_ordem_e_a_de_antes():
 # ---------- a configuracao de producao ----------
 
 
-def test_o_watchlist_real_tem_o_grupo_fonte():
+def test_o_watchlist_real_tem_os_grupos_fonte():
+    """Os dois grupos que o dono pediu em 12/09/2026: xet e Economizei."""
     from promo.pipeline import load_grupos_fonte
 
-    fontes = load_grupos_fonte()
+    jids = {f["jid"] for f in load_grupos_fonte()}
 
-    assert len(fontes) == 1
-    assert fontes[0]["jid"] == "120363241588284782@g.us"
+    assert "120363241588284782@g.us" in jids  # xet das promocoes | 39
+    assert "120363046034439841@g.us" in jids  # Economizei | 26
 
 
 def test_fonte_sem_jid_fica_de_fora(tmp_path):

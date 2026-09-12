@@ -27,11 +27,12 @@ mensagens, e o `item_id` apareceu em todos os que resolveram.
 
 from __future__ import annotations
 
+import html as _html
 import json
 import logging
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import httpx
 
@@ -65,17 +66,56 @@ TITULO = re.compile(r'<meta property="og:title" content="([^"]*)"')
 # chamada por produto para pegar o que esta nesta pagina de graca.
 IMAGEM = re.compile(r'<meta property="og:image" content="([^"]*)"')
 
+# O cartao do produto em destaque, dentro da pagina social.
+#
+# Esta pagina nao mostra um produto: mostra um, grande, e uma vitrine de
+# recomendados embaixo. Todo preco que se leia solto no HTML pode ser de
+# qualquer um dos recomendados -- medido em 12/09/2026, uma pagina tinha
+# quatro `"price"` no corpo e so o primeiro era do produto certo, noutra o
+# primeiro era de um recomendado.
+#
+# O que separa um do outro e o titulo: o `og:title` E o produto em destaque,
+# entao o cartao dele e o primeiro pedaco do corpo onde esse titulo aparece.
+# Dali para a frente, os primeiros "Antes"/"Agora" e o primeiro link canonico
+# sao dele.
+#
+# Os precos vem do rotulo de acessibilidade porque e o unico lugar onde reais
+# e centavos estao no mesmo atributo. Na marcacao visivel eles sao dois
+# `<span>` separados por um terceiro com a virgula, e juntar isso a mao daria
+# o mesmo resultado com mais chance de erro.
+CANONICO = re.compile(r'href="(https://(?:www|produto)\.mercadolivre\.com\.br/[^"?#]+)')
+DINHEIRO = re.compile(
+    r'aria-label="(?:(Antes|Agora): )?(\d+) reais(?: com (\d+) centavos)?"'
+)
+
+# Quanto do corpo, depois do titulo, ainda e o cartao do produto. Um cartao
+# inteiro (foto, titulo, preco de antes, preco de agora, parcelamento) mede
+# cerca de 2.500 bytes; 4.000 cobre com folga sem alcancar o cartao seguinte.
+CARTAO_BYTES = 4000
+
 log = logging.getLogger("promo")
 
 
 @dataclass(frozen=True)
 class Pista:
-    """Um produto que outro grupo postou. So o ID e o titulo -- nada do texto."""
+    """Um produto que outro grupo postou.
+
+    Fato, nao texto: o que se guarda daqui e o produto, o preco que o anuncio
+    mostra e o endereco dele no ML. A headline que o outro grupo escreveu e o
+    link de afiliado deles ficam de fora -- o post sai com texto nosso e link
+    nosso.
+    """
 
     external_id: str
     titulo: str
     origem: str  # nome do grupo, para o log
     imagem: str = ""  # og:image da pagina do produto, "" quando nao veio
+    # Endereco canonico do anuncio no ML (`/p/`, `/up/` ou `produto.`). E o
+    # que o Link Builder precisa para gerar o NOSSO link: o endereco final da
+    # pagina social e o perfil de afiliado deles, e nao serve.
+    url: str = ""
+    preco: float = 0.0  # "Agora" do cartao; 0.0 quando a pagina nao trouxe
+    preco_antes: float = 0.0  # "Antes" riscado; 0.0 quando nao ha desconto
 
 
 def _texto_da_mensagem(registro: dict) -> str:
@@ -128,12 +168,62 @@ def ler_mensagens(
     return corpo if isinstance(corpo, list) else []
 
 
-def produto_do_link(url: str, timeout: float = 25.0) -> tuple[str, str, str] | None:
-    """(id do anuncio, titulo, imagem) do produto por tras do link, ou None.
+def _cartao_em_destaque(html: str, titulo: str) -> str:
+    """O pedaco do HTML que descreve o produto do `og:title`.
+
+    Vazio quando o titulo nao aparece no corpo -- acontece quando o link nao
+    era de produto (pagina de lista, perfil sem destaque). Sem cartao nao ha
+    preco, e a pista segue so com o ID.
+    """
+    if not titulo:
+        return ""
+    corpo = html[html.find("</head>") :] if "</head>" in html else html
+    # O titulo aparece no `alt` da foto, escapado; a busca tenta as duas
+    # formas porque o escape so muda algo em titulo com `&`, `<` ou aspas.
+    for agulha in (_html.escape(titulo)[:40], titulo[:40], titulo[:24]):
+        if not agulha:
+            continue
+        posicao = corpo.find(agulha)
+        if posicao >= 0:
+            return corpo[posicao : posicao + CARTAO_BYTES]
+    return ""
+
+
+def _precos_do_cartao(cartao: str) -> tuple[float, float]:
+    """(preco de agora, preco riscado) do cartao. Zero onde nao houver.
+
+    Anuncio sem desconto traz um valor so, e as vezes sem o rotulo "Agora" --
+    por isso o rotulo vazio tambem conta como preco atual.
+    """
+    agora = antes = 0.0
+    for achado in DINHEIRO.finditer(cartao):
+        rotulo, reais, centavos = achado.group(1), achado.group(2), achado.group(3)
+        valor = int(reais) + int(centavos or 0) / 100
+        if rotulo == "Antes":
+            antes = antes or valor
+        else:  # "Agora", ou sem rotulo
+            agora = agora or valor
+    # Riscado menor que o preco atual e ruido de algum cartao vizinho, nao
+    # desconto. Melhor perder o "de" do que anunciar aumento como promocao.
+    if antes <= agora:
+        antes = 0.0
+    return agora, antes
+
+
+def produto_do_link(url: str, timeout: float = 25.0) -> Pista | None:
+    """A pista por tras de um link do outro grupo, ou None.
 
     O link de afiliado nao carrega o ID na URL: ele redireciona para
     `/social/<nickname>` e o ID mora no corpo. Por isso a pagina inteira e
-    baixada -- nao ha atalho.
+    baixada -- nao ha atalho. Ja que ela vem inteira, sai dali tudo o que o
+    post precisa: titulo, foto, preco, riscado e o endereco canonico.
+
+    Antes daqui so saiam ID, titulo e foto, e o preco vinha da API de
+    catalogo. Isso custava a maior parte da fonte: a rota `/products/{id}`
+    so responde por produto de catalogo, e a maioria do que o outro grupo
+    posta e anuncio de vendedor -- medido em 09/09/2026, 13 de 43. Com o
+    preco lido da propria pagina, 24 dos 25 links da medicao de 12/09/2026
+    viraram oferta completa.
     """
     try:
         with httpx.Client(
@@ -156,12 +246,22 @@ def produto_do_link(url: str, timeout: float = 25.0) -> tuple[str, str, str] | N
             return None
         item = achado.group(1)
 
-    titulo = TITULO.search(html)
+    achado_titulo = TITULO.search(html)
+    titulo = _html.unescape(achado_titulo.group(1).strip()) if achado_titulo else ""
     imagem = IMAGEM.search(html)
-    return (
-        item,
-        (titulo.group(1).strip() if titulo else ""),
-        (imagem.group(1).strip() if imagem else ""),
+
+    cartao = _cartao_em_destaque(html, titulo)
+    preco, antes = _precos_do_cartao(cartao)
+    canonico = CANONICO.search(cartao) if cartao else None
+
+    return Pista(
+        external_id=item,
+        titulo=titulo,
+        origem="",  # quem chama sabe o nome do grupo; aqui ele nao existe
+        imagem=(imagem.group(1).strip() if imagem else ""),
+        url=canonico.group(1) if canonico else "",
+        preco=preco,
+        preco_antes=antes,
     )
 
 
@@ -203,17 +303,18 @@ def pistas(
     achadas: list[Pista] = []
     vistos: set[str] = set()
     for url in urls[:limite_links]:
-        resolvido = produto_do_link(url)
+        pista = produto_do_link(url)
         time.sleep(pausa)
-        if not resolvido:
+        if pista is None or pista.external_id in vistos:
             continue
-        item, titulo, imagem = resolvido
-        if item in vistos:
-            continue
-        vistos.add(item)
-        achadas.append(
-            Pista(external_id=item, titulo=titulo, origem=nome or jid, imagem=imagem)
-        )
+        vistos.add(pista.external_id)
+        achadas.append(replace(pista, origem=nome or jid))
 
-    log.info("Grupo %s: %d produto(s) identificado(s).", nome or jid, len(achadas))
+    com_preco = sum(1 for p in achadas if p.preco > 0)
+    log.info(
+        "Grupo %s: %d produto(s) identificado(s), %d com preco na propria pagina.",
+        nome or jid,
+        len(achadas),
+        com_preco,
+    )
     return achadas

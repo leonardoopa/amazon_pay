@@ -384,6 +384,36 @@ def last_post(conn: sqlite3.Connection, product_id: str) -> sqlite3.Row | None:
     ).fetchone()
 
 
+def produtos_ja_postados(
+    conn: sqlite3.Connection, product_ids: list[str]
+) -> set[str]:
+    """Quais destes produtos o grupo ja recebeu alguma vez, sem prazo.
+
+    O cooldown responde "faz pouco tempo?"; esta responde "ja saiu?". As duas
+    existem porque as ofertas que vem de outro grupo precisam da segunda: a
+    fonte rele as mesmas mensagens a cada rodada e o mesmo produto volta
+    enquanto eles nao apagarem o post, entao "uma vez por dia" ainda e o mesmo
+    produto toda semana.
+
+    Foi pedido do dono em 12/09/2026, junto com a queixa de repeticao: se ja
+    mandamos aquela promocao, nao manda de novo.
+
+    Uma consulta para a lista inteira, e nao uma por produto -- a rodada tem
+    dezenas de candidatos.
+    """
+    if not product_ids:
+        return set()
+    marcas = ",".join("?" * len(product_ids))
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT product_id FROM posts
+        WHERE product_id IN ({marcas}) AND status IN ('sent', 'pending')
+        """,
+        product_ids,
+    ).fetchall()
+    return {r["product_id"] for r in rows}
+
+
 def affiliate_link(conn: sqlite3.Connection, product_id: str) -> str | None:
     row = conn.execute(
         "SELECT url FROM affiliate_links WHERE product_id = ?", (product_id,)

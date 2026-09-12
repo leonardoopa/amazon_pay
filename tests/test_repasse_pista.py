@@ -317,12 +317,12 @@ def test_a_pista_inedita_passa_pelo_cooldown():
     assert score_pista(oferta(), conn=conn) is not None
 
 
-def test_o_cooldown_da_pista_nao_tem_a_saida_dos_10_pontos():
-    """`_in_cooldown` libera quem melhorou 10 pontos percentuais de desconto.
+def test_o_cooldown_da_pista_so_cede_a_preco_menor():
+    """`_in_cooldown` libera quem ficou 10% mais barato que no post anterior.
 
-    A pista tem `discount_pct` zero por construcao, entao ela nunca melhora e
-    a trava vale integralmente ate `REPOST_COOLDOWN_DAYS` passar. E o que faz
-    "uma vez por dia" ser uma garantia aqui, e nao uma tendencia.
+    A pista que a fonte rele a cada rodada volta sempre pelo mesmo preco,
+    entao a trava vale integralmente ate `REPOST_COOLDOWN_DAYS` passar. E o
+    que faz "uma vez por dia" ser uma garantia aqui, e nao uma tendencia.
     """
     from promo.db import create_post, mark_post_sent, record_offer
 

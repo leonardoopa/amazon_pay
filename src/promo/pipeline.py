@@ -62,6 +62,7 @@ from .db import (
     now,
     pending_posts,
     products_in_cooldown,
+    produtos_ja_postados,
     recent_headlines,
     record_offer,
     sem_acento,
@@ -1089,12 +1090,41 @@ def refetch_hot(source) -> list[Offer]:
     return found
 
 
+def _offer_da_pista(pista) -> Offer | None:
+    """A oferta montada com o que a propria pagina do produto mostrou.
+
+    Existe porque a API de catalogo cobria pouco da fonte: ela so responde por
+    produto de catalogo, e a maior parte do que o outro grupo posta e anuncio
+    de vendedor. Medido em 09/09/2026, 13 dos 43 links resolvidos tinham preco
+    pela API -- os outros 30 morriam sem nunca chegar ao grupo.
+
+    A pagina que o `grupo_wa` ja baixa tem tudo: preco, riscado, foto, titulo e
+    o endereco canonico do anuncio. Medido em 12/09/2026, 24 dos 25 links
+    viraram oferta completa por aqui, e onde a API tambem respondia os dois
+    precos bateram em 5 de 5 -- os outros dois casos divergiram porque a API
+    devolve o menor anuncio do catalogo e a pagina devolve o anuncio que eles
+    linkaram, que e justamente o preco que o membro deles viu.
+
+    Sem preco nao ha oferta: o resto do funil so sabe comparar numero.
+    """
+    if not pista.preco or pista.preco <= 0 or not pista.url:
+        return None
+    return Offer(
+        source="mercadolivre",
+        external_id=pista.external_id,
+        title=pista.titulo,
+        price=pista.preco,
+        url=pista.url,
+        original_price=pista.preco_antes or None,
+        image_url=pista.imagem or None,
+    )
+
+
 def collect_de_outros_grupos(source) -> list[Offer]:
     """Produtos que grupos concorrentes acabaram de postar.
 
-    Descoberta, e nao repasse: daqui sai uma lista de IDs, e eles entram na
-    carteira para serem MEDIDOS como qualquer outro produto. O texto, o link e
-    todos os filtros continuam sendo nossos -- ver `sources/grupo_wa`.
+    O produto e o preco vem deles; o texto, o link de afiliado e todos os
+    filtros continuam sendo nossos -- ver `sources/grupo_wa`.
 
     Vale a pena porque a curadoria ja foi feita por quem vive disso: um grupo
     de 990 membros que posta ha meses escolheu aquele produto hoje. Essa e a
@@ -1104,8 +1134,11 @@ def collect_de_outros_grupos(source) -> list[Offer]:
     from .sources.grupo_wa import pistas
 
     fontes = load_grupos_fonte()
-    fetch = getattr(source, "fetch_by_ids", None)
-    if not fontes or fetch is None:
+    # `fetch_by_ids` cobre so o que a pagina nao trouxe, entao a fonte sem ele
+    # ainda rende. Antes ele era obrigatorio, porque era o unico jeito de ter
+    # preco.
+    fetch = getattr(source, "fetch_by_ids", None) or (lambda _alvos: [])
+    if not fontes:
         return []
     if not _due("last_grupos_fonte", grupos_fonte_intervalo_horas()):
         return []
@@ -1137,6 +1170,16 @@ def collect_de_outros_grupos(source) -> list[Offer]:
     # tem nada de especial.
     _VISTOS_EM_OUTRO_GRUPO.update(p.external_id for p in achadas)
 
+    # A pagina do produto vem primeiro, e a API so cobre o que sobrou.
+    #
+    # A ordem importa e ja foi a inversa. Enquanto a API vinha primeiro, dois
+    # tercos da fonte se perdiam na rota `/products/{id}`, que responde 403
+    # para anuncio de vendedor. E onde as duas respondem, a da pagina e a mais
+    # fiel ao pedido: e o anuncio que eles linkaram, com o preco que o membro
+    # deles viu, e nao o menor anuncio do catalogo.
+    da_pagina = [o for o in (_offer_da_pista(p) for p in achadas) if o is not None]
+    resolvidos = {o.external_id for o in da_pagina}
+
     # `fetch_by_ids` quer (external_id, titulo, imagem) -- a mesma tupla que a
     # reconsulta tira do banco. Titulo e imagem vem da pagina do produto, que
     # `pistas` ja baixou; a fonte repassa os dois sem uma segunda chamada.
@@ -1148,17 +1191,26 @@ def collect_de_outros_grupos(source) -> list[Offer]:
     # Ja errei essa tupla antes: mandei o ID com o prefixo da fonte no primeiro
     # campo, e cada GET virou `/products/mercadolivre:MLB.../items`. Todos 404,
     # nenhum erro, 15 pistas viraram zero produtos por duas rodadas.
-    alvos = [(p.external_id, p.titulo, p.imagem or None) for p in achadas]
-    try:
-        found = fetch(alvos)
-    except Exception as exc:  # noqa: BLE001 - fonte extra nao derruba a rodada
-        log.warning("Nao consegui medir os produtos dos outros grupos: %s", exc)
-        return []
+    alvos = [
+        (p.external_id, p.titulo, p.imagem or None)
+        for p in achadas
+        if p.external_id not in resolvidos
+    ]
+    da_api: list[Offer] = []
+    if alvos:
+        try:
+            da_api = fetch(alvos)
+        except Exception as exc:  # noqa: BLE001 - fonte extra nao derruba a rodada
+            log.warning("Nao consegui medir os produtos dos outros grupos: %s", exc)
 
+    found = da_pagina + da_api
     log.info(
-        "Outros grupos: %d pista(s), %d produto(s) medido(s) e no topo da fila.",
+        "Outros grupos: %d pista(s), %d produto(s) no topo da fila "
+        "(%d pela pagina, %d pela API).",
         len(achadas),
         len(found),
+        len(da_pagina),
+        len(da_api),
     )
     return found
 
@@ -1551,6 +1603,46 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             scored = score_pista(conn, offer, regras_do_tema(offer, rules, temas))
             if scored is not None:
                 pistas_agora.append(scored)
+
+        # O que sai porque ELES postaram sai uma vez so, para sempre.
+        #
+        # O cooldown por si nao resolve este caso. A fonte rele as mesmas 50
+        # mensagens a cada rodada, entao a mesma oferta volta a ser "nova"
+        # assim que o cooldown vence -- e um post que fica dias no grupo deles
+        # renderia um post nosso por dia, indefinidamente. Foi a queixa do
+        # dono em 12/09/2026, junto com a camisa da Reserva e a bicicleta
+        # ergometrica.
+        #
+        # Vale so para o que NAO e medicao nossa: `score` afirma que o preco
+        # caiu contra o nosso historico, e essa e razao propria para postar de
+        # novo, venha o produto de onde vier. `score_campaign` e `score_pista`
+        # nao tem razao propria nenhuma -- a razao e que eles postaram.
+        de_fora = [
+            s
+            for s in repasses + pistas_agora
+            if _veio_de_outro_grupo(s.offer)
+        ]
+        if de_fora:
+            ja_saiu = produtos_ja_postados(
+                conn, [s.offer.product_id for s in de_fora]
+            )
+            if ja_saiu:
+                repasses = [
+                    s
+                    for s in repasses
+                    if not (
+                        _veio_de_outro_grupo(s.offer)
+                        and s.offer.product_id in ja_saiu
+                    )
+                ]
+                pistas_agora = [
+                    s for s in pistas_agora if s.offer.product_id not in ja_saiu
+                ]
+                log.info(
+                    "%d oferta(s) do outro grupo fora: o grupo ja recebeu esse "
+                    "produto antes.",
+                    len(ja_saiu),
+                )
 
     # A ordem tem tres criterios, do que mais manda para o que so desempata.
     #
