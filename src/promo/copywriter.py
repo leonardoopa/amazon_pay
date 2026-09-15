@@ -71,7 +71,7 @@ DISCLOSURES = {
     # reconhecivel como tal (CDC art. 36), e o programa de afiliados do ML
     # exige a divulgacao -- some ela e o risco nao e um post feio, e a conta
     # encerrada, que leva junto a unica receita do projeto.
-    "mercadolivre": "Link de afiliado.",
+    "mercadolivre": "",
 }
 
 SYSTEM = """Voce escreve posts de oferta para um grupo de WhatsApp brasileiro.
