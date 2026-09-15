@@ -14,7 +14,12 @@ import unicodedata
 from google import genai
 from google.genai import types
 
-from .config import copy_model, gemini_api_key, gemini_min_interval_seconds
+from .config import (
+    copy_model,
+    gemini_api_key,
+    gemini_min_interval_seconds,
+    group_invite_url,
+)
 from .models import ScoredOffer
 
 log = logging.getLogger("promo")
@@ -795,3 +800,28 @@ def fallback_copy(
     # nao podem ter formato diferente -- o fallback entra justamente nas
     # rodadas em que o Gemini falha, que sao imprevisiveis.
     return "\n".join(lines)
+
+
+# Chamada da assinatura de convite. Fala com quem recebeu o post encaminhado,
+# nao com quem ja esta no grupo -- "participe do nosso grupo" lido por 148
+# membros que ja participam e ruido em todo post. Assim a linha e util para o
+# de fora e ignoravel para o de dentro.
+CHAMADA_DO_GRUPO = "Recebeu encaminhado? Entra no grupo 👇"
+
+
+def com_convite(text: str, url: str | None = None) -> str:
+    """Assina o post com o link de entrada no grupo.
+
+    Vai depois da divulgacao de afiliado, de proposito: a divulgacao tem que
+    ficar colada no link que ela identifica (CDC art. 36), e empurrar o convite
+    para o meio separaria as duas.
+
+    Idempotente -- chamar duas vezes nao duplica a assinatura. O texto do
+    Gemini vem de um prompt que nao conhece o convite, mas o `manual.py` e os
+    repasses passam pelo mesmo caminho, e post com dois convites e o tipo de
+    defeito que so aparece no grupo.
+    """
+    convite = (url if url is not None else group_invite_url()).strip()
+    if not convite or convite in text:
+        return text
+    return f"{text.rstrip()}\n\n{CHAMADA_DO_GRUPO}\n{convite}"

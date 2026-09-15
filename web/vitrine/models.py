@@ -115,6 +115,10 @@ class Clique(models.Model):
         ("hero", "chamada principal"),
         ("grupos", "cartão do grupo"),
         ("oferta", "página de oferta"),
+        # Não vem do site: é a assinatura no fim de cada post do WhatsApp.
+        # Separada das demais porque mede outra coisa — quanto o grupo cresce
+        # por encaminhamento, e não quanto a landing converte.
+        ("post", "assinatura do post no grupo"),
         ("desconhecida", "sem origem declarada"),
     ]
 

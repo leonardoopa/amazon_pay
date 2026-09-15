@@ -46,7 +46,7 @@ from .config import (
     run_interval_seconds,
     track_limit,
 )
-from .copywriter import Copywriter, fallback_copy
+from .copywriter import Copywriter, com_convite, fallback_copy
 from .db import (
     CATEGORIA,
     categories_in_cooldown,
@@ -1914,6 +1914,10 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         except Exception as exc:  # noqa: BLE001 - sem IA ainda da pra postar
             log.warning("Gemini falhou, usando texto padrao: %s", exc)
             text = fallback_copy(scored, link, cupom, final)
+        # Depois dos dois caminhos, nao dentro de cada um: o convite nao depende
+        # do Gemini ter funcionado, e post de fallback e justamente o que mais
+        # circula em rodada ruim.
+        text = com_convite(text)
         # Alimenta a proxima chamada desta mesma rodada: sem isso as 5 ofertas
         # do lote saem com a mesma formula, que e o caso mais visivel de todos.
         recentes.append(text.strip().splitlines()[0].strip())
