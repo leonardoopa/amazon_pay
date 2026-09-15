@@ -524,7 +524,7 @@ def test_variante_em_caixa_alta_nao_duplica():
         f"POST\nlink\n{DISCLOSURE_ML.upper()}", "mercadolivre"
     )
 
-    assert resultado.lower().count("link de afiliado") == 1
+    assert resultado.lower().count(DISCLOSURE_ML.lower()) == 1
 
 
 def test_variante_e_trocada_pela_canonica():
@@ -536,7 +536,7 @@ def test_variante_e_trocada_pela_canonica():
 
 def test_duplicata_literal_e_reduzida_a_uma():
     texto = f"POST\nlink\n{DISCLOSURE_ML}\n{DISCLOSURE_ML}"
-    assert _enforce_disclosure(texto, "mercadolivre").count("Link de afiliado") == 1
+    assert _enforce_disclosure(texto, "mercadolivre").count(DISCLOSURE_ML) == 1
 
 
 def test_ausente_e_acrescentada():
@@ -709,8 +709,8 @@ def test_a_divulgacao_cola_na_linha_do_link():
 
     saida = _enforce_disclosure(texto, "mercadolivre")
 
-    assert saida.endswith("https://meli.la/2SCSX2J\nLink de afiliado.")
-    assert "\n\nLink de afiliado." not in saida
+    assert saida.endswith(f"https://meli.la/2SCSX2J\n{DISCLOSURE_ML}")
+    assert f"\n\n{DISCLOSURE_ML}" not in saida
 
 
 def test_a_divulgacao_continua_presente():
@@ -719,7 +719,7 @@ def test_a_divulgacao_continua_presente():
 
     saida = _enforce_disclosure("CHAMADA\n\nProduto\n\nhttps://x", "mercadolivre")
 
-    assert "Link de afiliado." in saida
+    assert DISCLOSURE_ML in saida
 
 
 def test_nao_cola_quando_a_ultima_linha_nao_e_link():
@@ -730,7 +730,7 @@ def test_nao_cola_quando_a_ultima_linha_nao_e_link():
 
     saida = _enforce_disclosure(texto, "mercadolivre")
 
-    assert saida.endswith("Loja oficial no ML\nLink de afiliado.")
+    assert saida.endswith(f"Loja oficial no ML\n{DISCLOSURE_ML}")
 
 
 def test_a_divulgacao_da_amazon_sai_literal():
@@ -746,9 +746,9 @@ def test_a_divulgacao_da_amazon_sai_literal():
 def test_duplicata_continua_sendo_descartada():
     from promo.copywriter import _enforce_disclosure
 
-    texto = "CHAMADA\n\nhttps://x\n\nLink de afiliado.\nLink de afiliado."
+    texto = f"CHAMADA\n\nhttps://x\n\n{DISCLOSURE_ML}\n{DISCLOSURE_ML}"
 
-    assert _enforce_disclosure(texto, "mercadolivre").count("Link de afiliado.") == 1
+    assert _enforce_disclosure(texto, "mercadolivre").count(DISCLOSURE_ML) == 1
 
 
 # ---------- o preco com cupom tem que dizer que e com cupom ----------
@@ -805,3 +805,32 @@ def test_sem_cupom_a_guarda_nao_interfere():
     from promo.copywriter import _reject_preco_de_cupom_solto
 
     _reject_preco_de_cupom_solto("De R$ 189,00 por *R$ 117,35*", None, None)
+
+
+# ---------- o piso da divulgacao ----------
+
+
+def test_a_divulgacao_do_ml_nunca_fica_vazia():
+    """Encurtar e negociavel; sumir nao e.
+
+    A frase ja encolheu duas vezes, e os testes acima derivam dela justamente
+    para que encurtar de novo nao exija reescrever teste. Este e o outro lado
+    disso: derivar de uma constante vazia faria a suite inteira passar com o
+    post saindo sem identificacao nenhuma.
+    """
+    assert DISCLOSURES["mercadolivre"].strip()
+    assert "afiliado" in DISCLOSURES["mercadolivre"].lower()
+
+
+def test_divulgacao_vazia_comeria_as_linhas_em_branco(monkeypatch):
+    """Por que vazio nao e "so" tirar a linha.
+
+    `_normaliza("")` casa com qualquer linha em branco. A primeira vira a
+    divulgacao, as outras sao descartadas como duplicata, e o post chega no
+    grupo sem paragrafo nenhum -- defeito de formato que nao tem nada a ver
+    com a divulgacao em si. Medido em 14/09/2026.
+    """
+    monkeypatch.setitem(DISCLOSURES, "mercadolivre", "")
+    texto = "CHAMADA\n\nProduto\n\nDe R$ 200,00 por *R$ 150,00*\n\nhttps://x"
+
+    assert _enforce_disclosure(texto, "mercadolivre").count("\n\n") == 1

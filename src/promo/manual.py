@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 
 from .config import amazon_partner_tag
-from .copywriter import Copywriter, fallback_copy
+from .copywriter import Copywriter, com_convite, fallback_copy
 from .db import (
     connect,
     create_post,
@@ -107,14 +107,14 @@ def escrever_texto(scored: ScoredOffer, usar_ia: bool = True) -> str:
     """
     link = scored.offer.url
     if not usar_ia:
-        return fallback_copy(scored, link)
+        return com_convite(fallback_copy(scored, link))
     try:
         with connect() as conn:
             recentes = recent_headlines(conn)
-        return Copywriter().write(scored, link, None, recentes)
+        return com_convite(Copywriter().write(scored, link, None, recentes))
     except Exception as exc:  # noqa: BLE001
         log.warning("Gemini falhou (%s); usando o texto padrao.", exc)
-        return fallback_copy(scored, link)
+        return com_convite(fallback_copy(scored, link))
 
 
 def enfileirar(scored: ScoredOffer, texto: str) -> int:

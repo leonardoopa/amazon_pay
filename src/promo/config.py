@@ -403,6 +403,25 @@ def amazon_partner_tag() -> str:
     return _optional("AMAZON_PARTNER_TAG", "").strip()
 
 
+def group_invite_url() -> str:
+    """Link de entrada no grupo, assinado no fim de cada post.
+
+    Post de grupo circula: membro acha a oferta boa e encaminha para um amigo,
+    que le o post inteiro sem ter como entrar. A linha de convite fecha esse
+    buraco -- e o unico canal de crescimento que nao custa nada, porque viaja
+    junto com uma mensagem que ja ia ser encaminhada.
+
+    Aponta para o `/entrar/` do site, e nao para o `chat.whatsapp.com` direto,
+    por dois motivos. O clique fica contado (`Clique`, origem `post`), entao da
+    pra responder quanto o grupo cresce por encaminhamento. E o convite mora so
+    no cadastro do site: trocar de grupo quando este lotar e editar uma linha no
+    backoffice, nao refazer deploy do bot.
+
+    Vazio desliga a assinatura.
+    """
+    return _optional("GROUP_INVITE_URL", "").strip()
+
+
 def prefer_official_store() -> bool:
     """Nos temas do `priority`, a oferta sai da loja oficial do ML?
 
