@@ -28,6 +28,7 @@ from .config import (
     category_cooldown_minutes,
     family_cooldown_minutes,
     max_pending_queue,
+    max_pistas_por_run,
     ofertas_pages,
     post_cooldown_minutes,
     post_max_age_minutes,
@@ -1287,6 +1288,20 @@ def _time_to_discover() -> bool:
     return False
 
 
+def _quantas_pistas_cabem(na_fila: int, ja_escolhidas: int) -> int:
+    """Quantas ofertas dos grupos-fonte entram na frente da fila agora.
+
+    Dois tetos, e vale o menor. O da fila (`MAX_PENDING_QUEUE`) impede que uma
+    enxurrada do outro grupo encha a fila de post que expira antes de sair. O
+    `MAX_PISTAS_POR_RUN` e outra coisa: limita quanto do volume de uma rodada
+    pode ser repasse, porque tirar a pista da cota sem freio multiplicaria o
+    volume do grupo por sete de uma vez -- 50 pistas coletadas por rodada
+    contra as 6 vagas da cota, medido em 14/09/2026.
+    """
+    espaco_na_fila = max_pending_queue() - na_fila - ja_escolhidas
+    return max(0, min(max_pistas_por_run(), espaco_na_fila))
+
+
 def _um_por_produto(escolhidas: list[ScoredOffer]) -> list[ScoredOffer]:
     """Deixa so a melhor oferta de cada produto na rodada.
 
@@ -1613,6 +1628,24 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             if scored is not None:
                 repasses.append(scored)
 
+        # O que veio dos grupos-fonte sai da cota, mesmo tendo preco riscado.
+        #
+        # A faixa prioritaria existe para o pedido do dono: o que o xet e o
+        # Economizei postam tem que sair no nosso grupo. So que ela nascia so do
+        # `score_pista`, a porta de quem NAO tem preco riscado -- e depois a
+        # pista passou a ler o riscado da propria pagina, que o `score_campaign`
+        # aceita. O efeito foi silencioso: a pista voltou a disputar as vagas da
+        # cota e a faixa esvaziou. Medido em 14/09/2026, 50 pistas coletadas e
+        # UMA na frente da fila.
+        #
+        # Separar por ORIGEM, e nao pela porta que pontuou, e o que faz a faixa
+        # voltar a descrever o pedido. O desconto medido pelo `score_campaign`
+        # nao se perde: ele viaja no ScoredOffer e ordena quem entra primeiro
+        # quando o teto aperta.
+        com_riscado_deles = [s for s in repasses if _veio_de_outro_grupo(s.offer)]
+        com_riscado_deles.sort(key=lambda s: s.discount_pct, reverse=True)
+        repasses = [s for s in repasses if not _veio_de_outro_grupo(s.offer)]
+
         # A terceira porta, so para o que o grupo vizinho postou agora.
         #
         # Sem ela a fonte quase nao rendia: a pista e produto novo no nosso
@@ -1622,7 +1655,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         #
         # Fica por ultimo de proposito: quem passou nas duas primeiras ja saiu
         # com desconto medido ou riscado, que e post melhor.
-        ja_escolhido |= {s.offer.product_id for s in repasses}
+        ja_escolhido |= {s.offer.product_id for s in repasses + com_riscado_deles}
         pistas_agora: list[ScoredOffer] = []
         for offer in unique.values():
             if offer.product_id in ja_escolhido:
@@ -1632,6 +1665,10 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             scored = score_pista(conn, offer, regras_do_tema(offer, rules, temas))
             if scored is not None:
                 pistas_agora.append(scored)
+
+        # Quem tem riscado na frente: o post mostra "De X por Y" em vez de so o
+        # preco, e quando o teto corta a fila esse e o corte certo a se fazer.
+        pistas_agora = com_riscado_deles + pistas_agora
 
         # O que sai porque ELES postaram sai uma vez so, para sempre.
         #
@@ -1842,9 +1879,8 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # desconto nenhum para mostrar. Foi o pedido do dono em 09/09/2026:
     # prioridade total para o que o grupo vizinho postar.
     #
-    # O teto que sobra e o da fila (`max_pending_queue`), respeitado logo
-    # abaixo: sem ele uma enxurrada do outro grupo encheria a fila de post que
-    # morre como `expired` antes de sair.
+    # Quanto cabe aqui e `_quantas_pistas_cabem`, que cruza o espaco da fila
+    # com o teto de repasse por rodada.
     if pistas_agora:
         ja = {s.offer.product_id for s in picked}
         novas = [s for s in pistas_agora if s.offer.product_id not in ja]
@@ -1858,13 +1894,14 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         # montes e que o leitor le como repeticao.
         novas = _um_por_produto(novas)
 
-        cabem = max(0, max_pending_queue() - na_fila - len(picked))
+        cabem = _quantas_pistas_cabem(na_fila, len(picked))
         if len(novas) > cabem:
             log.info(
-                "%d pista(s) do outro grupo ficaram de fora: a fila comporta "
-                "mais %d post(s).",
+                "%d pista(s) do outro grupo ficaram de fora: cabem %d nesta "
+                "rodada (teto de repasse %d).",
                 len(novas) - cabem,
                 cabem,
+                max_pistas_por_run(),
             )
         picked = novas[:cabem] + picked
         if novas[:cabem]:

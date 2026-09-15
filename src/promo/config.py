@@ -403,6 +403,21 @@ def amazon_partner_tag() -> str:
     return _optional("AMAZON_PARTNER_TAG", "").strip()
 
 
+def max_pistas_por_run() -> int:
+    """Quantas ofertas dos grupos-fonte podem entrar numa rodada so.
+
+    O repasse nao disputa a cota normal -- o pedido do dono e que o que o xet e
+    o Economizei postam saia no nosso grupo. Mas "fora da cota" sem teto nenhum
+    nao e mais uma faixa, e uma torneira: medido em 14/09/2026, uma rodada
+    coleta ~50 pistas contra as 6 vagas de `MAX_OFFERS_PER_RUN`, entao tirar a
+    cota multiplicaria o volume do grupo por sete de uma vez.
+
+    Volume e o principal sinal de banimento no Baileys, e e um chip que roda
+    isso. Este numero e o freio: repasse na frente da fila, ate aqui.
+    """
+    return _int("MAX_PISTAS_POR_RUN", 10)
+
+
 def group_invite_url() -> str:
     """Link de entrada no grupo, assinado no fim de cada post.
 
