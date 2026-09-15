@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from promo.config import group_invite_url  # noqa: E402
 from promo.copywriter import (  # noqa: E402
     CHAMADA_DO_GRUPO,
+    DISCLOSURES,
     com_convite,
     disclosure_for,
     fallback_copy,
@@ -25,15 +26,16 @@ from promo.copywriter import (  # noqa: E402
 from promo.models import Offer, ScoredOffer  # noqa: E402
 
 CONVITE = "https://comunidadedodesconto.com.br/entrar/?de=post"
+DISCLOSURE_ML = DISCLOSURES["mercadolivre"]
 
-POST = """QUEM AUTORIZOU ESSE PRECO?
+POST = f"""QUEM AUTORIZOU ESSE PRECO?
 
 Fone Bluetooth XYZ
 
 De R$ 200,00 por *R$ 150,00*
 
 https://mercadolivre.com/sec/abc123
-Link de afiliado."""
+{DISCLOSURE_ML}"""
 
 
 def make_scored() -> ScoredOffer:
@@ -66,7 +68,7 @@ def test_a_divulgacao_continua_colada_no_link():
     entrasse no meio, a divulgacao passaria a identificar o link errado.
     """
     linhas = com_convite(POST, CONVITE).splitlines()
-    posicao = linhas.index("Link de afiliado.")
+    posicao = linhas.index(DISCLOSURE_ML)
 
     assert linhas[posicao - 1].startswith("https://mercadolivre.com/sec/")
     assert linhas.index(CONVITE) > posicao

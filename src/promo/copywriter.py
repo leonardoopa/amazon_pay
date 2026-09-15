@@ -64,14 +64,21 @@ DISCLOSURES = {
         "Como participante do Programa de Associados da Amazon, "
         "sou remunerado pelas compras qualificadas efetuadas"
     ),
-    # Encurtada de "Link de afiliado - o preco pra voce nao muda." a pedido:
-    # ocupava tres linhas no celular e quase ninguem lia a segunda metade.
+    # Encurtada duas vezes a pedido: "Link de afiliado - o preco pra voce nao
+    # muda." ocupava tres linhas no celular, virou "Link de afiliado." e agora
+    # e um marcador colado na linha do link. Esse e o piso -- abaixo dele para
+    # de existir identificacao, nao fica mais curto.
     #
     # O que NAO pode sair e a identificacao em si. Publicidade tem que ser
     # reconhecivel como tal (CDC art. 36), e o programa de afiliados do ML
     # exige a divulgacao -- some ela e o risco nao e um post feio, e a conta
     # encerrada, que leva junto a unica receita do projeto.
-    "mercadolivre": "",
+    #
+    # Vazio aqui nao desliga a divulgacao: quebra o post. `_normaliza("")` casa
+    # com QUALQUER linha em branco, entao `_enforce_disclosure` trata a
+    # primeira como a divulgacao e descarta todas as outras -- o post chega no
+    # grupo sem paragrafo nenhum. Medido em 14/09/2026.
+    "mercadolivre": "· afiliado",
 }
 
 SYSTEM = """Voce escreve posts de oferta para um grupo de WhatsApp brasileiro.

@@ -438,7 +438,10 @@ mensagens por dia) fica em centavos.
 ## Antes de ligar isso pra valer
 
 - **Divulgação de afiliado é obrigatória** nos dois programas — o prompt do
-  copywriter já força a linha final, não tire.
+  copywriter já força a linha final, não tire. Encurtar é negociável e já
+  aconteceu duas vezes (hoje é `· afiliado`, colado na linha do link);
+  esvaziar não é, e além de tirar a identificação quebra o formato do post
+  inteiro — `DISCLOSURES` em `src/promo/copywriter.py` explica por quê.
 - Comece com poucos termos no `watchlist.json`. Grupo que posta demais morre.
 - O prompt em `src/promo/copywriter.py` proíbe inventar número e criar urgência
   falsa. Se for mexer no tom, mantenha essas duas regras.
