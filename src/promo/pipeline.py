@@ -132,6 +132,14 @@ class GrupoDestino:
     nome: str
     temas: tuple[str, ...] = ()
     exclui: tuple[str, ...] = ()
+    # Dentro da busca propria do grupo, o que entra primeiro. E o mesmo papel
+    # que o `priority` global faz no Geral: desconto e preco sozinhos decidem
+    # por numero, e o numero maior raramente esta no que define o grupo.
+    #
+    # Vazia quer dizer "o grupo inteiro ja e a prioridade" -- o caso do
+    # Perfumes, onde todo tema e perfume e reservar vaga para perfume dentro
+    # dele nao separaria nada. Decisao do dono em 16/09/2026.
+    prioridade: tuple[str, ...] = ()
 
     @property
     def e_geral(self) -> bool:
@@ -186,6 +194,9 @@ def load_grupos(path: Path | None = None) -> list[GrupoDestino]:
                 nome=(cru.get("nome") or jid).strip(),
                 temas=tuple(sem_acento(x) for x in cru.get("temas") or ()),
                 exclui=tuple(sem_acento(x) for x in cru.get("exclui") or ()),
+                prioridade=tuple(
+                    sem_acento(x) for x in cru.get("prioridade") or ()
+                ),
             )
         )
 
@@ -2125,6 +2136,14 @@ def _escolhe_para_o_grupo(
     candidatas = [o for o in unique.values() if grupo.aceita(o)]
     if not candidatas:
         return []
+
+    # A prioridade do grupo na frente, a ordem de chegada preservada dentro de
+    # cada metade. Sem isto o grupo de Casa encheria de organizador de gaveta
+    # com 70% off e a air fryer -- o motivo de alguem entrar no grupo -- ficaria
+    # de fora por ter "so" 30%. Mesmo raciocinio do `priority` no Geral.
+    if grupo.prioridade:
+        alvos = list(grupo.prioridade)
+        candidatas.sort(key=lambda o: not tem_tema(o.title, alvos))
 
     with connect() as conn:
         bloqueados = products_in_cooldown(conn, grupo_jid=grupo.jid)

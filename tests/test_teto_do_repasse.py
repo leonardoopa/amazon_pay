@@ -59,9 +59,23 @@ def limpa_vistos():
     _VISTOS_EM_OUTRO_GRUPO.clear()
 
 
-def test_o_teto_padrao_e_dez():
-    """Escolhido pelo dono em 14/09/2026, entre "tudo" e "com teto"."""
-    assert max_pistas_por_run() == 10
+def test_sem_teto_por_padrao(monkeypatch: pytest.MonkeyPatch):
+    """Pedido do dono em 16/09/2026: o repasse do ML sai "nem que a gente passe
+    da quantidade de publicacoes por rodada".
+
+    Entre 14 e 16/09 o padrao foi 10. O que mudou nao foi a regra do repasse --
+    ele sempre esteve fora da cota --, foi quem segura: agora e so a fila.
+    """
+    monkeypatch.delenv("MAX_PISTAS_POR_RUN", raising=False)
+
+    assert max_pistas_por_run() >= 10_000
+    assert _quantas_pistas_cabem(na_fila=0, ja_escolhidas=0) == 30  # MAX_PENDING_QUEUE
+
+
+def test_um_numero_positivo_volta_a_ser_teto(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("MAX_PISTAS_POR_RUN", "7")
+
+    assert _quantas_pistas_cabem(na_fila=0, ja_escolhidas=0) == 7
 
 
 def test_o_teto_vem_do_env(monkeypatch: pytest.MonkeyPatch):
@@ -103,12 +117,11 @@ def test_a_ordem_dentro_da_faixa_e_por_desconto():
     assert [s.offer.external_id for s in fila] == ["MLB_ALTO", "MLB_MEIO", "MLB_BAIXO"]
 
 
-def test_o_teto_limita_mesmo_com_fila_vazia():
-    """Os dois tetos valem, e o menor manda.
-
-    Com a fila vazia o limite da fila e grande; o que segura e o teto de
-    repasse. Sem ele, as ~50 pistas de uma rodada entrariam de uma vez.
-    """
+def test_o_teto_de_repasse_limita_quando_configurado(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Os dois tetos valem, e o menor manda."""
+    monkeypatch.setenv("MAX_PISTAS_POR_RUN", "10")
     novas = [pontuada(oferta(f"MLB{i}"), 20.0) for i in range(50)]
 
     cabem = _quantas_pistas_cabem(na_fila=0, ja_escolhidas=0)
@@ -117,8 +130,15 @@ def test_o_teto_limita_mesmo_com_fila_vazia():
     assert len(novas[:cabem]) == 10
 
 
-def test_a_fila_cheia_aperta_mais_que_o_teto():
-    """Fila quase cheia manda menos que o teto, nunca mais."""
+def test_a_fila_cheia_aperta_mais_que_o_teto(monkeypatch: pytest.MonkeyPatch):
+    """Fila quase cheia manda menos que o teto, nunca mais.
+
+    E o limite que sobra sendo o padrao sem teto: sem a fila, nada seguraria.
+    """
+    monkeypatch.setenv("MAX_PISTAS_POR_RUN", "10")
+    assert _quantas_pistas_cabem(na_fila=26, ja_escolhidas=1) == 3
+
+    monkeypatch.delenv("MAX_PISTAS_POR_RUN", raising=False)
     assert _quantas_pistas_cabem(na_fila=26, ja_escolhidas=1) == 3
 
 

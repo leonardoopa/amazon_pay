@@ -1172,12 +1172,45 @@
         "cortina",
         "tapete",
         "luminaria",
-        "organizador"
+        "organizador",
+        "unha",
+        "esmalte gel",
+        "gel de unha",
+        "cilios postos",
+        "cilios",
+        "kit manicure",
+        "lixa de unha",
+        "cutimicro",
+        "corretivo",
+        "paleta de sombras",
+        "progressiva"
       ],
       "exclui": [
         "cueca",
         "boxer masculina",
         "sunga"
+      ],
+      "prioridade": [
+        "maquiagem",
+        "batom",
+        "base facial",
+        "corretivo",
+        "rimel",
+        "delineador",
+        "po compacto",
+        "paleta de sombras",
+        "unha",
+        "esmalte",
+        "esmalte gel",
+        "gel de unha",
+        "kit manicure",
+        "shampoo",
+        "condicionador",
+        "mascara capilar",
+        "progressiva",
+        "secador",
+        "chapinha",
+        "escova secadora"
       ]
     },
     {
@@ -1228,6 +1261,20 @@
         "monitor cardiaco",
         "mochila de treino",
         "bolsa esportiva"
+      ],
+      "prioridade": [
+        "tenis de corrida",
+        "nike",
+        "adidas",
+        "puma",
+        "olympikus",
+        "mizuno",
+        "asics",
+        "new balance",
+        "under armour",
+        "whey protein",
+        "creatina",
+        "camiseta dry fit"
       ]
     },
     {
@@ -1338,6 +1385,20 @@
         "cadeira de bebe",
         "cadeira de alimentacao",
         "bebe conforto"
+      ],
+      "prioridade": [
+        "air fryer",
+        "smart tv",
+        "televisao",
+        "cadeira gamer",
+        "cadeira de escritorio",
+        "robo aspirador",
+        "aspirador de po",
+        "geladeira",
+        "micro-ondas",
+        "jogo de panelas",
+        "tapete",
+        "colchao"
       ]
     }
   ],

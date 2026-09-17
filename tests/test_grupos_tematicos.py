@@ -138,3 +138,59 @@ def test_o_watchlist_real_tem_os_tres_grupos_novos():
     for grupo in load_grupos():
         if grupo.jid:
             assert grupo.temas, f"{grupo.nome} sem tema receberia tudo"
+
+
+# ---------- a prioridade de cada grupo ----------
+
+
+def _grupo(pedaco: str) -> GrupoDestino:
+    return [g for g in load_grupos() if g.nome.endswith(pedaco)][0]
+
+
+def test_cada_grupo_tem_a_propria_prioridade():
+    """Pedido do dono em 16/09/2026, com o Perfumes de fora."""
+    assert _grupo("Esportes").prioridade
+    assert _grupo("Casa").prioridade
+    assert _grupo("Mulheres").prioridade
+
+
+def test_o_perfumes_nao_tem_prioridade_de_proposito():
+    """O grupo inteiro ja e perfume: reservar vaga para perfume dentro dele
+    nao separaria nada. Decisao do dono, registrada para nao virar 'esqueceram
+    de preencher'."""
+    assert _grupo("Perfumes").prioridade == ()
+
+
+def test_a_prioridade_do_grupo_passa_na_frente():
+    """O caso que motivou: organizador de gaveta com 70% ganharia da air fryer
+    com 30%, e a air fryer e o motivo de alguem entrar no grupo de Casa."""
+    from promo.pipeline import tem_tema
+
+    casa = _grupo("Casa")
+    candidatas = [
+        oferta("Organizador De Gaveta Colmeia 8 Pecas"),
+        oferta("Air Fryer Mondial 4L Family"),
+        oferta("Smart Tv Samsung 50 4K"),
+    ]
+
+    candidatas.sort(key=lambda o: not tem_tema(o.title, list(casa.prioridade)))
+
+    assert candidatas[-1].title.startswith("Organizador")
+
+
+def test_a_prioridade_de_mulheres_cobre_maquiagem_cabelo_e_unha():
+    """Os tres que o dono nomeou em 16/09/2026."""
+    prioridade = _grupo("Mulheres").prioridade
+
+    assert "maquiagem" in prioridade
+    assert "unha" in prioridade
+    assert any("shampoo" in p or "capilar" in p for p in prioridade)
+
+
+def test_a_prioridade_e_subconjunto_do_tema():
+    """Prioridade que nao e tema do grupo nunca seria escolhida: a oferta e
+    filtrada por `aceita` antes de a ordem importar."""
+    for pedaco in ("Esportes", "Casa", "Mulheres"):
+        grupo = _grupo(pedaco)
+        for alvo in grupo.prioridade:
+            assert alvo in grupo.temas, f"{pedaco}: {alvo!r} nao e tema do grupo"
