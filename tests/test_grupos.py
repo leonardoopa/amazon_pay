@@ -153,18 +153,49 @@ def test_a_watchlist_real_tem_o_geral_com_jid_vazio():
     assert geral[0].jid == ""
 
 
-def test_a_watchlist_real_tem_o_grupo_de_mulheres():
-    grupos = load_grupos()
-    nichados = [g for g in grupos if not g.e_geral]
+def _por_nome(pedaco: str):
+    """O grupo cujo nome termina no pedaco dado.
 
-    assert len(nichados) == 1
-    assert nichados[0].jid == "120363428560546806@g.us"
-    assert "wella" in nichados[0].temas
-    assert "perfume" in nichados[0].temas
+    Procurar por nome, e nao por indice, porque a lista cresceu: era um grupo
+    nichado ate 16/09/2026 e passou a ser quatro (Mulheres, Esportes, Perfumes
+    e Casa). Um `[0]` aqui volta a quebrar no quinto.
+    """
+    casados = [g for g in load_grupos() if g.nome.endswith(pedaco)]
+    assert casados, f"grupo de {pedaco} sumiu do watchlist"
+    return casados[0]
+
+
+def test_a_watchlist_real_tem_os_quatro_grupos_nichados():
+    """Mulheres desde 09/09/2026; Esportes, Perfumes e Casa desde 16/09/2026.
+
+    O que este teste protege e a configuracao: grupo nichado sem JID nao tem
+    para onde mandar, e grupo nichado sem tema viraria um segundo Geral --
+    receberia TUDO, incluindo o que nao e dele.
+    """
+    nichados = [g for g in load_grupos() if not g.e_geral]
+
+    assert len(nichados) == 4
+    for grupo in nichados:
+        assert grupo.jid.endswith("@g.us"), grupo.nome
+        assert grupo.temas, grupo.nome
+
+
+def test_o_grupo_de_mulheres_continua_com_os_temas_dele():
+    mulheres = _por_nome("Mulheres")
+
+    assert mulheres.jid == "120363428560546806@g.us"
+    assert "wella" in mulheres.temas
+    assert "perfume" in mulheres.temas
+
+
+def test_os_grupos_novos_tem_os_temas_que_os_definem():
+    assert "tenis de corrida" in _por_nome("Esportes").temas
+    assert "perfume" in _por_nome("Perfumes").temas
+    assert "air fryer" in _por_nome("Casa").temas
 
 
 def test_o_grupo_de_mulheres_recusa_o_que_nao_e_dele():
-    nichado = [g for g in load_grupos() if not g.e_geral][0]
+    nichado = _por_nome("Mulheres")
 
     assert not nichado.aceita(oferta("Monitor AOC 22 120Hz Gaming HDMI"))
     assert not nichado.aceita(oferta("Whey Protein Dux Nutrition 900g"))
@@ -172,7 +203,7 @@ def test_o_grupo_de_mulheres_recusa_o_que_nao_e_dele():
 
 
 def test_o_grupo_de_mulheres_aceita_o_que_e_dele():
-    nichado = [g for g in load_grupos() if not g.e_geral][0]
+    nichado = _por_nome("Mulheres")
 
     for titulo in (
         "Kit Wella Professionals Invigo Nutri-Enrich",

@@ -30,6 +30,7 @@ from .config import (
     family_cooldown_minutes,
     max_pending_queue,
     max_pistas_por_run,
+    max_por_grupo_tematico,
     ofertas_pages,
     post_cooldown_minutes,
     post_max_age_minutes,
@@ -2032,13 +2033,124 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         for scored in sem_link:
             log.warning("  %s  %s", scored.offer.external_id, scored.offer.url)
 
+    exclusivos = _rodada_dos_grupos(unique, rules, temas, copywriter, by_name)
+
     if dry_run:
         for _, text in drafts:
             print("\n" + "-" * 40 + "\n" + text)
+        for grupo, scored, text in exclusivos:
+            print("\n" + "-" * 40 + f" [{grupo.nome}]\n" + text)
         return picked
+
+    if exclusivos:
+        with connect() as conn:
+            for grupo, scored, text in exclusivos:
+                _gravar_post(conn, scored, text, grupo.jid)
 
     deliver(drafts, max(0.0, orcamento - gasto))
     return picked
+
+
+def _rodada_dos_grupos(
+    unique: dict,
+    rules: Rules,
+    temas: list[str],
+    copywriter,
+    by_name: dict,
+) -> list[tuple[GrupoDestino, ScoredOffer, str]]:
+    """A busca propria de cada grupo tematico, que NAO passa pelo Geral.
+
+    O grupo tematico recebe por duas vias. A primeira ja existia: toda oferta
+    escolhida para o Geral tambem cai nos grupos cujo tema ela cita -- Wella
+    sai no Geral e no Mulheres. A segunda e esta, e existe porque a primeira
+    entrega pouco: a cota do Geral e disputada pelo catalogo inteiro, e o que
+    ganha e o maior desconto, que raramente e perfume ou air fryer.
+
+    O que sai daqui fica SO no grupo dele, por decisao do dono em 16/09/2026.
+    Mandar tambem para o Geral somaria os quatro grupos no principal, que e o
+    oposto de "nao poluir o grupo principal" -- e o contrario do corte de
+    volume pedido no mesmo dia.
+
+    Nao ha coleta nova: os candidatos saem do `unique` que a rodada ja montou.
+    Os temas do grupo so escolhem diferente dentro do mesmo catalogo, entao
+    isto nao custa chamada nenhuma de API -- so o Gemini de cada post.
+
+    Cooldown, repeticao e cota sao contados POR GRUPO: `grupo_jid` separa as
+    contas desde que o grupo de Mulheres existe, entao o que saiu no Geral nao
+    impede o mesmo produto de sair no Esportes, e vice-versa.
+    """
+    limite = max_por_grupo_tematico()
+    if limite <= 0:
+        return []
+
+    grupos = [g for g in load_grupos() if not g.e_geral and g.jid]
+    if not grupos:
+        return []
+
+    saida: list[tuple[GrupoDestino, ScoredOffer, str]] = []
+    for grupo in grupos:
+        escolhidas = _escolhe_para_o_grupo(unique, grupo, rules, temas, limite)
+        if not escolhidas:
+            continue
+        for scored in escolhidas:
+            fonte = by_name.get(scored.offer.source)
+            link = fonte.affiliate_url(scored.offer) if fonte else ""
+            if not link:
+                continue
+            try:
+                text = copywriter.write(scored, link, None, None, None)
+            except Exception as exc:  # noqa: BLE001 - sem IA ainda da pra postar
+                log.warning("Gemini falhou no grupo %s: %s", grupo.nome, exc)
+                text = fallback_copy(scored, link)
+            saida.append((grupo, scored, com_convite(text)))
+        log.info(
+            "%s: %d oferta(s) so para esse grupo.", grupo.nome, len(escolhidas)
+        )
+    return saida
+
+
+def _escolhe_para_o_grupo(
+    unique: dict,
+    grupo: GrupoDestino,
+    rules: Rules,
+    temas: list[str],
+    limite: int,
+) -> list[ScoredOffer]:
+    """Ate `limite` ofertas do catalogo da rodada que servem a este grupo.
+
+    Passa pelas mesmas tres portas do Geral, na mesma ordem: medicao nossa
+    primeiro, preco riscado depois, pista do outro grupo por ultimo. O que muda
+    e so quem concorre -- so entra o que o `grupo.aceita` deixa entrar.
+    """
+    candidatas = [o for o in unique.values() if grupo.aceita(o)]
+    if not candidatas:
+        return []
+
+    with connect() as conn:
+        bloqueados = products_in_cooldown(conn, grupo_jid=grupo.jid)
+        recentes = titulos_recentes(conn, family_cooldown_minutes(), grupo.jid)
+
+        escolhidas: list[ScoredOffer] = []
+        for porta in (score, score_campaign, score_pista):
+            for offer in candidatas:
+                if len(escolhidas) >= limite:
+                    break
+                if offer.product_id in bloqueados:
+                    continue
+                if any(s.offer.product_id == offer.product_id for s in escolhidas):
+                    continue
+                titulo = offer.title
+                if any(mesmo_produto(t, titulo) for t in recentes):
+                    continue
+                if any(mesmo_produto(s.offer.title, titulo) for s in escolhidas):
+                    continue
+                scored = porta(conn, offer, regras_do_tema(offer, rules, temas))
+                if scored is not None:
+                    escolhidas.append(scored)
+            if len(escolhidas) >= limite:
+                break
+
+    return escolhidas[:limite]
 
 
 def em_horario_silencioso(agora: datetime | None = None) -> bool:
