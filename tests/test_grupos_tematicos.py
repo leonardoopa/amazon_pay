@@ -259,3 +259,78 @@ def test_fila_vazia_nao_quebra():
     from promo.pipeline import _reveza_por_grupo
 
     assert _reveza_por_grupo([]) == []
+
+
+# ---------- o achado do grupo tematico que tambem sai no Geral ----------
+
+
+def scored_de(titulo: str):
+    from promo.models import ScoredOffer
+
+    return ScoredOffer(
+        offer=oferta(titulo),
+        baseline=200.0,
+        discount_pct=50.0,
+        observations=0,
+        lowest_ever=False,
+        verified=False,
+    )
+
+
+def test_o_que_casa_a_prioridade_do_geral_sai_no_geral(monkeypatch):
+    """Pedido do dono em 16/09/2026, revertendo o "fica so no grupo dele" do
+    mesmo dia: o Geral e onde esta o publico, e o revezamento derrubou a
+    frequencia dele."""
+    from promo import pipeline
+
+    monkeypatch.setattr(pipeline, "products_in_cooldown", lambda conn, **k: set())
+    monkeypatch.setattr(pipeline, "titulos_recentes", lambda conn, m, j: [])
+
+    temas = pipeline.load_priority()
+
+    assert pipeline._cabe_no_geral(scored_de("Tenis Nike Revolution 7 Corrida"), temas)
+    assert pipeline._cabe_no_geral(scored_de("Perfume Malbec O Boticario 100ml"), temas)
+
+
+def test_o_que_nao_casa_a_prioridade_fica_so_no_grupo(monkeypatch):
+    """O filtro e o que separa "mais volume no Geral" de "o Geral vira a soma
+    dos quatro grupos"."""
+    from promo import pipeline
+
+    monkeypatch.setattr(pipeline, "products_in_cooldown", lambda conn, **k: set())
+    monkeypatch.setattr(pipeline, "titulos_recentes", lambda conn, m, j: [])
+
+    temas = pipeline.load_priority()
+
+    assert not pipeline._cabe_no_geral(scored_de("Organizador De Gaveta Colmeia"), temas)
+
+
+def test_o_cooldown_do_geral_continua_valendo(monkeypatch):
+    """As contas sao separadas por `grupo_jid`: o produto pode nunca ter saido
+    no Esportes e ja ter saido no Geral hoje."""
+    from promo import pipeline
+
+    alvo = scored_de("Tenis Nike Revolution 7 Corrida")
+    monkeypatch.setattr(
+        pipeline, "products_in_cooldown", lambda conn, **k: {alvo.offer.product_id}
+    )
+    monkeypatch.setattr(pipeline, "titulos_recentes", lambda conn, m, j: [])
+
+    assert not pipeline._cabe_no_geral(alvo, pipeline.load_priority())
+
+
+def test_o_mesmo_nome_recente_no_geral_tambem_barra(monkeypatch):
+    """Mesma regra de nome e marca do resto: outro anuncio do mesmo tenis nao
+    vira um segundo post no Geral."""
+    from promo import pipeline
+
+    monkeypatch.setattr(pipeline, "products_in_cooldown", lambda conn, **k: set())
+    monkeypatch.setattr(
+        pipeline,
+        "titulos_recentes",
+        lambda conn, m, j: ["Tenis Nike Revolution 7 Masculino Corrida Preto"],
+    )
+
+    alvo = scored_de("Tenis Nike Revolution 7 Corrida Masculino")
+
+    assert not pipeline._cabe_no_geral(alvo, pipeline.load_priority())
