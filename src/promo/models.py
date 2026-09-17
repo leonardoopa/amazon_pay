@@ -23,6 +23,11 @@ class Offer:
     # Anuncio de loja oficial no ML. Vale citar no post: e sinal de confianca,
     # e o anuncio mais barato quase nunca e de loja oficial.
     official_store: bool = False
+    # O que precisa sair COLADO no preco para ele ser verdadeiro: "em 2x",
+    # "Programe e Poupe". Nasceu da Amazon repassada dos grupos-fonte, onde o
+    # valor anunciado e a parcela ou depende de assinatura -- publicar o numero
+    # sozinho seria preco falso. Vazio significa preco a vista, sem condicao.
+    condicao: str = ""
 
     @property
     def product_id(self) -> str:

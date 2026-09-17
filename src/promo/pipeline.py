@@ -13,6 +13,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .config import (
+    amazon_partner_tag,
     AmazonConfig,
     MercadoLivreConfig,
     MissingConfig,
@@ -77,6 +78,7 @@ from .delivery import NotConnected, WindowClosed, build_delivery
 from .models import Offer, ScoredOffer
 from .scoring import score, score_campaign, score_pista
 from .sources.amazon import Amazon
+from .sources.amazon_grupo import AmazonDoGrupo
 from .sources.mercadolivre import MercadoLivre
 from .sources.ml_ofertas import MLOfertas
 
@@ -931,6 +933,16 @@ def build_sources() -> list:
         sources.append(Amazon(AmazonConfig.load()))
     except MissingConfig as exc:
         log.info("Amazon desativada: %s", exc)
+        # Sem a Creators API ainda da para POSTAR Amazon: o que os
+        # grupos-fonte repassam ja traz produto e preco, e montar o link de
+        # afiliado e so a URL canonica com a nossa tag -- nao precisa de API.
+        # Sem esta fonte o pipeline levantaria KeyError ao pedir o link de uma
+        # oferta `source="amazon"`.
+        tag = amazon_partner_tag()
+        if tag:
+            sources.append(AmazonDoGrupo(tag))
+        else:
+            log.info("Repasse da Amazon desligado: AMAZON_PARTNER_TAG vazia.")
 
     if not sources:
         raise MissingConfig("Nenhuma fonte configurada. Preencha o .env.")
@@ -1184,8 +1196,10 @@ def collect_de_outros_grupos(source) -> list[Offer]:
 
     _stamp("last_grupos_fonte")
 
+    da_amazon: list[Offer] = []
     achadas = []
     for fonte in fontes:
+        da_amazon += _amazon_do_grupo(config, fonte)
         achadas += pistas(
             base_url=config.base_url,
             instancia=config.instance,
@@ -1194,7 +1208,7 @@ def collect_de_outros_grupos(source) -> list[Offer]:
             nome=fonte.get("nome", ""),
             limite_links=int(fonte.get("limite", 15)),
         )
-    if not achadas:
+    if not achadas and not da_amazon:
         return []
 
     # A pista vale para a ORDENACAO desta rodada. Nao vira atributo do
@@ -1238,16 +1252,65 @@ def collect_de_outros_grupos(source) -> list[Offer]:
         except Exception as exc:  # noqa: BLE001 - fonte extra nao derruba a rodada
             log.warning("Nao consegui medir os produtos dos outros grupos: %s", exc)
 
-    found = da_pagina + da_api
+    found = da_pagina + da_api + da_amazon
+    _VISTOS_EM_OUTRO_GRUPO.update(o.external_id for o in da_amazon)
     log.info(
         "Outros grupos: %d pista(s), %d produto(s) no topo da fila "
-        "(%d pela pagina, %d pela API).",
+        "(%d pela pagina, %d pela API, %d da Amazon).",
         len(achadas),
         len(found),
         len(da_pagina),
         len(da_api),
+        len(da_amazon),
     )
     return found
+
+
+def _amazon_do_grupo(config, fonte: dict) -> list[Offer]:
+    """As ofertas da Amazon que este grupo-fonte postou, ja como Offer.
+
+    O link que sai daqui e o CANONICO, sem tag: `affiliate_url` poe a nossa
+    depois, no mesmo ponto em que poe a do ML. Assim a tag deles nunca chega
+    perto do post, nem por engano de copiar e colar.
+
+    O preco vem do texto deles e nao de medicao nossa, entao `verified` fica
+    False e `original_price` so aparece quando eles escreveram o "de". A
+    `condicao` -- "em 2x", "Programe e Poupe" -- viaja junto porque sem ela o
+    numero e falso.
+    """
+    from .sources.amazon_grupo import PRODUTO_CANONICO, ofertas_do_grupo
+    from .sources.grupo_wa import ler_mensagens
+
+    if not amazon_partner_tag():
+        return []
+    try:
+        registros = ler_mensagens(
+            config.base_url,
+            config.instance,
+            config.api_key,
+            fonte["jid"],
+            50,
+        )
+        ofertas = ofertas_do_grupo(registros, origem=fonte.get("nome", ""))
+    except Exception as exc:  # noqa: BLE001 - fonte extra nunca derruba a rodada
+        log.warning("Nao consegui ler a Amazon do grupo %s: %s", fonte.get("nome"), exc)
+        return []
+
+    from .sources.amazon_link import imagem_do_asin
+
+    return [
+        Offer(
+            source="amazon",
+            external_id=o.asin,
+            title=o.titulo,
+            price=o.preco,
+            url=PRODUTO_CANONICO.format(asin=o.asin),
+            original_price=o.preco_antes or None,
+            image_url=imagem_do_asin(o.asin),
+            condicao=o.condicao,
+        )
+        for o in ofertas
+    ]
 
 
 def _due(chave: str, intervalo_horas: float) -> bool:
