@@ -334,3 +334,76 @@ def test_o_mesmo_nome_recente_no_geral_tambem_barra(monkeypatch):
     alvo = scored_de("Tenis Nike Revolution 7 Corrida Masculino")
 
     assert not pipeline._cabe_no_geral(alvo, pipeline.load_priority())
+
+
+# ---------- o recorte do Esportes, ditado pelo dono em 16/09/2026 ----------
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Tenis Nike Revolution 7 Masculino Corrida",
+        "Kit 6 Pares Meias Lupo Cano Medio Esportiva",
+        "Bermuda Adidas Masculina Treino Preta",
+        "Bone Nike Aba Curva Preto",
+        "Relogio Garmin Forerunner 55 GPS",
+        "Whoop 4.0 Pulseira Monitor",
+        "Barrinha Proteina YoPro 25g Caixa 12un",
+        "Creatina Growth 300g Monohidratada",
+        "Smartwatch Amazfit GTS 4 Mini",
+        "Legging Feminina Ausare Compressao",
+    ],
+)
+def test_o_esportes_aceita_o_que_o_dono_listou(titulo):
+    assert "Esportes" in destinos(titulo), titulo
+
+
+@pytest.mark.parametrize(
+    "titulo, armadilha",
+    [
+        ("Boneca Barbie Dreamhouse", "bone"),
+        ("Kit 6 Cuecas Lupo Boxer Algodao", "lupo"),
+        ("Meia Calca Fio 40 Feminina", "meia"),
+        ("Creme Hidratante Meia Noite 200ml", "meia"),
+    ],
+)
+def test_o_esportes_recusa_o_que_so_compartilha_letras(titulo, armadilha):
+    """Tema curto casa palavra de outra categoria.
+
+    "bone" esta dentro de "boneca", "meia" dentro de "meia calca", e a Lupo faz
+    cueca alem de meia esportiva. O `exclui` e o que separa -- mesmo mecanismo
+    que ja tirava cueca do grupo de Mulheres.
+    """
+    assert "Esportes" not in destinos(titulo), f"{titulo} entrou por {armadilha!r}"
+
+
+# ---------- a Lupo no Esportes: a peca decide, nao a marca ----------
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Camisa Lupo Sport Masculina Protecao UV",
+        "Legging Lupo Sport Feminina Compressao",
+        "Short Lupo Running Masculino Com Bolso",
+        "Kit 3 Meias Lupo Cano Medio Esportiva",
+    ],
+)
+def test_a_lupo_de_vestir_esportiva_entra(titulo):
+    """Camisa, legging e short -- os tres que o dono nomeou em 16/09/2026."""
+    assert "Esportes" in destinos(titulo), titulo
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Kit 6 Cuecas Lupo Boxer Algodao",
+        "Meia Calca Lupo Fio 40 Feminina",
+        "Pijama Lupo Infantil Manga Longa",
+    ],
+)
+def test_o_resto_do_armario_lupo_fica_de_fora(titulo):
+    """A Lupo faz o armario inteiro. A marca sozinha traria cueca, meia calca e
+    pijama junto -- so a palavra do produto separa, e e o `exclui` que faz isso.
+    """
+    assert "Esportes" not in destinos(titulo), titulo
