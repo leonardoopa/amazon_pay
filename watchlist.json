@@ -1260,7 +1260,12 @@
         "smartband",
         "monitor cardiaco",
         "mochila de treino",
-        "bolsa esportiva"
+        "bolsa esportiva",
+        "balanca",
+        "balanca corporal",
+        "bioimpedancia",
+        "bicicleta",
+        "spinning"
       ],
       "prioridade": [
         "tenis de corrida",
@@ -1274,7 +1279,14 @@
         "under armour",
         "whey protein",
         "creatina",
-        "camiseta dry fit"
+        "camiseta dry fit",
+        "bicicleta",
+        "balanca"
+      ],
+      "exclui": [
+        "bicicleta de equilibrio",
+        "bicicleta infantil",
+        "triciclo"
       ]
     },
     {
@@ -1378,7 +1390,10 @@
         "organizador",
         "cesto organizador",
         "varal",
-        "escorredor"
+        "escorredor",
+        "balanca",
+        "balanca de cozinha",
+        "balanca corporal"
       ],
       "exclui": [
         "cadeirinha",

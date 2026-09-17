@@ -194,3 +194,68 @@ def test_a_prioridade_e_subconjunto_do_tema():
         grupo = _grupo(pedaco)
         for alvo in grupo.prioridade:
             assert alvo in grupo.temas, f"{pedaco}: {alvo!r} nao e tema do grupo"
+
+
+# ---------- o revezamento na fila ----------
+
+
+def fila(*grupos: str) -> list[tuple]:
+    """(id, copy, image_url, grupo_jid) -- a tupla que `flush_pending` monta."""
+    return [(i, "texto", None, jid) for i, jid in enumerate(grupos)]
+
+
+def ordem(itens: list[tuple]) -> list[str]:
+    from promo.pipeline import _reveza_por_grupo
+
+    return [x[3] or "Geral" for x in _reveza_por_grupo(itens)]
+
+
+def test_os_grupos_se_revezam_na_fila():
+    """O caso medido em 16/09/2026: o Geral levava a rodada inteira.
+
+    `pending_posts` ordena por prioridade e chegada, e os posts dos grupos
+    tematicos sao criados por ultimo -- ficavam sempre no fim.
+    """
+    entrada = fila("", "", "", "", "MULHERES", "MULHERES", "ESPORTES")
+
+    assert ordem(entrada)[:6] == [
+        "Geral",
+        "MULHERES",
+        "ESPORTES",
+        "Geral",
+        "MULHERES",
+        "Geral",
+    ]
+
+
+def test_o_orcamento_de_uma_rodada_alcanca_todos_os_grupos():
+    """Sete vagas (DRIP=100) com quatro grupos esperando: ninguem fica zerado."""
+    entrada = fila(*([""] * 10 + ["MULHERES"] * 5 + ["ESPORTES"] * 5 + ["CASA"] * 5))
+
+    cabem = ordem(entrada)[:7]
+
+    assert set(cabem) == {"Geral", "MULHERES", "ESPORTES", "CASA"}
+
+
+def test_um_grupo_sozinho_nao_muda_de_ordem():
+    """Sem concorrencia o revezamento nao pode reordenar nada -- prioridade e
+    chegada continuam mandando."""
+    from promo.pipeline import _reveza_por_grupo
+
+    entrada = fila("", "", "")
+
+    assert _reveza_por_grupo(entrada) == entrada
+
+
+def test_o_grupo_com_mais_posts_leva_o_resto():
+    """Revezar e dar a vez, nao dividir igual: quem tem fila maior continua
+    saindo depois que os outros esvaziam."""
+    entrada = fila("", "", "", "", "MULHERES")
+
+    assert ordem(entrada) == ["Geral", "MULHERES", "Geral", "Geral", "Geral"]
+
+
+def test_fila_vazia_nao_quebra():
+    from promo.pipeline import _reveza_por_grupo
+
+    assert _reveza_por_grupo([]) == []

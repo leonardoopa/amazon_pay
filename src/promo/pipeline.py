@@ -2272,6 +2272,46 @@ def _gravar_post(conn, scored: ScoredOffer, text: str, grupo_jid: str) -> None:
     )
 
 
+def _reveza_por_grupo(queue: list[tuple]) -> list[tuple]:
+    """A fila reordenada para os grupos se revezarem, um post de cada por vez.
+
+    `pending_posts` ordena por `prioridade DESC, created_at`, o que era a ordem
+    certa enquanto existia um grupo so. Com cinco, ela vira fome: o repasse do
+    outro grupo entra com prioridade 1 e ocupa a frente inteira, e o que sobra
+    sai por ordem de chegada -- e os posts dos grupos tematicos sao criados por
+    ultimo na rodada, depois dos do Geral.
+
+    O efeito estava medido em 16/09/2026, antes desta funcao existir: o grupo
+    de Mulheres teve 49 posts enviados e 49 EXPIRADOS em 24 horas. Metade do
+    que era escolhido para ele morria na fila sem nunca sair.
+
+    O revezamento nao muda quantos posts cabem no orcamento -- isso e o
+    `DRIP_INTERVAL_SECONDS`. Muda de quem sao: em vez de o Geral levar os sete
+    de uma rodada, cada grupo leva a vez dele.
+
+    Dentro de cada grupo a ordem original e preservada, entao prioridade e
+    chegada continuam valendo onde ainda fazem sentido.
+    """
+    if not queue:
+        return []
+
+    por_grupo: dict[str, list[tuple]] = {}
+    for item in queue:
+        por_grupo.setdefault(item[3] or "", []).append(item)
+
+    if len(por_grupo) == 1:
+        return queue
+
+    saida: list[tuple] = []
+    filas = list(por_grupo.values())
+    while filas:
+        for fila in list(filas):
+            saida.append(fila.pop(0))
+            if not fila:
+                filas.remove(fila)
+    return saida
+
+
 def flush_pending(
     budget_seconds: float | None = None,
     sleep=time.sleep,
@@ -2304,10 +2344,12 @@ def flush_pending(
         # um preco com hora; passado o prazo ele deixa de ser medicao e passa a
         # ser chute -- e chute e o que o grupo existe para nao receber.
         velhos = expire_stale_posts(conn)
-        queue = [
-            (row["id"], row["copy"], row["image_url"], row["grupo_jid"])
-            for row in pending_posts(conn)
-        ]
+        queue = _reveza_por_grupo(
+            [
+                (row["id"], row["copy"], row["image_url"], row["grupo_jid"])
+                for row in pending_posts(conn)
+            ]
+        )
 
     if velhos:
         log.warning(
