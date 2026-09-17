@@ -1363,6 +1363,14 @@ def _time_to_discover() -> bool:
     return False
 
 
+# Quantos textos ficam prontos antes de a rodada entregar o primeiro lote.
+#
+# Tres e o meio termo medido: o primeiro post sai depois de ~3 chamadas do
+# Gemini em vez de depois de 25, e ainda ha lote suficiente para o gotejamento
+# ter o que drenar entre uma escrita e outra.
+_LOTE_DE_ENTREGA = 3
+
+
 def _quantas_pistas_cabem(na_fila: int, ja_escolhidas: int) -> int:
     """Quantas ofertas dos grupos-fonte entram na frente da fila agora.
 
@@ -2010,6 +2018,8 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         recentes = recent_headlines(conn)
     drafts: list[tuple[ScoredOffer, str]] = []
     sem_link: list[ScoredOffer] = []
+    # Escritos mas ainda nao entregues. Ver `_LOTE_DE_ENTREGA`.
+    lote: list[tuple[ScoredOffer, str]] = []
 
     for scored in picked:
         link = by_name[scored.offer.source].affiliate_url(scored.offer)
@@ -2034,6 +2044,23 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         # do lote saem com a mesma formula, que e o caso mais visivel de todos.
         recentes.append(text.strip().splitlines()[0].strip())
         drafts.append((scored, text))
+        lote.append((scored, text))
+
+        # Entrega o lote em vez de esperar os 25 textos ficarem prontos.
+        #
+        # O `deliver` ficava depois do laco inteiro, o que era irrelevante
+        # enquanto a rodada selecionava 6. Com o teto do repasse removido em
+        # 16/09/2026 ela passou a selecionar 25, e o Gemini leva de 10 a 40s
+        # por texto: o grupo ficava mudo por VARIOS MINUTOS depois de a
+        # selecao terminar, esperando o ultimo texto de uma fila que ele nem
+        # ia drenar na mesma rodada.
+        #
+        # Entregar de tres em tres corta essa espera para o tempo de tres
+        # textos. Nao muda quantos posts saem -- isso continua sendo o
+        # orcamento de gotejamento, que e dividido entre os lotes.
+        if not dry_run and len(lote) >= _LOTE_DE_ENTREGA:
+            gasto += deliver(lote, max(0.0, orcamento - gasto))
+            lote = []
 
     if sem_link:
         log.warning(
@@ -2058,7 +2085,10 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             for grupo, scored, text in exclusivos:
                 _gravar_post(conn, scored, text, grupo.jid)
 
-    deliver(drafts, max(0.0, orcamento - gasto))
+    # O que sobrou do ultimo lote, mais a drenagem final. Chamado mesmo com
+    # `lote` vazio: e o que drena os posts dos grupos tematicos gravados acima
+    # e o que tiver ficado de rodadas anteriores.
+    deliver(lote, max(0.0, orcamento - gasto))
     return picked
 
 
