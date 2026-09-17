@@ -421,19 +421,29 @@ def max_por_grupo_tematico() -> int:
     return _int("MAX_POR_GRUPO_TEMATICO", 5)
 
 
+# Sentinela de "sem teto" para `MAX_PISTAS_POR_RUN`. Grande o bastante para
+# nunca ser o limite -- quem segura passa a ser so o tamanho da fila.
+SEM_TETO = 10_000
+
+
 def max_pistas_por_run() -> int:
     """Quantas ofertas dos grupos-fonte podem entrar numa rodada so.
 
-    O repasse nao disputa a cota normal -- o pedido do dono e que o que o xet e
-    o Economizei postam saia no nosso grupo. Mas "fora da cota" sem teto nenhum
-    nao e mais uma faixa, e uma torneira: medido em 14/09/2026, uma rodada
-    coleta ~50 pistas contra as 6 vagas de `MAX_OFFERS_PER_RUN`, entao tirar a
-    cota multiplicaria o volume do grupo por sete de uma vez.
+    O repasse nao disputa a cota normal: o pedido do dono e que o que o xet e o
+    Economizei postam do Mercado Livre saia no nosso grupo, "nem que a gente
+    passe da quantidade de publicacoes por rodada" (16/09/2026).
 
-    Volume e o principal sinal de banimento no Baileys, e e um chip que roda
-    isso. Este numero e o freio: repasse na frente da fila, ate aqui.
+    Por isso o padrao virou 0 = SEM TETO. O que continua segurando e a fila
+    (`MAX_PENDING_QUEUE`), e isso nao e formalidade: medido em 16/09/2026, de
+    480 posts criados em 24h apenas 262 foram enviados e 209 expiraram na fila.
+    Selecionar mais nao faz sair mais -- quem decide quanto sai e o gotejamento
+    (`DRIP_INTERVAL_SECONDS`), e ele e o mesmo numero que decide o risco de
+    banimento no Baileys.
+
+    Um numero positivo volta a ser teto, que foi o regime entre 14 e 16/09.
     """
-    return _int("MAX_PISTAS_POR_RUN", 10)
+    valor = _int("MAX_PISTAS_POR_RUN", 0)
+    return SEM_TETO if valor <= 0 else valor
 
 
 def group_invite_url() -> str:

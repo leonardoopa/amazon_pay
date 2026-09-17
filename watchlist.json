@@ -1036,6 +1036,178 @@
     {
       "term": "ferro de passar",
       "max_price": 400
+    },
+    {
+      "term": "televisao",
+      "max_price": 4000
+    },
+    {
+      "term": "smart tv 43",
+      "max_price": 3000
+    },
+    {
+      "term": "suporte de tv",
+      "max_price": 400
+    },
+    {
+      "term": "rack para tv",
+      "max_price": 1500
+    },
+    {
+      "term": "mesa de escritorio",
+      "max_price": 1500
+    },
+    {
+      "term": "robo aspirador",
+      "max_price": 3000
+    },
+    {
+      "term": "lava loucas",
+      "max_price": 4000
+    },
+    {
+      "term": "fogao 4 bocas",
+      "max_price": 3000
+    },
+    {
+      "term": "processador de alimentos",
+      "max_price": 1200
+    },
+    {
+      "term": "jogo de copos",
+      "max_price": 400
+    },
+    {
+      "term": "tabua de corte",
+      "max_price": 300
+    },
+    {
+      "term": "cobertor casal",
+      "max_price": 500
+    },
+    {
+      "term": "balanca de cozinha",
+      "max_price": 200
+    },
+    {
+      "term": "cafeteira expresso",
+      "max_price": null
+    },
+    {
+      "term": "panela de pressao",
+      "max_price": 600
+    },
+    {
+      "term": "jogo de lencol casal",
+      "max_price": 600
+    },
+    {
+      "term": "travesseiro",
+      "max_price": 400
+    },
+    {
+      "term": "chuteira",
+      "max_price": 800
+    },
+    {
+      "term": "camisa de time",
+      "max_price": 500
+    },
+    {
+      "term": "regata esportiva",
+      "max_price": 200
+    },
+    {
+      "term": "short de corrida",
+      "max_price": 250
+    },
+    {
+      "term": "anilha",
+      "max_price": 600
+    },
+    {
+      "term": "kettlebell",
+      "max_price": 500
+    },
+    {
+      "term": "barra de supino",
+      "max_price": 900
+    },
+    {
+      "term": "elastico de treino",
+      "max_price": 200
+    },
+    {
+      "term": "luva de academia",
+      "max_price": 200
+    },
+    {
+      "term": "eliptico",
+      "max_price": 3000
+    },
+    {
+      "term": "relogio esportivo",
+      "max_price": 2000
+    },
+    {
+      "term": "bicicleta spinning",
+      "max_price": 3000
+    },
+    {
+      "term": "balanca de bioimpedancia",
+      "max_price": 400
+    },
+    {
+      "term": "corda de pular",
+      "max_price": 150
+    },
+    {
+      "term": "colchonete",
+      "max_price": 300
+    },
+    {
+      "term": "deo colonia",
+      "max_price": 400
+    },
+    {
+      "term": "lattafa",
+      "max_price": 500
+    },
+    {
+      "term": "al haramain",
+      "max_price": 700
+    },
+    {
+      "term": "creme hidratante perfumado",
+      "max_price": null
+    },
+    {
+      "term": "esmalte gel",
+      "max_price": 200
+    },
+    {
+      "term": "kit manicure",
+      "max_price": 400
+    },
+    {
+      "term": "lixa de unha",
+      "max_price": 150
+    },
+    {
+      "term": "cilios postos",
+      "max_price": 200
+    },
+    {
+      "term": "base facial",
+      "max_price": 300
+    },
+    {
+      "term": "pantene",
+      "max_price": 200
+    },
+    {
+      "term": "jogo de cama",
+      "max_price": 600
     }
   ],
   "_comment_coupon": "Cupons de campanha do MERCADO LIVRE, preenchidos A MAO: sondadas em 08/09/2026, 17 rotas de cupom da API do ML devolvem 404 e a pagina /cupons devolve 403 para servidor, entao nao ha de onde ler sozinho. Campos: `ate` (validade, OBRIGATORIO), `temas` (so entra em titulo que cite um deles), `geral: true` (afirmacao explicita de que vale para tudo -- exigida no lugar de `temas`), `minimo` (valor minimo da compra). Falta de regra NAO e permissao: sem `ate`, ou sem `temas` e sem `geral`, o cupom nao entra. Motivo medido: dos 37 cupons do ML publicados no Promobit, 12 (32%) vinham sem regra nenhuma, 3 ja estavam vencidos e ainda listados como validos, e 6 venciam no mesmo dia. Varios validos para o mesmo produto saem como 'A ou B', porque cupom do ML tem limite de uso. NUNCA sai em oferta da Amazon. ANTES DE PREENCHER: o texto oficial do ML diz que o cupom nao e cumulativo com ofertas vigentes do proprio ML, e este bot so posta item em oferta -- teste um codigo num carrinho real antes de cadastrar, senao o recurso e natimorto. Lista vazia = posts sem cupom, que foi o estado dos 2.953 posts enviados entre 29/08 e 08/09.",
@@ -1172,12 +1344,45 @@
         "cortina",
         "tapete",
         "luminaria",
-        "organizador"
+        "organizador",
+        "unha",
+        "esmalte gel",
+        "gel de unha",
+        "cilios postos",
+        "cilios",
+        "kit manicure",
+        "lixa de unha",
+        "cutimicro",
+        "corretivo",
+        "paleta de sombras",
+        "progressiva"
       ],
       "exclui": [
         "cueca",
         "boxer masculina",
         "sunga"
+      ],
+      "prioridade": [
+        "maquiagem",
+        "batom",
+        "base facial",
+        "corretivo",
+        "rimel",
+        "delineador",
+        "po compacto",
+        "paleta de sombras",
+        "unha",
+        "esmalte",
+        "esmalte gel",
+        "gel de unha",
+        "kit manicure",
+        "shampoo",
+        "condicionador",
+        "mascara capilar",
+        "progressiva",
+        "secador",
+        "chapinha",
+        "escova secadora"
       ]
     },
     {
@@ -1227,7 +1432,33 @@
         "smartband",
         "monitor cardiaco",
         "mochila de treino",
-        "bolsa esportiva"
+        "bolsa esportiva",
+        "balanca",
+        "balanca corporal",
+        "bioimpedancia",
+        "bicicleta",
+        "spinning"
+      ],
+      "prioridade": [
+        "tenis de corrida",
+        "nike",
+        "adidas",
+        "puma",
+        "olympikus",
+        "mizuno",
+        "asics",
+        "new balance",
+        "under armour",
+        "whey protein",
+        "creatina",
+        "camiseta dry fit",
+        "bicicleta",
+        "balanca"
+      ],
+      "exclui": [
+        "bicicleta de equilibrio",
+        "bicicleta infantil",
+        "triciclo"
       ]
     },
     {
@@ -1331,13 +1562,30 @@
         "organizador",
         "cesto organizador",
         "varal",
-        "escorredor"
+        "escorredor",
+        "balanca",
+        "balanca de cozinha",
+        "balanca corporal"
       ],
       "exclui": [
         "cadeirinha",
         "cadeira de bebe",
         "cadeira de alimentacao",
         "bebe conforto"
+      ],
+      "prioridade": [
+        "air fryer",
+        "smart tv",
+        "televisao",
+        "cadeira gamer",
+        "cadeira de escritorio",
+        "robo aspirador",
+        "aspirador de po",
+        "geladeira",
+        "micro-ondas",
+        "jogo de panelas",
+        "tapete",
+        "colchao"
       ]
     }
   ],

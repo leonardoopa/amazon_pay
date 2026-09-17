@@ -132,6 +132,14 @@ class GrupoDestino:
     nome: str
     temas: tuple[str, ...] = ()
     exclui: tuple[str, ...] = ()
+    # Dentro da busca propria do grupo, o que entra primeiro. E o mesmo papel
+    # que o `priority` global faz no Geral: desconto e preco sozinhos decidem
+    # por numero, e o numero maior raramente esta no que define o grupo.
+    #
+    # Vazia quer dizer "o grupo inteiro ja e a prioridade" -- o caso do
+    # Perfumes, onde todo tema e perfume e reservar vaga para perfume dentro
+    # dele nao separaria nada. Decisao do dono em 16/09/2026.
+    prioridade: tuple[str, ...] = ()
 
     @property
     def e_geral(self) -> bool:
@@ -186,6 +194,9 @@ def load_grupos(path: Path | None = None) -> list[GrupoDestino]:
                 nome=(cru.get("nome") or jid).strip(),
                 temas=tuple(sem_acento(x) for x in cru.get("temas") or ()),
                 exclui=tuple(sem_acento(x) for x in cru.get("exclui") or ()),
+                prioridade=tuple(
+                    sem_acento(x) for x in cru.get("prioridade") or ()
+                ),
             )
         )
 
@@ -2126,6 +2137,14 @@ def _escolhe_para_o_grupo(
     if not candidatas:
         return []
 
+    # A prioridade do grupo na frente, a ordem de chegada preservada dentro de
+    # cada metade. Sem isto o grupo de Casa encheria de organizador de gaveta
+    # com 70% off e a air fryer -- o motivo de alguem entrar no grupo -- ficaria
+    # de fora por ter "so" 30%. Mesmo raciocinio do `priority` no Geral.
+    if grupo.prioridade:
+        alvos = list(grupo.prioridade)
+        candidatas.sort(key=lambda o: not tem_tema(o.title, alvos))
+
     with connect() as conn:
         bloqueados = products_in_cooldown(conn, grupo_jid=grupo.jid)
         recentes = titulos_recentes(conn, family_cooldown_minutes(), grupo.jid)
@@ -2253,6 +2272,46 @@ def _gravar_post(conn, scored: ScoredOffer, text: str, grupo_jid: str) -> None:
     )
 
 
+def _reveza_por_grupo(queue: list[tuple]) -> list[tuple]:
+    """A fila reordenada para os grupos se revezarem, um post de cada por vez.
+
+    `pending_posts` ordena por `prioridade DESC, created_at`, o que era a ordem
+    certa enquanto existia um grupo so. Com cinco, ela vira fome: o repasse do
+    outro grupo entra com prioridade 1 e ocupa a frente inteira, e o que sobra
+    sai por ordem de chegada -- e os posts dos grupos tematicos sao criados por
+    ultimo na rodada, depois dos do Geral.
+
+    O efeito estava medido em 16/09/2026, antes desta funcao existir: o grupo
+    de Mulheres teve 49 posts enviados e 49 EXPIRADOS em 24 horas. Metade do
+    que era escolhido para ele morria na fila sem nunca sair.
+
+    O revezamento nao muda quantos posts cabem no orcamento -- isso e o
+    `DRIP_INTERVAL_SECONDS`. Muda de quem sao: em vez de o Geral levar os sete
+    de uma rodada, cada grupo leva a vez dele.
+
+    Dentro de cada grupo a ordem original e preservada, entao prioridade e
+    chegada continuam valendo onde ainda fazem sentido.
+    """
+    if not queue:
+        return []
+
+    por_grupo: dict[str, list[tuple]] = {}
+    for item in queue:
+        por_grupo.setdefault(item[3] or "", []).append(item)
+
+    if len(por_grupo) == 1:
+        return queue
+
+    saida: list[tuple] = []
+    filas = list(por_grupo.values())
+    while filas:
+        for fila in list(filas):
+            saida.append(fila.pop(0))
+            if not fila:
+                filas.remove(fila)
+    return saida
+
+
 def flush_pending(
     budget_seconds: float | None = None,
     sleep=time.sleep,
@@ -2285,10 +2344,12 @@ def flush_pending(
         # um preco com hora; passado o prazo ele deixa de ser medicao e passa a
         # ser chute -- e chute e o que o grupo existe para nao receber.
         velhos = expire_stale_posts(conn)
-        queue = [
-            (row["id"], row["copy"], row["image_url"], row["grupo_jid"])
-            for row in pending_posts(conn)
-        ]
+        queue = _reveza_por_grupo(
+            [
+                (row["id"], row["copy"], row["image_url"], row["grupo_jid"])
+                for row in pending_posts(conn)
+            ]
+        )
 
     if velhos:
         log.warning(
