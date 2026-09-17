@@ -403,6 +403,24 @@ def amazon_partner_tag() -> str:
     return _optional("AMAZON_PARTNER_TAG", "").strip()
 
 
+def max_por_grupo_tematico() -> int:
+    """Quantas ofertas cada grupo tematico recebe por rodada, so para ele.
+
+    Os grupos tematicos -- Mulheres, Esportes, Perfumes, Casa -- ja recebem o
+    que o Geral escolhe e que casa com o tema deles. Isso entrega pouco: a cota
+    do Geral e disputada pelo catalogo inteiro e quem ganha e o maior desconto,
+    que raramente e perfume ou air fryer.
+
+    Este numero e a busca PROPRIA de cada grupo, dentro do catalogo que a
+    rodada ja coletou. O que sai por aqui nao passa pelo Geral.
+
+    Custa uma chamada do Gemini por post. Com 4 grupos e 5 por rodada sao ate
+    20 posts a mais por rodada, entao subir este numero mexe em cota do Gemini
+    e em volume do chip ao mesmo tempo.
+    """
+    return _int("MAX_POR_GRUPO_TEMATICO", 5)
+
+
 def max_pistas_por_run() -> int:
     """Quantas ofertas dos grupos-fonte podem entrar numa rodada so.
 
