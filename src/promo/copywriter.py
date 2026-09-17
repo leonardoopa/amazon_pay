@@ -253,6 +253,7 @@ class Copywriter:
 
         _reject_unfounded_claims(text, scored)
         _reject_preco_de_cupom_solto(text, coupon, preco_com_cupom)
+        _reject_preco_sem_condicao(text, scored.offer)
         text = _enforce_title(text, scored.offer.title)
         return _enforce_disclosure(text, scored.offer.source)
 
@@ -611,6 +612,15 @@ def _facts(
             "Acompanhamos: NAO. O 'De' acima e o preco riscado pela propria loja. "
             "NAO escreva selo de acompanhamento nem sugira medicao nossa."
         )
+    if offer.condicao:
+        # Sem isto o preco sai falso. "De R$ 129 por R$ 45 em 2x" vira
+        # "por R$ 45" -- um terco do valor real -- e o KitKat a R$ 20 do
+        # Programe e Poupe vira R$ 20 avulso, que nao existe. A condicao nao e
+        # enfeite: ela e parte do numero.
+        facts.append(
+            f"Condicao do preco (OBRIGATORIA na mesma linha do preco, escreva "
+            f"exatamente assim): {offer.condicao}"
+        )
     if avoid:
         # O modelo nao tem memoria entre chamadas: sem isso ele reencontra a
         # mesma piada boa toda vez, e o grupo le a mesma formula o dia inteiro.
@@ -702,6 +712,30 @@ def _reject_preco_de_cupom_solto(
             )
 
 
+def _reject_preco_sem_condicao(text: str, offer) -> None:
+    """O preco com condicao precisa dizer a condicao, na linha do preco.
+
+    Mesmo desenho do `_reject_preco_de_cupom_solto`, e pela mesma razao: o
+    numero so e verdadeiro atrelado a condicao. "R$ 45" quando a oferta e
+    "R$ 45 em 2x" e um terco do valor real saindo com o nosso link do lado.
+
+    Levanta em vez de remendar -- quem chama cai no `fallback_copy`, que monta
+    a linha certa por construcao.
+    """
+    condicao = getattr(offer, "condicao", "")
+    if not condicao:
+        return
+
+    alvo = _normaliza(condicao)
+    for linha in text.splitlines():
+        if "R$" in linha and alvo in _normaliza(linha):
+            return
+    raise RuntimeError(
+        f"A linha do preco nao traz a condicao {condicao!r}; sem ela o valor "
+        "anunciado esta errado."
+    )
+
+
 def _enforce_disclosure(text: str, source: str) -> str:
     """Garante a linha de divulgacao, exatamente uma vez.
 
@@ -788,6 +822,10 @@ def fallback_copy(
             if coupon and preco_com_cupom is not None
             else f"De R$ {brl(scored.baseline)} por *R$ {brl(offer.price)}*"
         )
+    if offer.condicao:
+        # Colado no numero, nao numa linha propria: quem le o preco tem que
+        # ler a condicao no mesmo folego, senao o valor esta errado.
+        preco = f"{preco} {offer.condicao}"
     lines = [offer.title, "", preco]
     if coupon:
         lines.append(
