@@ -2124,11 +2124,15 @@ def _rodada_dos_grupos(
     if limite <= 0:
         return []
 
-    grupos = [g for g in load_grupos() if not g.e_geral and g.jid]
+    todos = load_grupos()
+    grupos = [g for g in todos if not g.e_geral and g.jid]
     if not grupos:
         return []
 
+    geral = next((g for g in todos if g.e_geral), None)
     saida: list[tuple[GrupoDestino, ScoredOffer, str]] = []
+    para_o_geral = 0
+
     for grupo in grupos:
         escolhidas = _escolhe_para_o_grupo(unique, grupo, rules, temas, limite)
         if not escolhidas:
@@ -2143,11 +2147,54 @@ def _rodada_dos_grupos(
             except Exception as exc:  # noqa: BLE001 - sem IA ainda da pra postar
                 log.warning("Gemini falhou no grupo %s: %s", grupo.nome, exc)
                 text = fallback_copy(scored, link)
-            saida.append((grupo, scored, com_convite(text)))
+            text = com_convite(text)
+            saida.append((grupo, scored, text))
+
+            # O achado do grupo tematico tambem sai no Geral quando ele casa a
+            # prioridade DO GERAL.
+            #
+            # Isto reverte a regra de 16/09/2026 ("fica so no grupo dele"), a
+            # pedido do dono no mesmo dia: o Geral e onde esta o publico, e o
+            # revezamento da fila derrubou a frequencia dele. Reverter inteiro
+            # somaria os quatro grupos no principal; o filtro pela prioridade
+            # do Geral e o que separa "mais volume" de "tudo".
+            #
+            # Mesmo texto, sem segunda chamada do Gemini: e o mesmo produto
+            # pelo mesmo preco, e reescrever pagaria duas vezes para dizer a
+            # mesma coisa.
+            if geral is not None and _cabe_no_geral(scored, temas):
+                saida.append((geral, scored, text))
+                para_o_geral += 1
+
         log.info(
-            "%s: %d oferta(s) so para esse grupo.", grupo.nome, len(escolhidas)
+            "%s: %d oferta(s) pela busca propria.", grupo.nome, len(escolhidas)
+        )
+
+    if para_o_geral:
+        log.info(
+            "%d dessas tambem saem no Geral: casam a prioridade dele.",
+            para_o_geral,
         )
     return saida
+
+
+def _cabe_no_geral(scored: ScoredOffer, temas: list[str]) -> bool:
+    """O achado de um grupo tematico tambem serve ao Geral?
+
+    Duas condicoes, e as duas importam. A prioridade do Geral e o filtro que o
+    dono pediu -- sem ele o Geral viraria a soma dos quatro grupos. O cooldown
+    do Geral e o de sempre: o produto pode nunca ter saido no Esportes e ja ter
+    saido no Geral hoje, porque as contas sao separadas por `grupo_jid`.
+    """
+    if not e_prioritaria(scored.offer, temas):
+        return False
+
+    with connect() as conn:
+        if scored.offer.product_id in products_in_cooldown(conn, grupo_jid=""):
+            return False
+        recentes = titulos_recentes(conn, family_cooldown_minutes(), "")
+
+    return not any(mesmo_produto(t, scored.offer.title) for t in recentes)
 
 
 def _escolhe_para_o_grupo(
