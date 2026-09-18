@@ -850,3 +850,44 @@ def test_o_perfume_feminino_continua_no_grupo_de_mulheres():
         "Body Splash Carolina Herrera 212 Vip Rose Feminino 250ml",
     ):
         assert "Mulheres" in destinos(titulo), titulo
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Percarbonato De Sodio 100% Tira Manchas Alvejante 1kg",
+        "Mega Maltodextrin Probiotica 1kg Carboidrato Em Po Sabor Laranja",
+        "Relogio Casio G-shock Ga-2100 Carbon Core Guard",
+        "Creme De Maos Loccitane En Provence Barbotine 30ml",
+        "Suplemento Max Titanium Mass 17500 Carboidratos 3kg",
+    ],
+)
+def test_o_arbo_nao_traz_carboidrato(titulo):
+    """"arbo" (a linha Arbo do Boticario) esta dentro de "percarbonato",
+    "carboidrato", "carbon" e "barbotine".
+
+    A maltodextrina esta na lista porque foi o caso que o dono viu no grupo em
+    18/09/2026. Ela saiu por outro motivo -- o post foi criado antes de o
+    `exige` subir e ja estava na fila com o destino gravado --, mas o tema que
+    a escolheu era este, e ele continuaria sendo a porta.
+
+    Medido no mesmo dia contra os 22.695 titulos do catalogo: "arbo" casava 64
+    e trazia ZERO admissao propria. Os 7 que passavam pelo `exige` eram body
+    splash da Barbour's, e esses entram pelo tema "body splash" de qualquer
+    jeito. Ou seja, o termo era peso morto com potencial de vazamento: bastava
+    um carboidrato citar "eau de" ou "fragrancia" para entrar.
+    """
+    assert "Perfumes" not in destinos(titulo), titulo
+
+
+def test_o_arbo_de_verdade_continua_entrando():
+    """O unico Arbo real na carteira, entao a forma composta nao perde nada."""
+    assert "Perfumes" in destinos(
+        "Kit Presente Perfume Arbo + Body Spray - O Boticario"
+    )
+
+
+def test_o_body_splash_continua_entrando_por_ele_mesmo():
+    """A Barbour's entra pelo tema "body splash", que e legitimo -- nao pelo
+    "arbo". Tirar o "arbo" nao pode derrubar produto perfumado de verdade."""
+    assert "Perfumes" in destinos("Body Splash Bold E Seduction Homme Barbour's 200ml")
