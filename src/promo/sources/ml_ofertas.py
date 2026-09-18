@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import replace
 
 import httpx
@@ -32,7 +33,8 @@ import httpx
 from ..models import Offer
 
 PROVIDER = "ml_ofertas"
-OFERTAS_URL = "https://www.mercadolivre.com.br/ofertas"
+SITE = "https://www.mercadolivre.com.br"
+OFERTAS_URL = f"{SITE}/ofertas"
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -248,6 +250,49 @@ class MLOfertas:
         )
         return achadas
 
+    def landing_com_preco(self, caminho: str) -> list[Offer]:
+        """Rota A: os cards da landing que ja vem com preco.
+
+        `vitrine_categoria` recebe o caminho da pagina, e nao um ID de
+        categoria: e a mesma ideia -- saber de onde o produto veio --, e e o que
+        deixa a prioridade por origem valer para estas paginas tambem.
+        """
+        resposta = self._client.get(f"{SITE}{caminho}")
+        resposta.raise_for_status()
+        if "account-verification" in str(resposta.url):
+            raise ParseFailed(
+                f"{caminho} redirecionou para verificacao de conta -- esta "
+                "pagina nao responde a requisicao de servidor."
+            )
+
+        achadas = [
+            replace(oferta, vitrine_categoria=caminho)
+            for card in _cards_com_preco(_payload(resposta.text))
+            if (oferta := _offer(card))
+        ]
+        log.info("landing %s: %d oferta(s) com preco", caminho, len(achadas))
+        return achadas
+
+    def landing_catalogo(self, caminho: str) -> list[tuple[str, str]]:
+        """Rota B: (id de catalogo, titulo) dos produtos linkados na landing.
+
+        Sem preco -- a pagina nao traz. Quem precifica e a API de catalogo, que
+        a rodada ja chama para os produtos que acompanha.
+        """
+        resposta = self._client.get(f"{SITE}{caminho}")
+        resposta.raise_for_status()
+        if "account-verification" in str(resposta.url):
+            raise ParseFailed(
+                f"{caminho} redirecionou para verificacao de conta -- esta "
+                "pagina nao responde a requisicao de servidor."
+            )
+
+        vistos: dict[str, str] = {}
+        for slug, mlb in CATALOGO.findall(resposta.text):
+            vistos.setdefault(mlb, titulo_do_slug(slug))
+        log.info("landing %s: %d produto(s) de catalogo", caminho, len(vistos))
+        return list(vistos.items())
+
     # A vitrine nao tem "reconsulta por ID": ela e uma foto do momento. Produto
     # que saiu dela some sozinho, e o historico dele continua sendo mantido
     # pela coleta de catalogo se ele tambem estiver na watchlist.
@@ -262,3 +307,60 @@ class MLOfertas:
         from .affiliate import resolve_affiliate_link
 
         return resolve_affiliate_link(self._builder, offer)
+
+
+# ---------- landing pages (/c/ e /e/) ----------
+#
+# Sao paginas diferentes da vitrine: curadoria ("Beleza Premium", "mais
+# vendidos da categoria") em vez da campanha de ofertas do dia. O dono mandou
+# dez URLs em 18/09/2026 e pediu que a coleta lesse elas.
+#
+# Oito nao dao: todo `lista.mercadolivre.com.br` responde 200 mas redireciona
+# para `/gz/account-verification`, e passar disso seria burlar deteccao de
+# robo. As que sobraram estao no `landing_pages` do watchlist.
+#
+# Duas formas, porque o ML monta as duas paginas diferente:
+#
+#   Rota A (`/c/...`)  o card ja vem com preco, no mesmo formato da vitrine --
+#                      o parser e o mesmo, so muda onde o card mora no payload.
+#   Rota B (`/e/...`)  a pagina traz so link de produto de catalogo, sem preco.
+#                      O ID sai do permalink e o preco vem da API que ja
+#                      usamos. O titulo sai do proprio slug: ele e descritivo
+#                      ("idole-lancome-perfume-feminino-eau-de-parfum-100ml") e
+#                      nao custa uma segunda chamada.
+
+CATALOGO = re.compile(r"/([a-z0-9][a-z0-9-]{8,})/p/(MLB\d{6,})")
+
+
+def _cards_com_preco(no, achados: list | None = None, nivel: int = 0) -> list:
+    """Todo card do payload que tenha componente de preco.
+
+    Busca em profundidade porque a landing muda o caminho de pagina para
+    pagina: em `/c/esportes-e-fitness` os cards moram sob `components[].items`,
+    em outra sob `containers[]`. Fixar o caminho daria coleta vazia e silenciosa
+    a cada remodelagem do ML.
+    """
+    achados = achados if achados is not None else []
+    if nivel > 14:
+        return achados
+    if isinstance(no, dict):
+        componentes = no.get("components")
+        if isinstance(componentes, list) and any(
+            c.get("type") == "price" for c in componentes if isinstance(c, dict)
+        ):
+            achados.append(no)
+        for valor in no.values():
+            _cards_com_preco(valor, achados, nivel + 1)
+    elif isinstance(no, list):
+        for valor in no:
+            _cards_com_preco(valor, achados, nivel + 1)
+    return achados
+
+
+def titulo_do_slug(slug: str) -> str:
+    """"idole-lancome-perfume-feminino-100ml" -> "Idole Lancome Perfume ...".
+
+    O titulo importa mais que estetica: e nele que tema, prioridade e exclusao
+    casam. Sem titulo o produto nao entra em grupo nenhum.
+    """
+    return " ".join(p.capitalize() for p in slug.split("-") if p)
