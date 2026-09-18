@@ -207,12 +207,25 @@ def test_o_grupo_de_mulheres_aceita_o_que_e_dele():
 
     for titulo in (
         "Kit Wella Professionals Invigo Nutri-Enrich",
-        "Perfume Natura Homem Masculino 100ml",
+        "Perfume Natura Essencial Feminino 100ml",
         "Calca Legging Feminina Ausare Compressao",
         "Protetor Solar Facial FPS 70 La Roche-Posay",
         "Kit Body Splash Victoria's Secret",
     ):
         assert nichado.aceita(oferta(titulo)), titulo
+
+
+def test_o_perfume_masculino_deixou_de_entrar_em_18_09_2026():
+    """Este caso estava na lista de aceitos ate 18/09/2026, com "Perfume Natura
+    Homem Masculino" como exemplo do que o grupo recebia. O dono desfez: "tudo
+    que tiver masculino, nao e pra ser enviado no grupo das mulheres".
+
+    Nao era hipotese -- 17 dos 119 posts enviados ao grupo nas 48h anteriores
+    eram masculinos.
+    """
+    nichado = _por_nome("Mulheres")
+
+    assert not nichado.aceita(oferta("Perfume Natura Homem Masculino 100ml"))
 
 
 # ---------- exclusao por grupo ----------
