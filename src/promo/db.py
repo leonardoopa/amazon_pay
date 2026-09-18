@@ -911,6 +911,26 @@ def pending_posts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def enviados_na_janela(
+    conn: sqlite3.Connection, grupo_jid: str, minutos: int
+) -> int:
+    """Quantos posts ja sairam NESTE grupo nos ultimos `minutos`.
+
+    Conta por `sent_at` e cai para `created_at` no post antigo, que e gravado
+    antes de a coluna existir. A rodada nao tem duracao fixa e a drenagem roda
+    varias vezes dentro dela, entao um teto de volume so fecha se cada chamada
+    reler quanto ja saiu -- contador em memoria zeraria a cada lote.
+    """
+    if minutos <= 0:
+        return 0
+    desde = _iso(now() - timedelta(minutes=minutos))
+    return conn.execute(
+        "SELECT COUNT(*) FROM posts WHERE grupo_jid = ? AND status = 'sent' "
+        "AND COALESCE(sent_at, created_at) >= ?",
+        (grupo_jid, desde),
+    ).fetchone()[0]
+
+
 def mark_post_sent(conn: sqlite3.Connection, post_id: int) -> None:
     conn.execute(
         "UPDATE posts SET status = 'sent', sent_at = ? WHERE id = ?",

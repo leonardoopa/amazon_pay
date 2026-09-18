@@ -148,17 +148,34 @@ def _grupo(pedaco: str) -> GrupoDestino:
 
 
 def test_cada_grupo_tem_a_propria_prioridade():
-    """Pedido do dono em 16/09/2026, com o Perfumes de fora."""
+    """Pedido do dono em 16/09/2026, e o Perfumes entrou em 17/09/2026."""
     assert _grupo("Esportes").prioridade
     assert _grupo("Casa").prioridade
     assert _grupo("Mulheres").prioridade
+    assert _grupo("Perfumes").prioridade
 
 
-def test_o_perfumes_nao_tem_prioridade_de_proposito():
-    """O grupo inteiro ja e perfume: reservar vaga para perfume dentro dele
-    nao separaria nada. Decisao do dono, registrada para nao virar 'esqueceram
-    de preencher'."""
-    assert _grupo("Perfumes").prioridade == ()
+def test_a_prioridade_de_perfumes_e_a_marca_importada():
+    """O Perfumes ficou sem prioridade ate 17/09/2026 com o argumento de que o
+    grupo inteiro ja e perfume. O dono desfez: dentro do grupo nao da na mesma,
+    porque a oferta abundante e Natura e Boticario e a que converte e a
+    importada. As marcas abaixo sao as que ele nomeou."""
+    prioridade = _grupo("Perfumes").prioridade
+
+    for marca in ("gaultier", "azzaro", "versace", "givenchy", "dior"):
+        assert marca in prioridade, marca
+    assert any("212" in alvo for alvo in prioridade)
+
+
+def test_a_fila_nao_e_tema_do_esportes():
+    """"fila esportivo" nao casava titulo nenhum em 24.242 do catalogo: o ML
+    escreve "Tenis Fila Vector". A marca sozinha nao serve -- "fila" esta
+    dentro de "afiliado" e de "filamento"."""
+    esportes = _grupo("Esportes")
+
+    assert "fila esportivo" not in esportes.temas
+    assert "tenis fila" in esportes.temas
+    assert "fila" not in esportes.temas
 
 
 def test_a_prioridade_do_grupo_passa_na_frente():
@@ -190,7 +207,7 @@ def test_a_prioridade_de_mulheres_cobre_maquiagem_cabelo_e_unha():
 def test_a_prioridade_e_subconjunto_do_tema():
     """Prioridade que nao e tema do grupo nunca seria escolhida: a oferta e
     filtrada por `aceita` antes de a ordem importar."""
-    for pedaco in ("Esportes", "Casa", "Mulheres"):
+    for pedaco in ("Esportes", "Casa", "Mulheres", "Perfumes"):
         grupo = _grupo(pedaco)
         for alvo in grupo.prioridade:
             assert alvo in grupo.temas, f"{pedaco}: {alvo!r} nao e tema do grupo"
@@ -407,3 +424,368 @@ def test_o_resto_do_armario_lupo_fica_de_fora(titulo):
     pijama junto -- so a palavra do produto separa, e e o `exclui` que faz isso.
     """
     assert "Esportes" not in destinos(titulo), titulo
+
+
+def outra(numero: int, titulo: str) -> Offer:
+    """Oferta com id proprio: `oferta()` repete o MLB1, e product_id igual faz o
+    segundo item ser descartado como repetido."""
+    return Offer(
+        source="mercadolivre",
+        external_id=f"MLB{numero}",
+        title=titulo,
+        price=100.0,
+        url=f"https://produto.mercadolivre.com.br/MLB-{numero}",
+    )
+
+
+
+# ---------- o recorte de 17/09/2026: perfume importado e maquiagem de marca ----
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Perfume Carolina Herrera 212 Vip Rose Edp 80ml Feminino",
+        "Perfume Jean Paul Gaultier Le Male Elixir 125ml",
+        "Perfume Rabanne Invictus Elixir Parfum 200ml Masculino",
+        "Perfume Versace Eros Parfum 100ml",
+        "Perfume Yves Saint Laurent Libre Feminino 30ml",
+        "Perfume Montblanc Legend Edp 100ml",
+        "Prada Paradoxe Edp 90ml",
+    ],
+)
+def test_o_perfume_importado_entra_no_grupo_de_perfumes(titulo):
+    """As marcas que o dono nomeou em 17/09/2026."""
+    assert "Perfumes" in destinos(titulo), titulo
+
+
+@pytest.mark.parametrize(
+    "titulo, armadilha",
+    [
+        ("Camisa Polo Ralph Lauren Masculina Algodao Pima", "ralph lauren"),
+        ("Conjunto Camiseta E Bermuda Gucci Azul", "gucci"),
+        ("Scarpin Slingback Bebece Salto Taca", "ck be"),
+        ("Cafe Em Capsula Dolce Gusto Caixa 16un", "dolce"),
+    ],
+)
+def test_o_perfumes_recusa_a_marca_que_nao_e_perfume(titulo, armadilha):
+    """Medido contra os 24.242 titulos do catalogo de producao em 17/09/2026.
+
+    "ralph lauren" sozinho casava 98 titulos e nenhum era perfume; "ck be"
+    casava "bebece"; "dolce" casaria a capsula de cafe, que e tema prioritario
+    do Geral. O `exclui` nao resolveria: `e_barrada` devolve o item quando ele
+    casa um tema, e a marca seria o tema.
+    """
+    assert "Perfumes" not in destinos(titulo), f"{titulo} entrou por {armadilha!r}"
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Corretivo Too Faced Born This Way Super Coverage",
+        "Gloss Fran By Franciny Ehlke Liphoney Mel",
+        "Protetor Solar Em Bastao Antimanchas Fps 90 Sallve",
+        "Shampoo Anticaspa Dercos Ds Vichy 200ml",
+        "Base Liquida Mac Cosmetics Studio Fix",
+    ],
+)
+def test_a_maquiagem_de_marca_entra_no_grupo_de_mulheres(titulo):
+    """"tem MUITA COISA PARA MULHER, maquiagens de tudo que e marca, boas
+    marcas, quero que essas maquiagens sejam prioridade" -- 17/09/2026."""
+    assert "Mulheres" in destinos(titulo), titulo
+
+
+@pytest.mark.parametrize(
+    "titulo, armadilha",
+    [
+        ("Pasta De Amendoim Dr. Peanut Com Whey 600g", "amend"),
+        ("Barra Proteina Whey Bar Creamy Probiotica 12x38g", "creamy"),
+    ],
+)
+def test_o_mulheres_recusa_o_que_so_compartilha_letras(titulo, armadilha):
+    """"amend" esta dentro de "amendoim" (51 titulos do catalogo, quase todos
+    comida) e "creamy" dentro de "whey bar creamy". Por isso os temas sao
+    "amend essencial" e "creamy skincare", e nao a marca sozinha."""
+    assert "Mulheres" not in destinos(titulo), f"{titulo} entrou por {armadilha!r}"
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Tenis Fila Vector Original Masculino Academia E Corrida",
+        "Camiseta Feminina Essentials Adizero Adidas Preto",
+        "Smartwatch Amazfit Bip Max Gps Amoled",
+        "Conjunto Academia Feminino Moda Fitness Marrom",
+    ],
+)
+def test_o_esportes_aceita_o_recorte_de_17_09(titulo):
+    assert "Esportes" in destinos(titulo), titulo
+
+
+# ---------- o teto do Geral por hora ----------
+
+
+def test_sem_env_nao_ha_teto():
+    """O teto e opcional: sem a variavel o revezamento e o de sempre."""
+    from promo.config import max_do_geral_por_hora
+
+    assert max_do_geral_por_hora() == 0
+
+
+def test_o_teto_do_geral_vem_do_env(monkeypatch: pytest.MonkeyPatch):
+    from promo.config import max_do_geral_por_hora
+
+    monkeypatch.setenv("MAX_DO_GERAL_POR_HORA", "12")
+
+    assert max_do_geral_por_hora() == 12
+
+
+def test_o_teto_corta_a_fila_do_geral():
+    """Com duas vagas, o terceiro post do Geral fica para a proxima drenagem --
+    e a vaga dele vai para os grupos tematicos, que continuam na fila."""
+    from promo.pipeline import _reveza_por_grupo
+
+    entrada = fila("", "", "", "", "MULHERES", "ESPORTES")
+
+    saida = [x[3] or "Geral" for x in _reveza_por_grupo(entrada, 2)]
+
+    assert saida.count("Geral") == 2
+    assert saida.count("MULHERES") == 1
+    assert saida.count("ESPORTES") == 1
+
+
+def test_teto_zerado_tira_o_geral_da_drenagem():
+    """Bateu o teto da hora: o Geral sai da fila inteiro e os outros drenam."""
+    from promo.pipeline import _reveza_por_grupo
+
+    entrada = fila("", "", "MULHERES")
+
+    saida = [x[3] or "Geral" for x in _reveza_por_grupo(entrada, 0)]
+
+    assert saida == ["MULHERES"]
+
+
+def test_teto_zerado_com_so_o_geral_na_fila_nao_manda_nada():
+    from promo.pipeline import _reveza_por_grupo
+
+    assert _reveza_por_grupo(fila("", ""), 0) == []
+
+
+def test_sem_teto_o_revezamento_nao_muda():
+    """None e "sem teto": o comportamento anterior tem que ficar identico."""
+    from promo.pipeline import _reveza_por_grupo
+
+    entrada = fila("", "", "", "", "MULHERES")
+
+    assert _reveza_por_grupo(entrada, None) == _reveza_por_grupo(entrada)
+
+
+def test_o_teto_conta_o_que_ja_saiu_na_hora(monkeypatch: pytest.MonkeyPatch):
+    """Com a entrega em lotes a rodada drena varias vezes. Se cada chamada nao
+    reler o banco, o teto valeria por lote e o total seria o teto vezes o
+    numero de lotes."""
+    from promo import pipeline
+
+    monkeypatch.setenv("MAX_DO_GERAL_POR_HORA", "12")
+    monkeypatch.setattr(pipeline, "enviados_na_janela", lambda conn, jid, m: 9)
+
+    assert pipeline._vagas_do_geral(None) == 3
+
+
+def test_o_teto_nao_fica_negativo(monkeypatch: pytest.MonkeyPatch):
+    from promo import pipeline
+
+    monkeypatch.setenv("MAX_DO_GERAL_POR_HORA", "12")
+    monkeypatch.setattr(pipeline, "enviados_na_janela", lambda conn, jid, m: 20)
+
+    assert pipeline._vagas_do_geral(None) == 0
+
+
+# ---------- a reserva de prioridade dentro do grupo ----------
+
+
+def test_a_reserva_padrao_e_duas_vagas():
+    from promo.config import reserva_de_prioridade_do_grupo
+
+    assert reserva_de_prioridade_do_grupo() == 2
+
+
+def test_a_reserva_vem_do_env(monkeypatch: pytest.MonkeyPatch):
+    from promo.config import reserva_de_prioridade_do_grupo
+
+    monkeypatch.setenv("RESERVA_DE_PRIORIDADE_DO_GRUPO", "3")
+
+    assert reserva_de_prioridade_do_grupo() == 3
+
+
+def test_a_reserva_garante_vaga_para_a_prioridade(
+    banco_em_memoria, monkeypatch: pytest.MonkeyPatch
+):
+    """O caso que motivou a reserva: o item prioritario so passa pela SEGUNDA
+    porta, e sem vaga guardada os itens comuns da primeira levam tudo.
+
+    E o normal em Perfumes -- perfume importado quase nunca tem baseline medida
+    por nos, e o Natura de sempre tem.
+    """
+    from promo import pipeline
+    from promo.config import Rules
+    from promo.models import ScoredOffer
+
+    grupo = _grupo("Perfumes")
+    # Familias e ids diferentes de proposito: `mesmo_produto` e o product_id
+    # derrubariam cinco variacoes do mesmo nome antes de a reserva importar.
+    comuns = [
+        outra(id_, titulo)
+        for id_, titulo in enumerate(
+            (
+                "Perfume Natura Essencial Exclusivo 100ml",
+                "Perfume Boticario Malbec Club 100ml",
+                "Perfume Avon Attraction Rush 75ml",
+                "Perfume Jequiti Sedutor Noir 25ml",
+                "Perfume Eudora Siage Cachos 50ml",
+            )
+        )
+    ]
+    prioritario = outra(9, "Perfume Rabanne Invictus Elixir Parfum 200ml")
+    unique = {o.title: o for o in [*comuns, prioritario]}
+
+    def marca(offer: Offer) -> ScoredOffer:
+        return ScoredOffer(
+            offer=offer,
+            baseline=200.0,
+            discount_pct=50.0,
+            observations=7,
+            lowest_ever=False,
+            verified=True,
+        )
+
+    # Porta 1 so aceita o que nao e prioritario; porta 2 aceita o prioritario.
+    monkeypatch.setattr(
+        pipeline,
+        "score",
+        lambda conn, o, r: None if o is prioritario else marca(o),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "score_campaign",
+        lambda conn, o, r: marca(o) if o is prioritario else None,
+    )
+    monkeypatch.setattr(pipeline, "score_pista", lambda conn, o, r: None)
+
+    escolhidas = pipeline._escolhe_para_o_grupo(
+        unique, grupo, Rules.load(), [], limite=5
+    )
+
+    titulos = [s.offer.title for s in escolhidas]
+    assert prioritario.title in titulos
+    assert len(titulos) == 5
+
+
+def test_sem_reserva_a_prioridade_perde_a_vaga(
+    banco_em_memoria, monkeypatch: pytest.MonkeyPatch
+):
+    """O mesmo cenario com a reserva desligada, para o teste acima nao passar
+    por acaso."""
+    from promo import pipeline
+    from promo.config import Rules
+    from promo.models import ScoredOffer
+
+    monkeypatch.setenv("RESERVA_DE_PRIORIDADE_DO_GRUPO", "0")
+
+    grupo = _grupo("Perfumes")
+    # Familias e ids diferentes de proposito: `mesmo_produto` e o product_id
+    # derrubariam cinco variacoes do mesmo nome antes de a reserva importar.
+    comuns = [
+        outra(id_, titulo)
+        for id_, titulo in enumerate(
+            (
+                "Perfume Natura Essencial Exclusivo 100ml",
+                "Perfume Boticario Malbec Club 100ml",
+                "Perfume Avon Attraction Rush 75ml",
+                "Perfume Jequiti Sedutor Noir 25ml",
+                "Perfume Eudora Siage Cachos 50ml",
+            )
+        )
+    ]
+    prioritario = outra(9, "Perfume Rabanne Invictus Elixir Parfum 200ml")
+    unique = {o.title: o for o in [*comuns, prioritario]}
+
+    def marca(offer: Offer) -> ScoredOffer:
+        return ScoredOffer(
+            offer=offer,
+            baseline=200.0,
+            discount_pct=50.0,
+            observations=7,
+            lowest_ever=False,
+            verified=True,
+        )
+
+    monkeypatch.setattr(
+        pipeline,
+        "score",
+        lambda conn, o, r: None if o is prioritario else marca(o),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "score_campaign",
+        lambda conn, o, r: marca(o) if o is prioritario else None,
+    )
+    monkeypatch.setattr(pipeline, "score_pista", lambda conn, o, r: None)
+
+    escolhidas = pipeline._escolhe_para_o_grupo(
+        unique, grupo, Rules.load(), [], limite=5
+    )
+
+    assert prioritario.title not in [s.offer.title for s in escolhidas]
+
+
+# ---------- a marca obrigatoria do Perfumes ----------
+
+
+@pytest.mark.parametrize(
+    "titulo, armadilha",
+    [
+        ("Whey Protein Concentrado Sabor Natural 1kg Growth", "natura"),
+        ("Percarbonato De Sodio 100% Puro Tira Manchas 1kg", "arbo"),
+        ("Testo Essencial Formula Com Feno Grego E Arginina", "essencial"),
+        ("Fio Dental Reach Essencial Menta 100m Johnson's", "essencial"),
+        ("Camiseta Hugo Boss Masculina Regular Thompson", "hugo boss"),
+        ("Polo Piquet Classica Reserva Malbec Lisa G", "malbec"),
+        ("Bota Invictus Arion 2.0 6pol Leve E Reforcada", "invictus"),
+        ("Eudora Shampoo E Mascara Capilar Siage Cica-therapy", "eudora"),
+    ],
+)
+def test_o_perfumes_so_aceita_quem_diz_que_e_perfume(titulo, armadilha):
+    """Medido em 17/09/2026 contra os 22.695 titulos do catalogo: o grupo
+    aceitava 759 produtos e 233 nao eram perfume. Com o `exige` sobraram 26, e
+    esses 26 sao perfume de verdade -- so nao trazem a palavra no titulo.
+
+    O `exclui` nao resolveria: `e_barrada` devolve o item quando ele casa um
+    tema, e aqui quem erra e o tema.
+    """
+    assert "Perfumes" not in destinos(titulo), f"{titulo} entrou por {armadilha!r}"
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Perfume Natura Essencial Exclusivo Masculino 100ml",
+        "212 Vip Rose EDP 30ml Feminino - Carolina Herrera",
+        "Prada Paradoxe Edp 90ml",
+        "Lattafa Bade'e Al Oud For Glory 100ml",
+        "Hugo Boss Bottled Infinite Masculino Edp 200ml",
+        "Rabanne Lady Million EDP 80ml Para Feminino",
+        "Body Splash Carolina Herrera 212 Vip Rose 250ml",
+    ],
+)
+def test_o_perfume_sem_a_palavra_no_titulo_continua_entrando(titulo):
+    """O `exige` nao pode cortar perfume de verdade. Por isso a lista tem "edp",
+    "edt", "eau de" e as marcas que so fazem perfume."""
+    assert "Perfumes" in destinos(titulo), titulo
+
+
+def test_o_exige_e_so_do_perfumes():
+    """Grupo sem `exige` nao muda de comportamento -- o campo e opcional."""
+    for pedaco in ("Mulheres", "Esportes", "Casa"):
+        assert _grupo(pedaco).exige == ()
+    assert _grupo("Perfumes").exige
