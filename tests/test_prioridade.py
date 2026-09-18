@@ -556,8 +556,14 @@ def test_o_tema_stanley_pega_a_garrafa_cara():
 
 def test_kit_body_splash_cai_no_tema_que_ja_existia():
     """`body splash` ja era tema, e tema casa por substring do titulo -- o kit
-    entra sem tema novo. Os termos sao para a DESCOBERTA achar o kit, que a
-    busca por `body splash` sozinha nao trazia."""
+    entra sem tema novo. O termo e para a DESCOBERTA achar o kit, que a busca
+    por `body splash` sozinha nao trazia.
+
+    Eram dois termos ate 18/09/2026. "kit presente body splash" caiu na poda:
+    desde que entrou nao trouxe um produto sequer para o catalogo nem gerou um
+    post, e perguntado ao vivo devolveu 5 resultados, nenhum casando o termo.
+    Quem sustenta o caso e "kit body splash".
+    """
     from promo.pipeline import e_prioritaria, load_priority, load_watchlist
 
     temas = load_priority()
@@ -566,7 +572,6 @@ def test_kit_body_splash_cai_no_tema_que_ja_existia():
 
     assert e_prioritaria(kit, temas)
     assert "kit body splash" in termos
-    assert "kit presente body splash" in termos
 
 
 def test_perfume_ja_era_tema_e_continua():

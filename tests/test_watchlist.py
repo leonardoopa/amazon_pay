@@ -240,3 +240,35 @@ def test_a_reserva_ainda_discrimina():
     limite de metade nao mudou.
     """
     assert len(load_priority()) <= 160
+
+
+def test_o_dior_e_o_givenchy_ficam_na_busca():
+    """O dono pediu o corte dos termos de baixo rendimento em 18/09/2026 com
+    uma excecao nomeada: "so nao tire Dior e Givenchy". Os dois tinham zero
+    produto no catalogo na hora do corte -- ficam mesmo assim.
+
+    O Givenchy provou-se depois: perguntado ao vivo, devolveu 3 de 3 casando o
+    termo ("Perfume Givenchy L'interdit Parfum 50ml"). O Dior nao chegou a ser
+    testado porque a chamada dele caiu no 429 que motivou o corte.
+    """
+    from promo.pipeline import load_watchlist
+
+    termos = {w.term for w in load_watchlist()}
+
+    assert "perfume dior sauvage" in termos
+    assert "perfume givenchy" in termos
+
+
+def test_a_busca_nao_volta_a_estourar_o_limite_do_ml():
+    """Cada termo custa uma busca mais uma chamada de detalhe por produto que
+    ela devolve. Em 18/09/2026 a watchlist chegou a 341 termos e o ML comecou a
+    responder 429 -- 11 falhas numa rodada so, todas em termos de beleza.
+
+    O corte tirou 101 termos que nunca geraram post desde sempre, poupando 564
+    chamadas por rodada. O teto aqui e o que impede a lista de crescer de volta
+    sem alguem medir de novo; marca nomeada pelo dono nao conta como gordura, e
+    por isso o numero tem folga.
+    """
+    from promo.pipeline import load_watchlist
+
+    assert len(load_watchlist()) <= 260
