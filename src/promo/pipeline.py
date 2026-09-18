@@ -150,6 +150,14 @@ class GrupoDestino:
     # (27). Nenhum ajuste de tema separa isso: o tema e o nome da marca, e a
     # marca faz shampoo tambem.
     exige: tuple[str, ...] = ()
+    # Quantas ofertas este grupo leva por rodada na busca propria dele. 0 =
+    # usa o `MAX_POR_GRUPO_TEMATICO`, que vale para todo mundo.
+    #
+    # Existe porque o dono autorizou volume maior em dois grupos e nao nos
+    # outros: "nao tem problema em subir a quantidade de envios nos grupos ...
+    # preciso que esses produtos sejam enviados, pois sao os melhores produtos
+    # para serem vendidos" (18/09/2026, sobre Mulheres e Perfumes).
+    max_por_rodada: int = 0
 
     @property
     def e_geral(self) -> bool:
@@ -210,6 +218,7 @@ def load_grupos(path: Path | None = None) -> list[GrupoDestino]:
                     sem_acento(x) for x in cru.get("prioridade") or ()
                 ),
                 exige=tuple(sem_acento(x) for x in cru.get("exige") or ()),
+                max_por_rodada=int(cru.get("max_por_rodada") or 0),
             )
         )
 
@@ -874,6 +883,35 @@ def load_vitrine_categories(path: Path | None = None) -> list[tuple[str, int]]:
     ]
 
 
+def load_landing_pages(path: Path | None = None) -> list[dict]:
+    """Landing pages do ML a ler por rodada.
+
+    Cada entrada: `path` (o caminho no www), `rota` ("A" com preco no card, "B"
+    so com link de catalogo) e `prioridade` (o conteudo inteiro da pagina conta
+    como prioritario).
+
+    Existe porque o dono mandou dez URLs em 18/09/2026 e pediu que a coleta
+    lesse elas. Oito nao dao: todo `lista.mercadolivre.com.br` redireciona para
+    `/gz/account-verification` quando quem pede e servidor, e passar disso seria
+    burlar deteccao de robo. As seis que responderam estao aqui, e juntas
+    trazem ~280 produtos por SEIS requisicoes.
+    """
+    path = path or ROOT / "watchlist.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return [
+        {
+            "path": entry["path"],
+            "rota": (entry.get("rota") or "A").upper(),
+            "prioridade": bool(entry.get("prioridade")),
+            # Em quais grupos tematicos o conteudo desta pagina passa na
+            # frente. Vazio = em nenhum; a prioridade dela vale so no Geral.
+            "grupos": list(entry.get("grupos") or []),
+        }
+        for entry in data.get("landing_pages", [])
+        if entry.get("path")
+    ]
+
+
 def load_vitrine_prioritarias(path: Path | None = None) -> set[str]:
     """As paginas da vitrine cujo conteudo inteiro conta como prioritario.
 
@@ -1009,6 +1047,11 @@ def collect(
     rules = rules or Rules.load()
     vitrine = load_vitrine_categories()
     descobrir = _time_to_discover()
+    # Quem sabe precificar por ID de catalogo. A landing da rota B traz link de
+    # produto sem preco, e sem esta fonte ela nao tem como virar oferta.
+    catalogo = next(
+        (s for s in sources if hasattr(s, "fetch_by_ids")), None
+    )
 
     # Fatia desta rodada. Sem fatia (0), a lista inteira, que era o
     # comportamento antes de a rodada de descoberta virar 21 minutos de
@@ -1083,6 +1126,7 @@ def collect(
             offers.extend(achados)
             descoberta_respondeu = descoberta_respondeu or respondeu
         offers.extend(collect_vitrine(source, vitrine))
+        offers.extend(collect_landings(source, catalogo))
         if _due("last_full_refetch", full_refetch_interval_hours()):
             offers.extend(refetch_tracked(source, rules))
             _stamp("last_full_refetch")
@@ -1144,6 +1188,51 @@ def collect_vitrine(source, categories: list[tuple[str, int]] | None = None) -> 
 
     log.info("%s: %d ofertas da vitrine", source.name, len(found))
     return found
+
+
+def collect_landings(source, catalogo=None) -> list[Offer]:
+    """As landing pages do ML que respondem a requisicao de servidor.
+
+    Seis paginas por ~280 produtos, uma requisicao cada. Compare com a busca
+    por termo, que gasta uma chamada de descoberta MAIS uma por produto: e a
+    mesma economia que faz a vitrine valer a pena.
+
+    Duas rotas, porque o ML monta as paginas diferente. A `A` traz o preco no
+    proprio card. A `B` traz so o link do produto de catalogo, e quem precifica
+    e `catalogo` -- a mesma fonte que a rodada ja usa para reconsultar produto
+    conhecido. Sem ela a rota B e pulada em vez de devolver oferta sem preco.
+
+    Falha de uma pagina nao derruba as outras nem a rodada: landing e HTML, e
+    HTML muda.
+    """
+    paginas = load_landing_pages()
+    if not paginas or not hasattr(source, "landing_com_preco"):
+        return []
+
+    offers: list[Offer] = []
+    for pagina in paginas:
+        caminho = pagina["path"]
+        try:
+            if pagina["rota"] == "B":
+                if catalogo is None or not hasattr(catalogo, "fetch_by_ids"):
+                    continue
+                encontrados = catalogo.fetch_by_ids(
+                    [
+                        (mlb, titulo, None)
+                        for mlb, titulo in source.landing_catalogo(caminho)
+                    ]
+                )
+                offers.extend(
+                    replace(o, vitrine_categoria=caminho) for o in encontrados
+                )
+            else:
+                offers.extend(source.landing_com_preco(caminho))
+        except Exception as exc:  # noqa: BLE001 - HTML muda; nao derruba a rodada
+            log.warning("landing %s falhou: %s", caminho, exc)
+
+    if offers:
+        log.info("landings: %d oferta(s) de %d pagina(s)", len(offers), len(paginas))
+    return offers
 
 
 def refetch_hot(source) -> list[Offer]:
@@ -1457,7 +1546,13 @@ def e_prioritaria(offer: Offer, temas: list[str]) -> bool:
     if tem_tema(offer.title, temas):
         return True
     origem = getattr(offer, "vitrine_categoria", "")
-    return bool(origem) and origem in load_vitrine_prioritarias()
+    if not origem:
+        return False
+    if origem in load_vitrine_prioritarias():
+        return True
+    return any(
+        p["path"] == origem and p["prioridade"] for p in load_landing_pages()
+    )
 
 
 def e_barrada(offer: Offer, barrados: list[str], temas: list[str]) -> bool:
@@ -2181,7 +2276,9 @@ def _rodada_dos_grupos(
     para_o_geral = 0
 
     for grupo in grupos:
-        escolhidas = _escolhe_para_o_grupo(unique, grupo, rules, temas, limite)
+        # Cota do proprio grupo quando ele tem uma; senao a de todo mundo.
+        cota = grupo.max_por_rodada or limite
+        escolhidas = _escolhe_para_o_grupo(unique, grupo, rules, temas, cota)
         if not escolhidas:
             continue
         for scored in escolhidas:
@@ -2244,6 +2341,59 @@ def _cabe_no_geral(scored: ScoredOffer, temas: list[str]) -> bool:
     return not any(mesmo_produto(t, scored.offer.title) for t in recentes)
 
 
+def origens_por_grupo(path: Path | None = None) -> dict[str, list[str]]:
+    """De cada origem, em quais grupos tematicos ela passa na frente.
+
+    Origem e a pagina de onde o produto veio: um ID de categoria da vitrine
+    ("MLB1248") ou um caminho de landing ("/e/beleza-premium"). As duas fontes
+    declaram a mesma coisa do mesmo jeito, entao ficam no mesmo mapa.
+
+    Nasceu em 18/09/2026 de duas medidas. A primeira: das quatro categorias de
+    beleza, so a de Maquiagem traz maquiagem -- 35 de 48 itens, 43 deles com
+    preco riscado --, enquanto Perfumes, Pele e Cabelo trazem ZERO. A segunda:
+    essa prioridade valia so no Geral, e dentro de Mulheres a lista casa por
+    TITULO, entao a maquiagem da categoria certa disputava a vaga como
+    qualquer outra coisa.
+    """
+    path = path or ROOT / "watchlist.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    mapa: dict[str, list[str]] = {}
+    for entry in data.get("vitrine_categories", []):
+        if entry.get("id") and entry.get("grupos"):
+            mapa[entry["id"]] = list(entry["grupos"])
+    for entry in data.get("landing_pages", []):
+        if entry.get("path") and entry.get("grupos"):
+            mapa[entry["path"]] = list(entry["grupos"])
+    return mapa
+
+
+def prioritaria_no_grupo(offer: Offer, grupo: GrupoDestino) -> bool:
+    """A oferta e prioritaria PARA ESTE GRUPO: pelo titulo, ou pela pagina.
+
+    O titulo sempre valeu. A pagina entrou em 18/09/2026, quando o dono pediu
+    que o Beleza Premium fosse prioridade em Mulheres e Perfumes: "sao os
+    melhores produtos para serem vendidos".
+
+    Sem a segunda via o pedido nao se cumpre, e pela mesma razao de sempre --
+    "Gel Kerastase Curl Manifesto Gelee Curl Contour" nao cita nenhum alvo da
+    lista do grupo, e a lista casa por titulo. O produto vinha da pagina que o
+    dono escolheu a dedo e disputava a vaga como qualquer outro.
+
+    Quais grupos cada pagina prioriza esta no `grupos` do `landing_pages`: a
+    pagina de beleza prioriza Mulheres e Perfumes, nao o Casa.
+    """
+    if grupo.prioridade and tem_tema(offer.title, list(grupo.prioridade)):
+        return True
+
+    origem = getattr(offer, "vitrine_categoria", "")
+    if not origem:
+        return False
+    return any(
+        grupo.nome.endswith(nome)
+        for nome in origens_por_grupo().get(origem, ())
+    )
+
+
 def _escolhe_para_o_grupo(
     unique: dict,
     grupo: GrupoDestino,
@@ -2267,15 +2417,21 @@ def _escolhe_para_o_grupo(
     if not candidatas:
         return []
 
-    alvos = list(grupo.prioridade)
     # A prioridade do grupo na frente, a ordem de chegada preservada dentro de
     # cada metade. Sem isto o grupo de Casa encheria de organizador de gaveta
     # com 70% off e a air fryer -- o motivo de alguem entrar no grupo -- ficaria
     # de fora por ter "so" 30%. Mesmo raciocinio do `priority` no Geral.
-    if alvos:
-        candidatas.sort(key=lambda o: not tem_tema(o.title, alvos))
+    tem_prioridade = bool(grupo.prioridade) or any(
+        grupo.nome.endswith(nome)
+        for nomes in origens_por_grupo().values()
+        for nome in nomes
+    )
+    if tem_prioridade:
+        candidatas.sort(key=lambda o: not prioritaria_no_grupo(o, grupo))
 
-    reserva = min(reserva_de_prioridade_do_grupo(), limite) if alvos else 0
+    reserva = (
+        min(reserva_de_prioridade_do_grupo(), limite) if tem_prioridade else 0
+    )
 
     with connect() as conn:
         bloqueados = products_in_cooldown(conn, grupo_jid=grupo.jid)
@@ -2304,7 +2460,9 @@ def _escolhe_para_o_grupo(
                     break
 
         if reserva > 0:
-            prioritarias = [o for o in candidatas if tem_tema(o.title, alvos)]
+            prioritarias = [
+                o for o in candidatas if prioritaria_no_grupo(o, grupo)
+            ]
             preenche(prioritarias, reserva)
             if escolhidas:
                 log.info(

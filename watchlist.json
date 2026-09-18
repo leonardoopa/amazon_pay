@@ -1244,7 +1244,8 @@
         "niacinamida",
         "retinol",
         "vitamina c"
-      ]
+      ],
+      "max_por_rodada": 9
     },
     {
       "nome": "Comunidade do Desconto - Esportes",
@@ -1508,7 +1509,8 @@
         "212 vip",
         "212 men",
         "good girl"
-      ]
+      ],
+      "max_por_rodada": 8
     },
     {
       "nome": "Comunidade do Desconto - Casa",
@@ -1835,25 +1837,38 @@
       "id": "MLB6284",
       "name": "Perfumes",
       "pages": 2,
-      "prioridade": true
+      "prioridade": true,
+      "grupos": [
+        "Mulheres",
+        "Perfumes"
+      ]
     },
     {
       "id": "MLB1248",
       "name": "Maquiagem",
       "pages": 2,
-      "prioridade": true
+      "prioridade": true,
+      "grupos": [
+        "Mulheres"
+      ]
     },
     {
       "id": "MLB199407",
       "name": "Cuidados com a Pele",
       "pages": 2,
-      "prioridade": true
+      "prioridade": true,
+      "grupos": [
+        "Mulheres"
+      ]
     },
     {
       "id": "MLB1263",
       "name": "Cuidados com o Cabelo",
       "pages": 2,
-      "prioridade": true
+      "prioridade": true,
+      "grupos": [
+        "Mulheres"
+      ]
     },
     {
       "id": "MLB1339",
@@ -2042,6 +2057,57 @@
       "id": "MLB1438",
       "name": "Aneis",
       "max_price": 300
+    }
+  ],
+  "_comment_landing": "Landing pages do www que respondem a servidor. rota A = o card ja traz preco; rota B = so link de catalogo, e o preco vem da API. prioridade = o conteudo inteiro da pagina conta como prioritario. As URLs de lista.mercadolivre.com.br NAO entram aqui: redirecionam para /gz/account-verification quando quem pede e servidor.",
+  "landing_pages": [
+    {
+      "path": "/e/beleza-premium",
+      "rota": "B",
+      "prioridade": true,
+      "grupos": [
+        "Mulheres",
+        "Perfumes"
+      ]
+    },
+    {
+      "path": "/c/beleza-e-cuidado-pessoal",
+      "rota": "A",
+      "prioridade": true,
+      "grupos": [
+        "Mulheres",
+        "Perfumes"
+      ]
+    },
+    {
+      "path": "/c/esportes-e-fitness",
+      "rota": "A",
+      "prioridade": false,
+      "grupos": [
+        "Esportes"
+      ]
+    },
+    {
+      "path": "/c/calcados-roupas-e-bolsas",
+      "rota": "A",
+      "prioridade": false,
+      "grupos": []
+    },
+    {
+      "path": "/c/eletrodomesticos",
+      "rota": "A",
+      "prioridade": false,
+      "grupos": [
+        "Casa"
+      ]
+    },
+    {
+      "path": "/c/casa-moveis-e-decoracao",
+      "rota": "A",
+      "prioridade": false,
+      "grupos": [
+        "Casa"
+      ]
     }
   ]
 }
