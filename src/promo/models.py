@@ -28,6 +28,17 @@ class Offer:
     # valor anunciado e a parcela ou depende de assinatura -- publicar o numero
     # sozinho seria preco falso. Vazio significa preco a vista, sem condicao.
     condicao: str = ""
+    # De qual pagina da vitrine esta oferta veio, quando veio de uma.
+    #
+    # Nao e a mesma coisa que `category`: a vitrine NAO devolve categoria em
+    # campo nenhum, entao `category` fica vazia para tudo que vem dela. Este
+    # campo guarda a pagina que NOS pedimos, e e o unico jeito de saber que um
+    # produto veio de "Perfumes" ou de "Maquiagem" -- o titulo sozinho nao diz.
+    #
+    # Separado de `category` de proposito: aquele campo decide se um cupom se
+    # aplica, e o cupom fala em categoria REAL do ML. Misturar os dois faria
+    # cupom de maquiagem valer para o que a pagina de maquiagem mostrava.
+    vitrine_categoria: str = ""
 
     @property
     def product_id(self) -> str:

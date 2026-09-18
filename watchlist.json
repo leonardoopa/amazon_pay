@@ -1834,22 +1834,26 @@
     {
       "id": "MLB6284",
       "name": "Perfumes",
-      "pages": 2
+      "pages": 2,
+      "prioridade": true
     },
     {
       "id": "MLB1248",
       "name": "Maquiagem",
-      "pages": 2
+      "pages": 2,
+      "prioridade": true
     },
     {
       "id": "MLB199407",
       "name": "Cuidados com a Pele",
-      "pages": 2
+      "pages": 2,
+      "prioridade": true
     },
     {
       "id": "MLB1263",
       "name": "Cuidados com o Cabelo",
-      "pages": 2
+      "pages": 2,
+      "prioridade": true
     },
     {
       "id": "MLB1339",

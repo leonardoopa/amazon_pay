@@ -583,3 +583,121 @@ def test_perfume_ja_era_tema_e_continua():
     perfumes = [w for w in load_watchlist() if "perfume" in w.term]
     assert len(perfumes) >= 8
     assert all(w.max_price is None for w in perfumes)
+
+
+# ---------- prioridade pela pagina de origem, 18/09/2026 ----------
+
+
+def test_o_que_vem_da_pagina_de_perfumes_e_prioritario():
+    """"lembrando de prioridade aos produtos daqueles links que te mandei,
+    principalmente os perfumes e as coisas para mulheres".
+
+    O caso real: "Perfume Sedutor Arabe Sabah 100ml" e o primeiro item da
+    pagina de Perfumes e nao cita marca nenhuma da lista. Pelo titulo ele nunca
+    seria prioritario; pela origem, e.
+    """
+    from promo.models import Offer
+    from promo.pipeline import e_prioritaria, load_priority
+
+    temas = load_priority()
+    generico = Offer(
+        source="ml_ofertas",
+        external_id="MLB1",
+        title="Perfume Sedutor Arabe Sabah 100ml Original Feminino",
+        price=99.0,
+        url="https://www.mercadolivre.com.br/p/MLB1",
+        vitrine_categoria="MLB6284",
+    )
+
+    assert e_prioritaria(generico, temas)
+
+
+def test_sem_a_origem_o_mesmo_titulo_nao_seria_prioritario():
+    """Guarda o teste acima de passar por acaso: se "perfume" entrar na lista
+    de temas algum dia, o caso acima verdeja sozinho e para de provar nada."""
+    from promo.models import Offer
+    from promo.pipeline import e_prioritaria, load_priority
+
+    sem_origem = Offer(
+        source="ml_ofertas",
+        external_id="MLB1",
+        title="Sedutor Arabe Sabah 100ml Original",
+        price=99.0,
+        url="https://www.mercadolivre.com.br/p/MLB1",
+    )
+
+    assert not e_prioritaria(sem_origem, load_priority())
+
+
+def test_pagina_nao_marcada_nao_da_prioridade():
+    """So as quatro paginas que o dono nomeou. Calcados vem da vitrine tambem e
+    nao vira prioridade por isso."""
+    from promo.models import Offer
+    from promo.pipeline import e_prioritaria, load_priority
+
+    calcado = Offer(
+        source="ml_ofertas",
+        external_id="MLB2",
+        title="Chinelo Rider Masculino Preto",
+        price=49.0,
+        url="https://www.mercadolivre.com.br/p/MLB2",
+        vitrine_categoria="MLB23262",
+    )
+
+    assert not e_prioritaria(calcado, load_priority())
+
+
+def test_as_quatro_paginas_do_dono_estao_marcadas():
+    """Invariante de configuracao: perfume, maquiagem, pele e cabelo."""
+    from promo.pipeline import load_vitrine_prioritarias
+
+    assert load_vitrine_prioritarias() == {
+        "MLB6284",
+        "MLB1248",
+        "MLB199407",
+        "MLB1263",
+    }
+
+
+def test_a_vitrine_carimba_a_pagina_de_origem(monkeypatch):
+    """Sem o carimbo a prioridade por origem nao teria como existir: a vitrine
+    nao devolve categoria em campo nenhum.
+
+    `monkeypatch` e nao atribuicao direta: `_payload` e do modulo, e trocar sem
+    restaurar derruba os testes de parsing da vitrine que rodam depois.
+    """
+    from promo.sources import ml_ofertas
+
+    fonte = ml_ofertas.MLOfertas.__new__(ml_ofertas.MLOfertas)
+    card = {
+        "metadata": {"id": "MLB9", "url": "www.mercadolivre.com.br/p/MLB9"},
+        "components": [
+            {"type": "title", "title": {"text": "Perfume Qualquer 100ml"}},
+            {"type": "price", "price": {"current_price": {"value": 50.0}}},
+        ],
+    }
+
+    class Resposta:
+        text = ""
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(
+        fonte, "_client",
+        type("C", (), {"get": staticmethod(lambda *a, **k: Resposta())})(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ml_ofertas,
+        "_payload",
+        lambda _: {"appProps": {"pageProps": {"data": {"items": [{"card": card}]}}}},
+    )
+
+    achadas = fonte._pagina({"category": "MLB6284"}, "MLB6284")
+
+    assert achadas[0].vitrine_categoria == "MLB6284"
+
+    sem_categoria = fonte._pagina(None, None)
+
+    assert sem_categoria[0].vitrine_categoria == ""

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 
 import httpx
 
@@ -231,6 +232,12 @@ class MLOfertas:
             )
 
         achadas = [o for item in items if (o := _offer(item.get("card") or {}))]
+        if categoria:
+            # Carimba a pagina de origem. A vitrine nao devolve categoria em
+            # campo nenhum, e sem isto nao ha como dizer que um produto veio da
+            # pagina de Perfumes -- o titulo de um perfume arabe generico nao
+            # cita marca nenhuma, e a prioridade so olha titulo.
+            achadas = [replace(o, vitrine_categoria=categoria) for o in achadas]
         log.info(
             "ofertas: %d de %d cards em %s",
             len(achadas),

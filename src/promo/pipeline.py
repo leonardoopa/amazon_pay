@@ -874,6 +874,26 @@ def load_vitrine_categories(path: Path | None = None) -> list[tuple[str, int]]:
     ]
 
 
+def load_vitrine_prioritarias(path: Path | None = None) -> set[str]:
+    """As paginas da vitrine cujo conteudo inteiro conta como prioritario.
+
+    Marcadas com `"prioridade": true` no watchlist.json. Existe porque o dono
+    mandou as paginas de Perfumes, Maquiagem, Pele e Cabelo em 18/09/2026 e
+    pediu prioridade para o que sai delas -- e a prioridade so olhava titulo.
+
+    E uma lista curta de proposito: prioridade que cobre tudo nao escolhe nada.
+    Vale a mesma regra do `priority`, medida no mesmo dia -- a fatia do catalogo
+    que conta como prioritaria nao pode passar de metade.
+    """
+    path = path or ROOT / "watchlist.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        entry["id"]
+        for entry in data.get("vitrine_categories", [])
+        if entry.get("id") and entry.get("prioridade")
+    }
+
+
 def load_categories(path: Path | None = None) -> list[Category]:
     """Categorias do watchlist.json. Ausente e o normal -- o campo e opcional."""
     path = path or ROOT / "watchlist.json"
@@ -1422,8 +1442,22 @@ def _um_por_produto(escolhidas: list[ScoredOffer]) -> list[ScoredOffer]:
 
 
 def e_prioritaria(offer: Offer, temas: list[str]) -> bool:
-    """O titulo cita algum dos temas que o grupo pediu."""
-    return tem_tema(offer.title, temas)
+    """A oferta e prioritaria: pelo titulo, ou pela pagina de onde veio.
+
+    O titulo sempre valeu e continua valendo. A origem entrou em 18/09/2026,
+    quando o dono mandou as paginas de Perfumes, Maquiagem, Cuidados com a Pele
+    e Cuidados com o Cabelo e pediu prioridade para o que sai delas.
+
+    Sem a segunda via o pedido nao se cumpre. A prioridade so olhava titulo, e
+    titulo de perfume arabe generico -- "Perfume Sedutor Arabe Sabah 100ml", o
+    primeiro item da pagina de Perfumes -- nao cita marca nenhuma que esteja na
+    lista. O produto vinha da pagina certa e disputava a cota como qualquer
+    outro.
+    """
+    if tem_tema(offer.title, temas):
+        return True
+    origem = getattr(offer, "vitrine_categoria", "")
+    return bool(origem) and origem in load_vitrine_prioritarias()
 
 
 def e_barrada(offer: Offer, barrados: list[str], temas: list[str]) -> bool:
