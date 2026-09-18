@@ -6,10 +6,6 @@
       "max_price": 800
     },
     {
-      "term": "fone de ouvido sem fio",
-      "max_price": 800
-    },
-    {
       "term": "smartwatch",
       "max_price": 1500
     },
@@ -20,14 +16,6 @@
     {
       "term": "monitor 27 polegadas",
       "max_price": 3000
-    },
-    {
-      "term": "teclado mecanico",
-      "max_price": 800
-    },
-    {
-      "term": "mouse gamer",
-      "max_price": 500
     },
     {
       "term": "cadeira gamer",
@@ -42,10 +30,6 @@
       "max_price": 1200
     },
     {
-      "term": "memoria ram ddr4",
-      "max_price": 800
-    },
-    {
       "term": "placa de video",
       "max_price": 5000
     },
@@ -56,10 +40,6 @@
     {
       "term": "tablet",
       "max_price": 2500
-    },
-    {
-      "term": "smart tv 50",
-      "max_price": 4000
     },
     {
       "term": "soundbar",
@@ -82,24 +62,12 @@
       "max_price": 600
     },
     {
-      "term": "panela eletrica de arroz",
-      "max_price": 500
-    },
-    {
-      "term": "aspirador de po robo",
-      "max_price": 3000
-    },
-    {
       "term": "ventilador de coluna",
       "max_price": 600
     },
     {
       "term": "purificador de agua",
       "max_price": 1500
-    },
-    {
-      "term": "escova de dentes eletrica",
-      "max_price": 500
     },
     {
       "term": "barbeador eletrico",
@@ -142,10 +110,6 @@
       "max_price": 150
     },
     {
-      "term": "regata feminina",
-      "max_price": 120
-    },
-    {
       "term": "moletom",
       "max_price": 250
     },
@@ -162,10 +126,6 @@
       "max_price": null
     },
     {
-      "term": "short esportivo",
-      "max_price": 150
-    },
-    {
       "term": "tenis casual",
       "max_price": 400
     },
@@ -178,35 +138,15 @@
       "max_price": 120
     },
     {
-      "term": "meia kit",
-      "max_price": 100
-    },
-    {
       "term": "garrafa termica",
       "max_price": 150
-    },
-    {
-      "term": "panela antiaderente",
-      "max_price": 250
     },
     {
       "term": "jogo de lencol",
       "max_price": 200
     },
     {
-      "term": "toalha de banho",
-      "max_price": 120
-    },
-    {
-      "term": "escova alisadora",
-      "max_price": 200
-    },
-    {
       "term": "aparador de pelos",
-      "max_price": 200
-    },
-    {
-      "term": "sanduicheira",
       "max_price": 200
     },
     {
@@ -218,18 +158,6 @@
       "max_price": 150
     },
     {
-      "term": "caixa organizadora",
-      "max_price": 120
-    },
-    {
-      "term": "racao para cachorro",
-      "max_price": 250
-    },
-    {
-      "term": "brinquedo para gato",
-      "max_price": 100
-    },
-    {
       "term": "fralda descartavel",
       "max_price": 150
     },
@@ -238,19 +166,7 @@
       "max_price": 100
     },
     {
-      "term": "pen drive",
-      "max_price": 120
-    },
-    {
-      "term": "cartao de memoria",
-      "max_price": 150
-    },
-    {
       "term": "filtro de linha",
-      "max_price": 120
-    },
-    {
-      "term": "lanterna recarregavel",
       "max_price": 120
     },
     {
@@ -258,28 +174,8 @@
       "max_price": 100
     },
     {
-      "term": "chave de fenda kit",
-      "max_price": 150
-    },
-    {
-      "term": "tapete para carro",
-      "max_price": 200
-    },
-    {
-      "term": "capa de volante",
-      "max_price": 100
-    },
-    {
-      "term": "vestido feminino",
-      "max_price": 300
-    },
-    {
       "term": "calca feminina",
       "max_price": 250
-    },
-    {
-      "term": "saia feminina",
-      "max_price": 200
     },
     {
       "term": "conjunto feminino",
@@ -290,32 +186,8 @@
       "max_price": 150
     },
     {
-      "term": "macacao feminino",
-      "max_price": 300
-    },
-    {
-      "term": "sandalia feminina",
-      "max_price": 250
-    },
-    {
-      "term": "pijama feminino",
-      "max_price": 200
-    },
-    {
       "term": "bota feminina",
       "max_price": 300
-    },
-    {
-      "term": "sapatilha feminina",
-      "max_price": 200
-    },
-    {
-      "term": "oculos de sol feminino",
-      "max_price": 250
-    },
-    {
-      "term": "colar feminino",
-      "max_price": 200
     },
     {
       "term": "relogio feminino",
@@ -330,28 +202,8 @@
       "max_price": null
     },
     {
-      "term": "top fitness",
-      "max_price": 150
-    },
-    {
       "term": "conjunto fitness feminino",
       "max_price": 300
-    },
-    {
-      "term": "short academia feminino",
-      "max_price": 150
-    },
-    {
-      "term": "regata academia feminina",
-      "max_price": 150
-    },
-    {
-      "term": "tenis academia feminino",
-      "max_price": 350
-    },
-    {
-      "term": "garrafa academia",
-      "max_price": 120
     },
     {
       "term": "camiseta adidas",
@@ -364,26 +216,6 @@
     {
       "term": "batom",
       "max_price": 100
-    },
-    {
-      "term": "base maquiagem",
-      "max_price": 200
-    },
-    {
-      "term": "paleta de sombra",
-      "max_price": 200
-    },
-    {
-      "term": "rimel mascara cilios",
-      "max_price": 150
-    },
-    {
-      "term": "pincel maquiagem",
-      "max_price": 150
-    },
-    {
-      "term": "kit maquiagem",
-      "max_price": 250
     },
     {
       "term": "shampoo",
@@ -538,10 +370,6 @@
       "max_price": null
     },
     {
-      "term": "protetor solar corporal",
-      "max_price": null
-    },
-    {
       "term": "protetor solar la roche posay",
       "max_price": null
     },
@@ -614,18 +442,6 @@
       "max_price": null
     },
     {
-      "term": "pistola de massagem",
-      "max_price": null
-    },
-    {
-      "term": "pistola massageadora",
-      "max_price": null
-    },
-    {
-      "term": "gel de carboidrato",
-      "max_price": null
-    },
-    {
       "term": "carboidrato em gel",
       "max_price": null
     },
@@ -640,10 +456,6 @@
     {
       "term": "isotonico",
       "max_price": null
-    },
-    {
-      "term": "meia esportiva",
-      "max_price": 100
     },
     {
       "term": "new balance",
@@ -674,15 +486,7 @@
       "max_price": null
     },
     {
-      "term": "oleo de peixe omega 3",
-      "max_price": null
-    },
-    {
       "term": "gel carboidrato corrida",
-      "max_price": null
-    },
-    {
-      "term": "beta alanina",
       "max_price": null
     },
     {
@@ -730,10 +534,6 @@
       "max_price": null
     },
     {
-      "term": "perfume edt masculino",
-      "max_price": null
-    },
-    {
       "term": "perfume 100ml",
       "max_price": null
     },
@@ -758,10 +558,6 @@
       "max_price": null
     },
     {
-      "term": "perfume la vie est belle",
-      "max_price": null
-    },
-    {
       "term": "perfume carolina herrera",
       "max_price": null
     },
@@ -782,14 +578,6 @@
       "max_price": null
     },
     {
-      "term": "perfume malbec boticario",
-      "max_price": null
-    },
-    {
-      "term": "perfume essencial natura",
-      "max_price": null
-    },
-    {
       "term": "perfume eudora",
       "max_price": null
     },
@@ -799,14 +587,6 @@
     },
     {
       "term": "kit body splash",
-      "max_price": null
-    },
-    {
-      "term": "kit presente body splash",
-      "max_price": null
-    },
-    {
-      "term": "body splash boticario",
       "max_price": null
     },
     {
@@ -842,19 +622,7 @@
       "max_price": null
     },
     {
-      "term": "kit calcinha",
-      "max_price": null
-    },
-    {
       "term": "cueca lupo",
-      "max_price": null
-    },
-    {
-      "term": "cueca masculina",
-      "max_price": null
-    },
-    {
-      "term": "kit cueca boxer",
       "max_price": null
     },
     {
@@ -874,10 +642,6 @@
       "max_price": null
     },
     {
-      "term": "capsula de cafe",
-      "max_price": null
-    },
-    {
       "term": "capsulas de cafe",
       "max_price": null
     },
@@ -890,15 +654,7 @@
       "max_price": null
     },
     {
-      "term": "capsula tres coracoes",
-      "max_price": null
-    },
-    {
       "term": "cafe em capsula",
-      "max_price": null
-    },
-    {
-      "term": "cafeteira capsula",
       "max_price": null
     },
     {
@@ -962,48 +718,16 @@
       "max_price": null
     },
     {
-      "term": "batom liquido matte",
-      "max_price": 120
-    },
-    {
-      "term": "corretivo facial",
-      "max_price": 150
-    },
-    {
       "term": "po compacto",
       "max_price": 150
-    },
-    {
-      "term": "primer facial",
-      "max_price": 200
-    },
-    {
-      "term": "delineador caneta",
-      "max_price": 100
-    },
-    {
-      "term": "paleta de contorno",
-      "max_price": 200
     },
     {
       "term": "gloss labial",
       "max_price": 100
     },
     {
-      "term": "jogo de cama casal",
-      "max_price": 400
-    },
-    {
-      "term": "edredom casal",
-      "max_price": 400
-    },
-    {
       "term": "jogo de panelas",
       "max_price": 700
-    },
-    {
-      "term": "faqueiro inox",
-      "max_price": 400
     },
     {
       "term": "potes hermeticos",
@@ -1018,44 +742,12 @@
       "max_price": 350
     },
     {
-      "term": "luminaria de mesa",
-      "max_price": 250
-    },
-    {
-      "term": "escorredor de louca",
-      "max_price": 200
-    },
-    {
-      "term": "porta temperos",
-      "max_price": 200
-    },
-    {
-      "term": "organizador de gaveta",
-      "max_price": 200
-    },
-    {
       "term": "ferro de passar",
       "max_price": 400
     },
     {
-      "term": "televisao",
-      "max_price": 4000
-    },
-    {
       "term": "smart tv 43",
       "max_price": 3000
-    },
-    {
-      "term": "suporte de tv",
-      "max_price": 400
-    },
-    {
-      "term": "rack para tv",
-      "max_price": 1500
-    },
-    {
-      "term": "mesa de escritorio",
-      "max_price": 1500
     },
     {
       "term": "robo aspirador",
@@ -1068,26 +760,6 @@
     {
       "term": "fogao 4 bocas",
       "max_price": 3000
-    },
-    {
-      "term": "processador de alimentos",
-      "max_price": 1200
-    },
-    {
-      "term": "jogo de copos",
-      "max_price": 400
-    },
-    {
-      "term": "tabua de corte",
-      "max_price": 300
-    },
-    {
-      "term": "cobertor casal",
-      "max_price": 500
-    },
-    {
-      "term": "balanca de cozinha",
-      "max_price": 200
     },
     {
       "term": "cafeteira expresso",
@@ -1106,44 +778,8 @@
       "max_price": 400
     },
     {
-      "term": "chuteira",
-      "max_price": 800
-    },
-    {
-      "term": "camisa de time",
-      "max_price": 500
-    },
-    {
-      "term": "regata esportiva",
-      "max_price": 200
-    },
-    {
       "term": "short de corrida",
       "max_price": null
-    },
-    {
-      "term": "anilha",
-      "max_price": 600
-    },
-    {
-      "term": "kettlebell",
-      "max_price": 500
-    },
-    {
-      "term": "barra de supino",
-      "max_price": 900
-    },
-    {
-      "term": "elastico de treino",
-      "max_price": 200
-    },
-    {
-      "term": "luva de academia",
-      "max_price": 200
-    },
-    {
-      "term": "eliptico",
-      "max_price": 3000
     },
     {
       "term": "relogio esportivo",
@@ -1152,18 +788,6 @@
     {
       "term": "bicicleta spinning",
       "max_price": 3000
-    },
-    {
-      "term": "balanca de bioimpedancia",
-      "max_price": 400
-    },
-    {
-      "term": "corda de pular",
-      "max_price": 150
-    },
-    {
-      "term": "colchonete",
-      "max_price": 300
     },
     {
       "term": "deo colonia",
@@ -1178,36 +802,8 @@
       "max_price": 700
     },
     {
-      "term": "creme hidratante perfumado",
-      "max_price": null
-    },
-    {
-      "term": "esmalte gel",
-      "max_price": 200
-    },
-    {
-      "term": "kit manicure",
-      "max_price": 400
-    },
-    {
-      "term": "lixa de unha",
-      "max_price": 150
-    },
-    {
-      "term": "cilios postos",
-      "max_price": 200
-    },
-    {
-      "term": "base facial",
-      "max_price": 300
-    },
-    {
       "term": "pantene",
       "max_price": 200
-    },
-    {
-      "term": "jogo de cama",
-      "max_price": 600
     },
     {
       "term": "perfume 212 vip",
