@@ -789,3 +789,64 @@ def test_o_exige_e_so_do_perfumes():
     for pedaco in ("Mulheres", "Esportes", "Casa"):
         assert _grupo(pedaco).exige == ()
     assert _grupo("Perfumes").exige
+
+
+# ---------- o masculino fora do grupo de Mulheres ----------
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Malbec Tradicional Perfume Masculino O Boticario 100ml",
+        "Kaiak Masculino Tradicional Natura Desodorante Colonia",
+        "Perfume Arabe 9pm Afnan Masculino 100ML",
+        "Perfume Arabe Armaf Club De Nuit Sillage Edp 105ml Masculino",
+        "The Blend O Boticario Eau De Parfum Perfume Masculino",
+        "Kit Body Splash Masculino Barbarius + Enigma + Midtown 200ml",
+        "Perfume Dolce & Gabbana Pour Homme EDP 75ml",
+        "Perfume Azzaro Pour Homme 100ml EDT",
+        "Perfume Animale For Men EDT 100ml",
+        "Perfume Malbec Tradicional Amadeirado O Boticario Para Homem",
+        "Perfume Dolce & Gabbana K 50ml Para Homens",
+        "Camiseta Esportiva Lupo Masculina Dry Academia",
+    ],
+)
+def test_o_masculino_nao_entra_no_grupo_de_mulheres(titulo):
+    """"tudo que tiver masculino, nao e pra ser enviado no grupo das mulheres"
+    -- 18/09/2026.
+
+    Medido antes da mudanca: 17 dos 119 posts enviados ao grupo em 48h eram
+    masculinos. A marca de perfume e tema do grupo, entao so o `exclui` separa
+    -- e o `exclui` do grupo e absoluto, ao contrario do `exclude` global, onde
+    um tema devolve o item.
+    """
+    assert "Mulheres" not in destinos(titulo), titulo
+
+
+@pytest.mark.parametrize(
+    "titulo, armadilha",
+    [
+        ("Kit Shampoo Anticaspa Clear Women 200ml", "men "),
+        ("Cinta Modeladora Regata Feminina 16 Barbatanas", "barba"),
+        ("Maleta De Maquiagem Bolsa Organizadora De Esmaltes", "male"),
+        ("Rimel Mascara Para Cilios Extra Volume Playboy", "boy"),
+        ("Creatina Dux Human Health Palatinose 400g", "man "),
+    ],
+)
+def test_o_feminino_continua_entrando_apesar_das_letras(titulo, armadilha):
+    """As armadilhas medidas contra os 22.695 titulos do catalogo. "men " esta
+    dentro de "women " e sozinho teria excluido o feminino inteiro; "barba"
+    dentro de "barbatanas"; "male" dentro de "maleta de maquiagem". Por isso os
+    termos sao "masculino", "masculina", "pour homme", "for men", "homem" e
+    "homens", e nao a abreviacao."""
+    assert armadilha not in _grupo("Mulheres").exclui
+
+
+def test_o_perfume_feminino_continua_no_grupo_de_mulheres():
+    """O corte e do masculino, nao do perfume."""
+    for titulo in (
+        "Perfume Carolina Herrera Good Girl Eau de Parfum 150ml Feminino",
+        "Perfume Yves Saint Laurent Libre Feminino Spray Floral 30ml",
+        "Body Splash Carolina Herrera 212 Vip Rose Feminino 250ml",
+    ):
+        assert "Mulheres" in destinos(titulo), titulo
