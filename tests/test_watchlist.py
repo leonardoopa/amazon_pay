@@ -227,5 +227,16 @@ def test_a_reserva_ainda_discrimina():
     produtos casam, 19%. Com 3 vagas reservadas de 5, a reserva escolhe entre
     um quinto da carteira -- ainda e escolha. Se essa fatia passar de metade,
     o conserto e cortar tema, nao subir a reserva.
+
+    O teto de termos e proxy da fatia, e foi remedido em 17/09/2026 quando o
+    dono mandou as marcas de perfume importado, maquiagem, pele, cabelo e
+    esporte: contra os 22.695 titulos do catalogo de producao, a prioridade
+    saiu de 3.843 (16,9%) para 4.484 (19,8%). A fatia praticamente nao mexeu
+    porque as marcas novas quase nao existem na carteira ainda -- quem sobe o
+    numero sao "corrida" (588), "tenis fila" (135) e "creatina" (93).
+
+    Ou seja: 152 termos hoje cobrem a mesma fatia que 80 cobriam. O teto sobe
+    para 160; o que ele guarda continua sendo a fatia, nao a contagem, e o
+    limite de metade nao mudou.
     """
-    assert len(load_priority()) <= 80
+    assert len(load_priority()) <= 160

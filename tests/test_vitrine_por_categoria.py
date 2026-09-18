@@ -278,5 +278,38 @@ def test_as_categorias_onde_a_marca_aparece_estao_configuradas():
 def test_o_custo_por_rodada_continua_baixo():
     """Cada pagina e UMA requisicao com ~45 produtos prontos, contra uma
     chamada POR PRODUTO no catalogo. Barato e o motivo de rodar toda rodada --
-    se virar dezenas de requisicoes, deixa de ser."""
-    assert sum(paginas for _, paginas in load_vitrine_categories()) <= 20
+    se virar dezenas de requisicoes, deixa de ser.
+
+    O teto subiu de 20 para 30 em 17/09/2026, com as oito categorias que o dono
+    mandou. Agora ele tem numero medido em vez de palpite: a pagina leva 0,6s
+    (tres medicoes ao vivo), entao 25 paginas custam 14s de uma rodada que leva
+    de 1550s a 2679s -- menos de 1%. O que segura a rodada e o Gemini, a ~40s
+    por oferta.
+    """
+    assert sum(paginas for _, paginas in load_vitrine_categories()) <= 30
+
+
+def test_as_categorias_que_o_dono_mandou_estao_na_vitrine():
+    """Invariante de configuracao. Em 17/09/2026 o dono mandou oito paginas do
+    ML ("procure sempre nelas") e cada uma virou o ID da categoria equivalente.
+
+    As oito foram pedidas ao vivo antes de entrar no arquivo: todas
+    responderam, e o primeiro item de cada era o produto certo -- gloss da
+    Franciny Ehlke em Maquiagem, kit Wella em Cuidados com o Cabelo, Creatina
+    Growth em Suplementos.
+    """
+    from promo.pipeline import load_vitrine_categories
+
+    ids = {c[0] for c in load_vitrine_categories()}
+
+    for esperado in (
+        "MLB6284",  # Perfumes
+        "MLB1248",  # Maquiagem
+        "MLB199407",  # Cuidados com a Pele
+        "MLB1263",  # Cuidados com o Cabelo
+        "MLB1339",  # Moda Fitness (Esportes)
+        "MLB123103",  # Monitores Esportivos
+        "MLB438178",  # Suplementos e Shakers
+        "MLB3900",  # Tenis
+    ):
+        assert esperado in ids, f"{esperado} sumiu da vitrine"

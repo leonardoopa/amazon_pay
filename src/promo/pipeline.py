@@ -28,6 +28,7 @@ from .config import (
     hot_track_limit,
     category_cooldown_minutes,
     family_cooldown_minutes,
+    max_do_geral_por_hora,
     max_pending_queue,
     max_pistas_por_run,
     max_por_grupo_tematico,
@@ -46,6 +47,7 @@ from .config import (
     quiet_drip_multiplier,
     quiet_max_offers_per_run,
     quiet_window,
+    reserva_de_prioridade_do_grupo,
     run_interval_seconds,
     track_limit,
 )
@@ -56,6 +58,7 @@ from .db import (
     connect,
     create_post,
     expire_stale_posts,
+    enviados_na_janela,
     familia_do_titulo,
     get_meta,
     mark_post_failed,
@@ -135,11 +138,18 @@ class GrupoDestino:
     # Dentro da busca propria do grupo, o que entra primeiro. E o mesmo papel
     # que o `priority` global faz no Geral: desconto e preco sozinhos decidem
     # por numero, e o numero maior raramente esta no que define o grupo.
-    #
-    # Vazia quer dizer "o grupo inteiro ja e a prioridade" -- o caso do
-    # Perfumes, onde todo tema e perfume e reservar vaga para perfume dentro
-    # dele nao separaria nada. Decisao do dono em 16/09/2026.
     prioridade: tuple[str, ...] = ()
+    # Marca obrigatoria: o titulo tem que citar uma destas ALEM de citar um
+    # tema. Faz o que o `exclui` nao faz -- `e_barrada` devolve o item quando
+    # ele casa um tema, e aqui o problema e justamente o tema.
+    #
+    # Medido em 17/09/2026 contra os 22.695 titulos do catalogo: o grupo de
+    # Perfumes aceitava 759 produtos e 233 deles nao eram perfume. "natura"
+    # esta dentro de "sabor Natural" (85 casos), "arbo" dentro de
+    # "percarbonato" (57) e "essencial" e palavra de anuncio de suplemento
+    # (27). Nenhum ajuste de tema separa isso: o tema e o nome da marca, e a
+    # marca faz shampoo tambem.
+    exige: tuple[str, ...] = ()
 
     @property
     def e_geral(self) -> bool:
@@ -147,6 +157,8 @@ class GrupoDestino:
 
     def aceita(self, offer: Offer) -> bool:
         if self.exclui and tem_tema(offer.title, list(self.exclui)):
+            return False
+        if self.exige and not tem_tema(offer.title, list(self.exige)):
             return False
         return self.e_geral or tem_tema(offer.title, list(self.temas))
 
@@ -197,6 +209,7 @@ def load_grupos(path: Path | None = None) -> list[GrupoDestino]:
                 prioridade=tuple(
                     sem_acento(x) for x in cru.get("prioridade") or ()
                 ),
+                exige=tuple(sem_acento(x) for x in cru.get("exige") or ()),
             )
         )
 
@@ -2209,42 +2222,66 @@ def _escolhe_para_o_grupo(
     Passa pelas mesmas tres portas do Geral, na mesma ordem: medicao nossa
     primeiro, preco riscado depois, pista do outro grupo por ultimo. O que muda
     e so quem concorre -- so entra o que o `grupo.aceita` deixa entrar.
+
+    Parte das vagas e disputada so pela prioridade do grupo, e e isso que faz a
+    lista de prioridade valer alguma coisa. Ordenar sem reservar nao bastava: as
+    portas correm em sequencia, entao um item qualquer que passa pela primeira
+    leva a vaga de um prioritario que so passaria pela segunda. Em Perfumes isso
+    e a regra -- perfume importado quase nunca tem baseline medida por nos.
     """
     candidatas = [o for o in unique.values() if grupo.aceita(o)]
     if not candidatas:
         return []
 
+    alvos = list(grupo.prioridade)
     # A prioridade do grupo na frente, a ordem de chegada preservada dentro de
     # cada metade. Sem isto o grupo de Casa encheria de organizador de gaveta
     # com 70% off e a air fryer -- o motivo de alguem entrar no grupo -- ficaria
     # de fora por ter "so" 30%. Mesmo raciocinio do `priority` no Geral.
-    if grupo.prioridade:
-        alvos = list(grupo.prioridade)
+    if alvos:
         candidatas.sort(key=lambda o: not tem_tema(o.title, alvos))
+
+    reserva = min(reserva_de_prioridade_do_grupo(), limite) if alvos else 0
 
     with connect() as conn:
         bloqueados = products_in_cooldown(conn, grupo_jid=grupo.jid)
         recentes = titulos_recentes(conn, family_cooldown_minutes(), grupo.jid)
 
         escolhidas: list[ScoredOffer] = []
-        for porta in (score, score_campaign, score_pista):
-            for offer in candidatas:
-                if len(escolhidas) >= limite:
+
+        def preenche(elegiveis: list[Offer], teto: int) -> None:
+            for porta in (score, score_campaign, score_pista):
+                for offer in elegiveis:
+                    if len(escolhidas) >= teto:
+                        break
+                    if offer.product_id in bloqueados:
+                        continue
+                    if any(s.offer.product_id == offer.product_id for s in escolhidas):
+                        continue
+                    titulo = offer.title
+                    if any(mesmo_produto(t, titulo) for t in recentes):
+                        continue
+                    if any(mesmo_produto(s.offer.title, titulo) for s in escolhidas):
+                        continue
+                    scored = porta(conn, offer, regras_do_tema(offer, rules, temas))
+                    if scored is not None:
+                        escolhidas.append(scored)
+                if len(escolhidas) >= teto:
                     break
-                if offer.product_id in bloqueados:
-                    continue
-                if any(s.offer.product_id == offer.product_id for s in escolhidas):
-                    continue
-                titulo = offer.title
-                if any(mesmo_produto(t, titulo) for t in recentes):
-                    continue
-                if any(mesmo_produto(s.offer.title, titulo) for s in escolhidas):
-                    continue
-                scored = porta(conn, offer, regras_do_tema(offer, rules, temas))
-                if scored is not None:
-                    escolhidas.append(scored)
-            if len(escolhidas) >= limite:
-                break
+
+        if reserva > 0:
+            prioritarias = [o for o in candidatas if tem_tema(o.title, alvos)]
+            preenche(prioritarias, reserva)
+            if escolhidas:
+                log.info(
+                    "%s: %d vaga(s) da reserva foram para a prioridade do grupo.",
+                    grupo.nome,
+                    len(escolhidas),
+                )
+
+        # Reserva sobrando nao vira vaga perdida: o resto da fila preenche o que
+        # faltar, e o prioritario que ficou de fora continua na frente dela.
+        preenche(candidatas, limite)
 
     return escolhidas[:limite]
 
@@ -2349,7 +2386,9 @@ def _gravar_post(conn, scored: ScoredOffer, text: str, grupo_jid: str) -> None:
     )
 
 
-def _reveza_por_grupo(queue: list[tuple]) -> list[tuple]:
+def _reveza_por_grupo(
+    queue: list[tuple], vagas_do_geral: int | None = None
+) -> list[tuple]:
     """A fila reordenada para os grupos se revezarem, um post de cada por vez.
 
     `pending_posts` ordena por `prioridade DESC, created_at`, o que era a ordem
@@ -2368,6 +2407,11 @@ def _reveza_por_grupo(queue: list[tuple]) -> list[tuple]:
 
     Dentro de cada grupo a ordem original e preservada, entao prioridade e
     chegada continuam valendo onde ainda fazem sentido.
+
+    `vagas_do_geral` corta a fila do Geral antes do revezamento: o que passar do
+    teto da hora fica pendente e concorre de novo na proxima drenagem. Cortar
+    aqui, e nao na selecao, e o unico jeito de o teto valer -- o Geral tem sobra
+    de post pendente, entao tirar candidato so troca qual dos dele sai.
     """
     if not queue:
         return []
@@ -2376,8 +2420,23 @@ def _reveza_por_grupo(queue: list[tuple]) -> list[tuple]:
     for item in queue:
         por_grupo.setdefault(item[3] or "", []).append(item)
 
+    if vagas_do_geral is not None and "" in por_grupo:
+        cortados = len(por_grupo[""]) - max(0, vagas_do_geral)
+        por_grupo[""] = por_grupo[""][: max(0, vagas_do_geral)]
+        if not por_grupo[""]:
+            del por_grupo[""]
+        if cortados > 0:
+            log.info(
+                "%d post(s) do Geral ficam para depois: teto de %d por hora.",
+                cortados,
+                max_do_geral_por_hora(),
+            )
+
+    if not por_grupo:
+        return []
+
     if len(por_grupo) == 1:
-        return queue
+        return next(iter(por_grupo.values()))
 
     saida: list[tuple] = []
     filas = list(por_grupo.values())
@@ -2387,6 +2446,20 @@ def _reveza_por_grupo(queue: list[tuple]) -> list[tuple]:
             if not fila:
                 filas.remove(fila)
     return saida
+
+
+def _vagas_do_geral(conn) -> int | None:
+    """Quantas vagas ainda cabem no Geral nesta hora, ou None quando nao ha teto.
+
+    Lido do banco a cada drenagem de proposito. Com a entrega em lotes a rodada
+    chama `flush_pending` varias vezes, e cada chamada tem que enxergar o que as
+    anteriores ja mandaram -- senao o teto valeria por lote e o total seria o
+    teto multiplicado pelo numero de lotes.
+    """
+    teto = max_do_geral_por_hora()
+    if teto <= 0:
+        return None
+    return max(0, teto - enviados_na_janela(conn, "", 60))
 
 
 def flush_pending(
@@ -2425,7 +2498,8 @@ def flush_pending(
             [
                 (row["id"], row["copy"], row["image_url"], row["grupo_jid"])
                 for row in pending_posts(conn)
-            ]
+            ],
+            _vagas_do_geral(conn),
         )
 
     if velhos:

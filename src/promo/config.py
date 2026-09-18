@@ -421,6 +421,44 @@ def max_por_grupo_tematico() -> int:
     return _int("MAX_POR_GRUPO_TEMATICO", 5)
 
 
+def reserva_de_prioridade_do_grupo() -> int:
+    """Quantas das vagas do grupo tematico sao disputadas so pela prioridade.
+
+    A ordenacao sozinha nao bastava. `_escolhe_para_o_grupo` poe o prioritario
+    na frente DENTRO de cada porta, mas as portas correm em sequencia: um item
+    qualquer que passa pela primeira (medicao nossa) leva a vaga de um item
+    prioritario que so passaria pela segunda (preco riscado). No grupo de
+    Perfumes isso e a regra, nao a excecao -- perfume importado quase nunca tem
+    baseline medida por nos, e o Natura de sempre tem.
+
+    A reserva e teto, nao piso: sem candidato prioritario a vaga volta para a
+    fila normal. Mesmo desenho do `PRIORITY_RESERVE` do Geral.
+    """
+    return _int("RESERVA_DE_PRIORIDADE_DO_GRUPO", 2)
+
+
+def max_do_geral_por_hora() -> int:
+    """Teto de posts enviados ao Geral por hora. 0 desliga o teto.
+
+    Por HORA, e nao por rodada, porque a rodada nao tem duracao fixa: medido em
+    17/09/2026 elas levaram de 1550s a 2679s, contra os 900s do intervalo. Teto
+    por rodada viraria um numero diferente a cada hora do dia.
+
+    Existe porque o Geral nao e limitado pelo que escolhe, e sim pelo que a
+    drenagem deixa sair: medido em 17/09/2026, em 24h ele criou 497 posts,
+    enviou 151 e perdeu 321 na fila por preco velho. Com essa sobra, cortar
+    selecao nao tira um envio sequer -- a vaga liberada e ocupada pelo proximo
+    da propria fila dele. So a entrega segura o volume.
+
+    Sobre a escala: 160 envios em 24h, media de 6,7 por hora e pico de 18. Um
+    teto de 6 corta 24% e um de 7 corta 16% -- e o pico e o que ele derruba.
+
+    O que o teto libera vai para os grupos tematicos, porque o revezamento
+    continua percorrendo a fila depois que o Geral sai dela.
+    """
+    return _int("MAX_DO_GERAL_POR_HORA", 0)
+
+
 # Sentinela de "sem teto" para `MAX_PISTAS_POR_RUN`. Grande o bastante para
 # nunca ser o limite -- quem segura passa a ser so o tamanho da fila.
 SEM_TETO = 10_000
