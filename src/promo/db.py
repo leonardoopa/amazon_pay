@@ -884,12 +884,18 @@ def recent_headlines(conn: sqlite3.Connection, limit: int = 12) -> list[str]:
     Cada chamada ao Gemini e independente: ele nao lembra do que escreveu ontem,
     nem ha hora atras. Sem esse historico o grupo recebe "AIR FRYER POR 389
     PILA" e "AIR FRYER POR 279 PILA" no mesmo dia, e a graca morre na segunda.
+
+    `id DESC` desempata: `created_at` tem resolucao de segundo, e uma rodada
+    grava varios posts dentro do mesmo. Empatados, o SQLite devolve na ordem
+    que achar -- na pratica a de insercao, que e o INVERSO do pedido. Com
+    `limit` pequeno isso descarta justamente as chamadas mais recentes, que sao
+    as que o modelo mais precisa evitar repetir.
     """
     rows = conn.execute(
         """
         SELECT copy FROM posts
         WHERE status IN ('sent', 'pending')
-        ORDER BY created_at DESC LIMIT ?
+        ORDER BY created_at DESC, id DESC LIMIT ?
         """,
         (limit,),
     ).fetchall()
