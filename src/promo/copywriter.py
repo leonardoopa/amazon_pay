@@ -60,10 +60,13 @@ def store_name(source: str) -> str:
 
 
 DISCLOSURES = {
-    "amazon": (
-        ""
-        ""
-    ),
+    # Vazio = esta fonte sai sem linha de divulgacao. Retirado a pedido em
+    # 22/09/2026, com a fonte Amazon desligada (sem AMAZON_CLIENT_ID no .env).
+    #
+    # Reponha a frase literal antes de religar a Amazon: o Operating Agreement
+    # do Programa de Associados a exige, e o custo de nao ter nao e um post
+    # feio, e a conta encerrada.
+    "amazon": "",
     # Encurtada duas vezes a pedido: "Link de afiliado - o preco pra voce nao
     # muda." ocupava tres linhas no celular, virou "Link de afiliado." e agora
     # e um marcador colado na linha do link. Esse e o piso -- abaixo dele para
@@ -73,13 +76,26 @@ DISCLOSURES = {
     # reconhecivel como tal (CDC art. 36), e o programa de afiliados do ML
     # exige a divulgacao -- some ela e o risco nao e um post feio, e a conta
     # encerrada, que leva junto a unica receita do projeto.
-    #
-    # Vazio aqui nao desliga a divulgacao: quebra o post. `_normaliza("")` casa
-    # com QUALQUER linha em branco, entao `_enforce_disclosure` trata a
-    # primeira como a divulgacao e descarta todas as outras -- o post chega no
-    # grupo sem paragrafo nenhum. Medido em 14/09/2026.
     "mercadolivre": "· afiliado",
 }
+
+
+def sem_divulgacao(source: str) -> bool:
+    """A fonte esta configurada para sair sem linha de divulgacao.
+
+    Existe porque string vazia nao se comporta sozinha como "nenhuma
+    divulgacao" em nenhum dos tres pontos que consomem esse valor, e o pior
+    deles e silencioso: `_normaliza("")` casa com QUALQUER linha em branco,
+    entao `_enforce_disclosure` toma a primeira linha vazia do post como sendo
+    a divulgacao, descarta todas as outras, e o texto chega no grupo sem
+    paragrafo nenhum. Medido em 14/09/2026, e de novo em 22/09/2026 ao zerar a
+    frase da Amazon.
+
+    Os outros dois erram mais barato: o prompt mandaria o modelo copiar
+    literalmente uma frase vazia, e o `fallback_copy` fecharia o post com uma
+    linha em branco sobrando depois do link.
+    """
+    return not disclosure_for(source).strip()
 
 SYSTEM = """Voce escreve posts de oferta para um grupo de WhatsApp brasileiro.
 
@@ -628,9 +644,10 @@ def _facts(
             "Chamadas ja usadas nos posts recentes -- NAO repita a formula nem "
             "o angulo delas:\n" + "\n".join(f"  - {linha}" for linha in avoid)
         )
-    facts.append(
-        f"Divulgacao obrigatoria (copie literalmente): {disclosure_for(offer.source)}"
-    )
+    if not sem_divulgacao(offer.source):
+        facts.append(
+            f"Divulgacao obrigatoria (copie literalmente): {disclosure_for(offer.source)}"
+        )
     return "\n".join(facts)
 
 
@@ -748,6 +765,12 @@ def _enforce_disclosure(text: str, source: str) -> str:
     saiu com a divulgacao duplicada, uma acentuada e outra nao. Detectar a
     variante e troca-la pela canonica corrige as duas coisas de uma vez.
     """
+    if sem_divulgacao(source):
+        # Sem esta saida o alvo seria "", que casa com toda linha em branco: a
+        # primeira viraria "a divulgacao" e o resto seria descartado como
+        # duplicata, devolvendo o post como um paragrafo unico.
+        return text
+
     disclosure = disclosure_for(source)
     alvo = _normaliza(disclosure)
 
@@ -839,7 +862,8 @@ def fallback_copy(
     if offer.official_store:
         lines.append("Loja oficial no ML")
     lines.append(link)
-    lines.append(disclosure_for(offer.source))
+    if not sem_divulgacao(offer.source):
+        lines.append(disclosure_for(offer.source))
     # Sem linha em branco entre o link e a divulgacao, igual ao caminho do
     # Gemini (ver `_cola_no_link`). Os dois textos vao para o mesmo grupo e
     # nao podem ter formato diferente -- o fallback entra justamente nas

@@ -25,6 +25,9 @@ from promo.models import Offer, ScoredOffer  # noqa: E402
 LINK = "https://produto.mercadolivre.com.br/MLB-123?matt_tool=1"
 
 
+# A frase que a Amazon exigia, mantida aqui so para afirmar a AUSENCIA dela.
+# Foi retirada em 22/09/2026, com a fonte Amazon desligada. Se alguem religar
+# a Amazon e repuser a frase em DISCLOSURES, os testes abaixo apontam onde.
 AMAZON_DISCLOSURE = (
     "Como participante do Programa de Associados da Amazon, "
     "sou remunerado pelas compras qualificadas efetuadas"
@@ -172,40 +175,57 @@ def test_fallback_sem_cupom_nao_inventa_linha():
     assert "cupom" not in fallback_copy(make_scored(), LINK).lower()
 
 
-# --- Divulgacao obrigatoria (Clausula 5 do Contrato de Associados) ---
+# --- Divulgacao por fonte ---
 #
-# A frase da Amazon e literal por contrato, e violar a Clausula 5 conta como
-# descumprimento material. Por isso ela e testada caractere por caractere.
+# O Mercado Livre continua com a dele: o programa de afiliados exige, e o CDC
+# art. 36 pede que publicidade seja identificavel. A da Amazon foi retirada a
+# pedido em 22/09/2026, com a fonte desligada -- os testes abaixo prendem a
+# ausencia nos tres caminhos que consumiam a frase, porque uma string vazia
+# nao se comporta sozinha como "nenhuma divulgacao".
 
 
-def test_amazon_usa_a_frase_exata_do_contrato():
+def test_amazon_sai_sem_linha_de_divulgacao():
     text = fallback_copy(make_scored(source="amazon"), LINK)
 
-    assert text.endswith(AMAZON_DISCLOSURE)
+    assert AMAZON_DISCLOSURE not in text
+    # Fecha no link, sem linha vazia sobrando onde a frase estava.
+    assert text.endswith(LINK)
 
 
-def test_facts_mandam_a_divulgacao_da_loja_certa():
-    assert AMAZON_DISCLOSURE in _facts(make_scored(source="amazon"), LINK)
-    assert AMAZON_DISCLOSURE not in _facts(make_scored(), LINK)
+def test_mercadolivre_continua_com_a_divulgacao():
+    """A retirada vale so para a Amazon. O ML nao pode ir junto."""
+    text = fallback_copy(make_scored(), LINK)
+
+    assert text.endswith(DISCLOSURES["mercadolivre"])
 
 
-def test_disclosure_e_reposta_se_o_modelo_parafrasear():
-    """LLM nao e confiavel para reproduzir texto legal -- o codigo garante."""
-    client = FakeClient(
-        "Achei um bom preco\nRelogio Seiko\nsou remunerado pelas compras"
-    )
+def test_facts_nao_pedem_divulgacao_vazia():
+    """Sem a guarda, o prompt mandaria o modelo copiar literalmente uma frase
+    vazia -- instrucao sem conteudo que so ocupa contexto e confunde."""
+    facts_amazon = _facts(make_scored(source="amazon"), LINK)
+
+    assert AMAZON_DISCLOSURE not in facts_amazon
+    assert "Divulgacao obrigatoria" not in facts_amazon
+    # O ML continua mandando a dele.
+    assert DISCLOSURES["mercadolivre"] in _facts(make_scored(), LINK)
+
+
+def test_amazon_nao_ganha_divulgacao_de_volta_pelo_enforce():
+    """O caminho do Gemini nao pode reintroduzir a frase que foi retirada."""
+    client = FakeClient("Achei um bom preco\nRelogio Seiko\n" + LINK)
     copy = Copywriter(client=client).write(make_scored(source="amazon"), LINK)
 
-    assert copy.endswith(AMAZON_DISCLOSURE)
+    assert AMAZON_DISCLOSURE not in copy
+    assert "Programa de Associados" not in copy
 
 
 def test_disclosure_nao_e_duplicada_quando_o_modelo_acerta():
     client = FakeClient(
-        f"Achei um bom preco\nRelogio Seiko\n{LINK}\n{AMAZON_DISCLOSURE}"
+        f"Achei um bom preco\nRelogio Seiko\n{LINK}\n{DISCLOSURES['mercadolivre']}"
     )
-    copy = Copywriter(client=client).write(make_scored(source="amazon"), LINK)
+    copy = Copywriter(client=client).write(make_scored(), LINK)
 
-    assert copy.count(AMAZON_DISCLOSURE) == 1
+    assert copy.count(DISCLOSURES["mercadolivre"]) == 1
 
 
 # ---------- formato de moeda ----------
@@ -426,8 +446,10 @@ def test_loja_bate_com_a_divulgacao():
     for source in ("mercadolivre", "ml_ofertas", "demo"):
         assert store_name(source) == "Mercado Livre"
         assert disclosure_for(source) == DISCLOSURES["mercadolivre"]
+    # A Amazon tem nome de loja, mas nao tem mais divulgacao. Sao coisas
+    # separadas: o nome atribui a oferta, a divulgacao identifica o afiliado.
     assert store_name("amazon") == "Amazon"
-    assert "Programa de Associados" in disclosure_for("amazon")
+    assert disclosure_for("amazon") == ""
 
 
 # --- Rate limit por minuto ---
@@ -548,15 +570,28 @@ def test_ja_canonica_passa_intacta():
     assert _enforce_disclosure(texto, "mercadolivre") == texto
 
 
-def test_amazon_mantem_a_frase_do_contrato():
-    from promo.copywriter import DISCLOSURES
+def test_amazon_atravessa_o_enforce_intacta():
+    """Divulgacao vazia nao pode comer os paragrafos do post.
 
-    exata = DISCLOSURES["amazon"]
-    texto = "POST\nlink\n"
+    `_normaliza("")` casa com QUALQUER linha em branco. Sem a guarda de
+    `sem_divulgacao`, a primeira linha vazia era tratada como a divulgacao e
+    todas as outras eram descartadas como duplicata -- o post chegava no grupo
+    como um bloco unico, sem paragrafo nenhum. Foi o que aconteceu ao zerar a
+    frase da Amazon em 22/09/2026.
+    """
+    texto = "CHAMADA\n\nRelogio Seiko\n\nR$ 89,90\n\nhttps://amzn.to/x"
     resultado = _enforce_disclosure(texto, "amazon")
 
-    assert resultado.count("Programa de Associados") == 1
-    assert exata in resultado
+    assert resultado == texto
+    assert resultado.count("\n\n") == 3
+
+
+def test_amazon_nao_ganha_nada_no_fim():
+    """Nem a frase antiga, nem uma linha vazia no lugar dela."""
+    resultado = _enforce_disclosure("POST\nlink", "amazon")
+
+    assert resultado == "POST\nlink"
+    assert not resultado.endswith("\n")
 
 
 def test_nao_come_linha_parecida_do_post():
@@ -822,15 +857,22 @@ def test_a_divulgacao_do_ml_nunca_fica_vazia():
     assert "afiliado" in DISCLOSURES["mercadolivre"].lower()
 
 
-def test_divulgacao_vazia_comeria_as_linhas_em_branco(monkeypatch):
-    """Por que vazio nao e "so" tirar a linha.
+def test_divulgacao_vazia_preserva_as_linhas_em_branco(monkeypatch):
+    """Vazio passa a significar "esta fonte sai sem divulgacao".
 
-    `_normaliza("")` casa com qualquer linha em branco. A primeira vira a
-    divulgacao, as outras sao descartadas como duplicata, e o post chega no
-    grupo sem paragrafo nenhum -- defeito de formato que nao tem nada a ver
-    com a divulgacao em si. Medido em 14/09/2026.
+    Ate 22/09/2026 vazio era um defeito, nao uma opcao: `_normaliza("")` casa
+    com qualquer linha em branco, a primeira virava a divulgacao, as outras
+    eram descartadas como duplicata, e o post chegava no grupo sem paragrafo
+    nenhum -- a checagem antiga afirmava exatamente isso (`count("\\n\\n") == 1`).
+
+    Retirar a frase da Amazon exigiu que vazio virasse configuracao valida, e
+    `sem_divulgacao` e a guarda que faz o texto atravessar intacto. Este teste
+    e o inverso do antigo: os tres paragrafos tem que sobreviver.
     """
     monkeypatch.setitem(DISCLOSURES, "mercadolivre", "")
     texto = "CHAMADA\n\nProduto\n\nDe R$ 200,00 por *R$ 150,00*\n\nhttps://x"
 
-    assert _enforce_disclosure(texto, "mercadolivre").count("\n\n") == 1
+    resultado = _enforce_disclosure(texto, "mercadolivre")
+
+    assert resultado == texto
+    assert resultado.count("\n\n") == 3

@@ -142,14 +142,15 @@ def test_a_tag_da_linha_de_comando_ganha_do_ambiente(banco):
     assert linhas(banco, "affiliate_links")[0]["url"].endswith("?tag=economizeveyo-20")
 
 
-def test_o_texto_traz_o_link_e_a_divulgacao(banco):
-    """A divulgacao de afiliado e exigencia do Operating Agreement, e o CDC
-    art. 36 pede que publicidade seja identificavel. Nao pode sumir."""
+def test_o_texto_traz_o_link_sem_a_divulgacao(banco):
+    """A divulgacao da Amazon foi retirada a pedido em 22/09/2026, com a fonte
+    desligada. A tag de afiliado no link continua sendo o que faz a comissao
+    existir -- ela nao pode sumir junto."""
     rodar()
 
     copy = linhas(banco, "posts")[0]["copy"]
     assert f"?tag={TAG}" in copy
-    assert "Amazon" in copy
+    assert "Programa de Associados" not in copy
 
 
 # ---------- dry-run ----------

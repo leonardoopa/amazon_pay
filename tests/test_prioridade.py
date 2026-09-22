@@ -160,6 +160,11 @@ def test_o_foco_em_barato_continua_valendo_dentro_da_reserva(monkeypatch):
     """A reserva muda quem concorre pela vaga, nao o criterio que decide."""
     monkeypatch.setenv("PRICE_FOCUS_MAX", "300")
     monkeypatch.setenv("PRICE_FOCUS_RESERVE", "0")
+    # Fixar tambem esta. `config.load_dotenv()` carrega o .env da maquina, e
+    # quem tiver PRIORITY_IGNORES_PRICE_FOCUS=1 la ve este teste falhar sem ter
+    # mudado uma linha de codigo. Teste descreve o comportamento padrao, nao a
+    # configuracao de quem roda.
+    monkeypatch.setenv("PRIORITY_IGNORES_PRICE_FOCUS", "0")
     candidatas = [
         oferta("Kit Wella Oil Reflections Profissional", 612.0, 55),
         oferta("Máscara Wella Oil Reflections 150ml", 116.0, 47),
