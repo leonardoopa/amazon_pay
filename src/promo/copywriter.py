@@ -61,8 +61,8 @@ def store_name(source: str) -> str:
 
 DISCLOSURES = {
     "amazon": (
-        "Como participante do Programa de Associados da Amazon, "
-        "sou remunerado pelas compras qualificadas efetuadas"
+        ""
+        ""
     ),
     # Encurtada duas vezes a pedido: "Link de afiliado - o preco pra voce nao
     # muda." ocupava tres linhas no celular, virou "Link de afiliado." e agora

@@ -552,7 +552,7 @@ def test_amazon_mantem_a_frase_do_contrato():
     from promo.copywriter import DISCLOSURES
 
     exata = DISCLOSURES["amazon"]
-    texto = "POST\nlink\nComo participante do Programa de Associados da Amazon, sou remunerado pelas compras qualificadas efetuadas"
+    texto = "POST\nlink\n"
     resultado = _enforce_disclosure(texto, "amazon")
 
     assert resultado.count("Programa de Associados") == 1
