@@ -382,16 +382,117 @@ def test_o_esportes_aceita_o_que_o_dono_listou(titulo):
         ("Kit 6 Cuecas Lupo Boxer Algodao", "lupo"),
         ("Meia Calca Fio 40 Feminina", "meia"),
         ("Creme Hidratante Meia Noite 200ml", "meia"),
+        ("Granado Sabonete Enxofre 90g", "bone"),
+        ("Kit Virginia Top Shorts Meia Coxa Cintura Alta", "meia"),
+        ("Anel Meia Alianca Cravejado Zirconia Prata 925", "meia"),
+        ("Kit Gabarito Meia Esquadria Serra Ingco", "meia"),
+        ("Blusa Sueter Canelado Manga Longa Meia Estacao Social", "meia"),
+        ("Balanca Digital Cozinha Inox 10kg Alimentos", "balanca"),
+        ("Balanca Digital Eletronica Comercial 40kg Feira Mercado", "balanca"),
     ],
 )
 def test_o_esportes_recusa_o_que_so_compartilha_letras(titulo, armadilha):
     """Tema curto casa palavra de outra categoria.
 
-    "bone" esta dentro de "boneca", "meia" dentro de "meia calca", e a Lupo faz
-    cueca alem de meia esportiva. O `exclui` e o que separa -- mesmo mecanismo
-    que ja tirava cueca do grupo de Mulheres.
+    Duas das armadilhas chegaram ao grupo antes da poda de 27/09/2026, e nenhum
+    `exclui` as pegava, porque o problema nao era o produto -- era a palavra.
+    "bone" esta dentro de "sabonete", e foi assim que "Granado Sabonete Enxofre"
+    virou post de esporte. "meia" esta dentro de "meia coxa" (32 titulos do
+    catalogo, e sao shorts femininos), "meia alianca" (anel) e "meia esquadria"
+    (serrote).
+
+    Por isso `bone`, `meia` e `balanca` sairam dos temas em vez de ganharem mais
+    uma linha de exclusao: exclusao so enumera o que ja aconteceu, e uma palavra
+    de tres letras dentro de outra nao tem fim de lista. O que ficou no lugar
+    qualifica o esporte -- `esportiv`, `academia`, `treino` --, entao a meia
+    esportiva continua entrando e o anel nao.
+
+    "boneca", "cueca" e "meia calca" seguem no `exclui` e seguem valendo: a Lupo
+    faz o armario inteiro, e marca nao se separa por tema.
     """
     assert "Esportes" not in destinos(titulo), f"{titulo} entrou por {armadilha!r}"
+
+
+# ---------- a poda de 27/09/2026: roupa de sair nao e roupa de esporte ----------
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Camisa Polo Masculina Reserva Friso Branca",
+        "Camisa Colcci Gola Polo Macia Confortavel Moderna Atemporal",
+        "Kit 2 Camisa Gola Polo Masculina Basica Piquet Camiseta",
+        "Conjunto Boiadeira Infantil Ana Castela com Blazer, Cropped e Shorts",
+        "Kit 3 Bermudas Short Jeans Masculina Lisa Lycra Elastano 44",
+        "Kit 4 Short Feminino Social Cintura Alta P M G Gg Preto Liso M",
+        "Short Alfaiataria Feminino Linho Cintura Alta Bermuda Verao Bege",
+        "Camisa Manga Curta Gola Padre Masculina Festa Trabalho",
+        "Camisa Polo Reserva Essence Basica Marinho Liso M",
+        "Kit Camiseta T-shirt Feminina Malha Peruana Basica Oversized",
+        "Short Feminino Resinado Tecido Premium",
+        "Cinta Modeladora Shortinho Confortavel 4 Barbatanas Comprime",
+        "Kit 2 Camisetas Manga Longa Calvin Klein Masculino Branco Liso M",
+        "Kit Com 5 Camisetas Basicas Feminina Hering Preto Branco Cinza",
+        "Camiseta Tommy Hilfiger Masculina Azul Marinho Original",
+        "Regata Feminina Modeladora Compressao Alta Sustentacao Slim",
+    ],
+)
+def test_roupa_de_sair_nao_entra_no_esportes(titulo):
+    """Os posts que o dono apontou em 27/09/2026, e o que estava por tras.
+
+    O grupo aceitava 16.529 dos 41.424 titulos do catalogo de producao -- 39,9%,
+    quatro em cada dez ofertas do bot inteiro. A causa nao era criterio frouxo,
+    eram oito temas que descrevem a PECA e nao o esporte: `camisa`, `camiseta`,
+    `short`, `shorts`, `bermuda`, `regata`, `meia` e `bone`. Sozinhos, eles
+    foram a unica porta de entrada de 153 dos 627 envios de sete dias.
+
+    Camisa polo Reserva, short alfaiataria de linho, cinta modeladora e conjunto
+    boiadeira da Ana Castela sao roupa de sair. Depois da poda a aceitacao caiu
+    para 16,9% do mesmo catalogo.
+    """
+    assert "Esportes" not in destinos(titulo), titulo
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Kit 5 Camisa Masculina Termica Academia Dry Fit Malha Fria",
+        "Kit 8 Camisas Sandrini Dry-Fit Masculina Caminhada Academia",
+        "Bermuda Termica Anti Assadura Esportiva Com Bolsos",
+        "Kit 3 Bermudas Dry Fit De Alto Padrao Para Academia",
+        "Kit 6 Pares De Meias Esportivas Mash Em Algodao Cano Medio",
+        "Kit 3 Pares Meia Antiderrapante Esportiva Futebol Treino",
+        "Short Volei Masculino Polo Wear Branco G",
+        "Kit 9 Pares Meias Kappa Algodao Cano Medio Conforto Original",
+        "Luva Para Academia Masculino Feminino Treino Barra Tamanho G",
+        "Munhequeira Universal Tenis Academia Masculina Feminina",
+        "Tenis Kappa Pulse Rx Unissex Corrida Conforto",
+        "Regatao Feminino Academia Top Legging",
+        "Camiseta Masculina Dry Fit Corrida Academia Esportes",
+        "Luva Academia Crossfit Protecao Maos Feminina",
+        "Manguito Rockbros UV400 Termico Corrida Ciclismo Bike",
+        "Tenis De Basquete Masculino Under Armour",
+    ],
+)
+def test_a_peca_esportiva_continua_entrando_pelo_qualificador(titulo):
+    """A poda nao podia levar junto a roupa de treino, e nao levou.
+
+    Camisa termica de academia, bermuda dry fit, meia esportiva e short de volei
+    usavam as mesmas oito palavras genericas -- perde-las seria trocar um erro
+    por outro. Os 13 termos que entraram no lugar qualificam o esporte em vez de
+    nomear a peca: `dry fit`, `dryfit`, `esportiv`, `academia`, `treino`,
+    `futebol`, `volei`, `basquete`, `ciclismo`, `caminhada`, `musculacao`,
+    `crossfit` e a marca `kappa`.
+
+    `esportiv` cobre esportivo/esportiva/esportivos/esportivas de uma vez, que e
+    o que faz "Meias Esportivas" entrar sem precisar de `meia`.
+
+    Medido contra os 41.424 titulos do catalogo: os 13 abrem 838 admissoes que
+    a lista antiga nao tinha, e nenhum deles e armadilha de substring --
+    `ciclismo` nao aparece dentro de "motociclismo" em titulo nenhum, e as 52
+    ocorrencias de `kappa` sao todas a marca esportiva.
+    """
+    assert "Esportes" in destinos(titulo), titulo
 
 
 # ---------- a Lupo no Esportes: a peca decide, nao a marca ----------

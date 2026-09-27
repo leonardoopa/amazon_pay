@@ -976,7 +976,7 @@
       }
     ]
   },
-  "_comment_grupos": "Grupos de WhatsApp que recebem os posts. `temas` vazio quer dizer 'recebe tudo' -- e o grupo geral. Com temas, o grupo so recebe oferta cujo TITULO cite um deles, mesma regra do `priority`: a oferta chega por busca, por categoria ou pela vitrine, e nenhuma dessas carrega o motivo de ter vindo; o titulo carrega. O `jid` do geral fica VAZIO de proposito: vazio significa o EVOLUTION_GROUP_JID do .env, e e o que mantem os 3.063 posts ja enviados contando no cooldown dele. Trocar por um JID escrito faria todos sumirem da conta e produtos recem-postados voltarem ao grupo. Uma oferta vai para TODOS os grupos que a aceitam: Wella sai no Geral e no Mulheres, monitor gamer so no Geral. Lista ausente = um destino unico, que era o comportamento ate 09/09/2026.",
+  "_comment_grupos": "Grupos de WhatsApp que recebem os posts. `temas` vazio quer dizer 'recebe tudo' -- e o grupo geral. Com temas, o grupo so recebe oferta cujo TITULO cite um deles, mesma regra do `priority`: a oferta chega por busca, por categoria ou pela vitrine, e nenhuma dessas carrega o motivo de ter vindo; o titulo carrega. O `jid` do geral fica VAZIO de proposito: vazio significa o EVOLUTION_GROUP_JID do .env, e e o que mantem os 3.063 posts ja enviados contando no cooldown dele. Trocar por um JID escrito faria todos sumirem da conta e produtos recem-postados voltarem ao grupo. Uma oferta vai para TODOS os grupos que a aceitam: Wella sai no Geral e no Mulheres, monitor gamer so no Geral. Lista ausente = um destino unico, que era o comportamento ate 09/09/2026. Poda do Esportes em 27/09/2026: ele aceitava 16.529 dos 41.424 titulos do catalogo (39,9%), porque `camisa`, `camiseta`, `short`, `shorts`, `bermuda`, `regata`, `meia` e `bone` sao palavras de roupa, nao de esporte -- 153 dos 627 envios de sete dias entraram SO por elas, e eram camisa polo Reserva, short alfaiataria, cinta modeladora e conjunto boiadeira infantil. Duas eram armadilha de substring, nao de criterio: `bone` esta dentro de `sabonete` (mandou 'Granado Sabonete Enxofre' para o grupo) e `meia` esta dentro de `meia coxa` (32 casos, short feminino), `meia alianca` (anel) e `meia esquadria` (serrote). No lugar entraram 13 termos que qualificam o esporte em vez de descrever a peca: `dry fit`, `esportiv`, `academia`, `treino`, `futebol`, `volei`, `basquete`, `ciclismo`, `caminhada`, `musculacao`, `crossfit` e a marca `kappa`. Medido contra o mesmo catalogo: 16,9% de aceitacao, e as pecas legitimas que usavam as palavras genericas ('Camisa Termica Academia Dry Fit', 'Meias Esportivas Mash', 'Short Volei') continuam entrando pelo qualificador. `balanca` saiu junto: trazia balanca de cozinha e de mercearia, e `balanca corporal` e `bioimpedancia` ja pegam a certa.",
   "grupos": [
     {
       "nome": "Comunidade do Desconto - Geral",
@@ -1263,21 +1263,12 @@
         "under armour",
         "chuteira",
         "bola de futebol",
-        "camisa de time",
-        "camiseta dry fit",
-        "regata esportiva",
-        "bermuda esportiva",
-        "short de corrida",
-        "meia esportiva",
         "jaqueta corta vento",
         "halter",
         "anilha",
         "kettlebell",
-        "barra de supino",
         "colchonete",
-        "elastico de treino",
         "corda de pular",
-        "luva de academia",
         "esteira ergometrica",
         "bicicleta ergometrica",
         "eliptico",
@@ -1294,37 +1285,38 @@
         "monitor cardiaco",
         "mochila de treino",
         "bolsa esportiva",
-        "balanca",
         "balanca corporal",
         "bioimpedancia",
         "bicicleta",
         "spinning",
         "corrida",
-        "roupa de academia",
-        "roupa de treino",
         "legging",
-        "top esportivo",
         "lupo",
         "suplemento",
         "yopro",
         "whey",
-        "meia",
-        "bermuda",
-        "bone",
         "relogio digital",
         "garmin",
         "whoop",
         "smartwatch",
         "smart watch",
-        "camisa",
-        "camiseta",
-        "short",
-        "shorts",
-        "regata",
         "tenis fila",
         "adizero",
         "amazfit",
-        "moda fitness"
+        "moda fitness",
+        "dry fit",
+        "dryfit",
+        "esportiv",
+        "academia",
+        "treino",
+        "futebol",
+        "volei",
+        "basquete",
+        "ciclismo",
+        "caminhada",
+        "musculacao",
+        "crossfit",
+        "kappa"
       ],
       "prioridade": [
         "tenis de corrida",
@@ -1338,9 +1330,9 @@
         "under armour",
         "whey protein",
         "creatina",
-        "camiseta dry fit",
+        "dry fit",
         "bicicleta",
-        "balanca",
+        "balanca corporal",
         "corrida",
         "lupo",
         "garmin",
@@ -1373,7 +1365,12 @@
         "camisola",
         "body infantil",
         "fralda",
-        "collant"
+        "collant",
+        "carrinho",
+        "carro eletrico",
+        "fronha",
+        "lencol",
+        "cobre leito"
       ]
     },
     {
@@ -1786,7 +1783,7 @@
     "poco x",
     "redmi note"
   ],
-  "_comment_vitrine": "Categorias pedidas da vitrine /ofertas (a pagina publica, nao a API). Uma requisicao por pagina, ~45 produtos cada, com o 'de' e o 'por' prontos -- e a fonte mais barata do projeto. Existe porque a vitrine crua e so o topo da campanha: medido em 01/09/2026, a pagina sem filtro trouxe 1.621 precos e ZERO Nike, adidas, Puma, Hering, Lupo ou New Balance, enquanto ?category=MLB23262 trouxe 422 precos e 36 de adidas. Esta e a UNICA via que resta para anuncio de vendedor: /sites/MLB/search responde 403 desde 2025 e a busca publica redireciona servidor para verificacao de conta.",
+  "_comment_vitrine": "Categorias pedidas da vitrine /ofertas (a pagina publica, nao a API). Uma requisicao por pagina, ~45 produtos cada, com o 'de' e o 'por' prontos -- e a fonte mais barata do projeto. Existe porque a vitrine crua e so o topo da campanha: medido em 01/09/2026, a pagina sem filtro trouxe 1.621 precos e ZERO Nike, adidas, Puma, Hering, Lupo ou New Balance, enquanto ?category=MLB23262 trouxe 422 precos e 36 de adidas. Esta e a UNICA via que resta para anuncio de vendedor: /sites/MLB/search responde 403 desde 2025 e a busca publica redireciona servidor para verificacao de conta. Em 27/09/2026 dez dessas categorias ganharam grupos=['Esportes'], que e o que o `origens_por_grupo` le para dar prioridade DENTRO do grupo -- mesmo mecanismo que o Beleza Premium ganhou em Mulheres e Perfumes. O dono mandou dezesseis paginas de `lista.mercadolivre.com.br` (conjunto masculino e feminino da Nike, treino da Nike, loja da adidas por genero, camisetas/regatas e shorts/bermudas da adidas, tenis de corrida, termicos e acessorios de esporte) dizendo 'la sao os melhores itens'. Aquele host devolve 302 para /gz/account-verification em toda requisicao de servidor, entao a pagina nao da para ler. Estas categorias sao a mesma prateleira pela via que responde, e a contagem de 01/09/2026 mostra que e onde a marca esta: Calcados 19 adidas, Bermudas e Shorts 9, Camisetas e Regatas 8, Moda Fitness 7 adidas e 6 puma, Agasalhos 4. Buscar por termo nao substitui isso: /products/search devolve ZERO para toda variante de Nike e adidas, porque roupa e calcado de marca sao anuncio de vendedor e nao produto de catalogo (medido em 31/08/2026, e guardado em test_nao_entrou_termo_de_roupa_de_marca). Seis delas passaram de 1 para 2 paginas pelo mesmo pedido; o total foi de 17 para 23, abaixo do teto de 30.",
   "vitrine_categories": [
     {
       "id": "MLB1430",
@@ -1796,27 +1793,44 @@
     {
       "id": "MLB23262",
       "name": "Calcados",
-      "pages": 2
+      "pages": 2,
+      "grupos": [
+        "Esportes"
+      ]
     },
     {
       "id": "MLB188064",
       "name": "Bermudas e Shorts",
-      "pages": 2
+      "pages": 2,
+      "grupos": [
+        "Esportes"
+      ]
     },
     {
       "id": "MLB31447",
       "name": "Camisetas e Regatas",
-      "pages": 2
+      "pages": 2,
+      "grupos": [
+        "Esportes"
+      ]
     },
     {
       "id": "MLB270215",
       "name": "Moda Fitness",
-      "pages": 1
+      "pages": 1,
+      "grupos": [
+        "Esportes"
+      ],
+      "paginas": 2
     },
     {
       "id": "MLB455528",
       "name": "Agasalhos",
-      "pages": 1
+      "pages": 1,
+      "grupos": [
+        "Esportes"
+      ],
+      "paginas": 2
     },
     {
       "id": "MLB107292",
@@ -1826,7 +1840,10 @@
     {
       "id": "MLB1276",
       "name": "Esportes e Fitness",
-      "pages": 1
+      "pages": 1,
+      "grupos": [
+        "Esportes"
+      ]
     },
     {
       "id": "MLB1246",
@@ -1873,22 +1890,38 @@
     {
       "id": "MLB1339",
       "name": "Moda Fitness (Esportes)",
-      "pages": 1
+      "pages": 1,
+      "grupos": [
+        "Esportes"
+      ],
+      "paginas": 2
     },
     {
       "id": "MLB123103",
       "name": "Monitores Esportivos",
-      "pages": 1
+      "pages": 1,
+      "grupos": [
+        "Esportes"
+      ],
+      "paginas": 2
     },
     {
       "id": "MLB438178",
       "name": "Suplementos e Shakers",
-      "pages": 1
+      "pages": 1,
+      "grupos": [
+        "Esportes"
+      ],
+      "paginas": 2
     },
     {
       "id": "MLB3900",
       "name": "Tenis",
-      "pages": 1
+      "pages": 1,
+      "grupos": [
+        "Esportes"
+      ],
+      "paginas": 2
     }
   ],
   "_comment_categories": "Mais vendidos por categoria. Cada categoria custa ~21 chamadas POR DESCOBERTA (a lista + 2 por produto) -- e a descoberta agora roda a cada DISCOVERY_INTERVAL_HOURS, nao em toda rodada. Rode `promo ml-categories` pra ver os IDs.",
