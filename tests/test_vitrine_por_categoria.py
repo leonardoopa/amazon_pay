@@ -313,3 +313,102 @@ def test_as_categorias_que_o_dono_mandou_estao_na_vitrine():
         "MLB3900",  # Tenis
     ):
         assert esperado in ids, f"{esperado} sumiu da vitrine"
+
+
+# ---------- as categorias de esporte viram prioridade dentro do grupo ----------
+
+
+def test_as_categorias_de_esporte_apontam_para_o_grupo_de_esportes():
+    """As dez paginas que levam esporte e marca ao grupo, mapeadas em 27/09/2026.
+
+    O dono mandou dezesseis URLs de `lista.mercadolivre.com.br` -- conjunto
+    masculino e feminino da Nike, treino da Nike, loja da adidas por genero,
+    camisetas/regatas e shorts/bermudas da adidas, tenis de corrida, termicos e
+    acessorios de esporte -- dizendo "la sao os melhores itens". Aquele host
+    devolve 302 para /gz/account-verification em toda requisicao de servidor,
+    entao a pagina nao da para ler.
+
+    Estas categorias sao a mesma prateleira pela via que responde, e a contagem
+    de 01/09/2026 mostra que e onde a marca esta: Calcados 19 adidas, Bermudas e
+    Shorts 9, Camisetas e Regatas 8, Moda Fitness 7 adidas e 6 puma, Agasalhos 4.
+
+    O `grupos` nao muda o que o grupo ACEITA -- isso continua sendo o titulo. Ele
+    muda a ordem DENTRO do grupo, pela reserva de prioridade, que e o mesmo
+    mecanismo que o Beleza Premium ganhou em Mulheres e Perfumes em 18/09/2026.
+    """
+    from promo.pipeline import origens_por_grupo
+
+    mapa = origens_por_grupo()
+    for esperado in (
+        "MLB3900",  # Tenis
+        "MLB1339",  # Moda Fitness
+        "MLB270215",  # Moda Fitness (a outra)
+        "MLB438178",  # Suplementos e Shakers
+        "MLB123103",  # Monitores Esportivos
+        "MLB1276",  # Esportes e Fitness
+        "MLB23262",  # Calcados -- 19 adidas
+        "MLB188064",  # Bermudas e Shorts -- 9 adidas
+        "MLB31447",  # Camisetas e Regatas -- 8 adidas
+        "MLB455528",  # Agasalhos -- 4 adidas
+    ):
+        assert "Esportes" in mapa.get(esperado, ()), f"{esperado} nao aponta para Esportes"
+
+
+@pytest.mark.parametrize(
+    "titulo, origem",
+    [
+        ("Tenis Nike Revolution 7 Masculino Corrida", "MLB3900"),
+        ("Camiseta Adidas Essentials Masculina Preta", "MLB31447"),
+        ("Short Adidas Treino Masculino", "MLB188064"),
+        ("Agasalho Nike Sportswear Masculino", "MLB455528"),
+        ("Creatina Growth 300g Monohidratada", "MLB438178"),
+    ],
+)
+def test_o_que_vem_das_paginas_de_esporte_entra_e_passa_na_frente(titulo, origem):
+    from promo.models import Offer
+    from promo.pipeline import load_grupos, prioritaria_no_grupo
+
+    grupo = next(g for g in load_grupos() if g.nome.endswith("Esportes"))
+    oferta = Offer(
+        source="mercadolivre",
+        external_id="MLB1",
+        title=titulo,
+        price=100.0,
+        url="https://produto.mercadolivre.com.br/MLB-1",
+        vitrine_categoria=origem,
+    )
+
+    assert grupo.aceita(oferta), titulo
+    assert prioritaria_no_grupo(oferta, grupo), titulo
+
+
+@pytest.mark.parametrize(
+    "titulo",
+    [
+        "Camisa Polo Reserva Friso Branca",
+        "Sapato Social Masculino Couro Legitimo",
+        "Sandalia Feminina Rasteira Verao",
+    ],
+)
+def test_a_origem_nao_abre_a_porta_do_grupo(titulo):
+    """Calcados traz adidas, mas traz sapato social junto.
+
+    A prioridade por origem nao e um passe de entrada: `_escolhe_para_o_grupo`
+    monta as candidatas com `grupo.aceita` ANTES de ordenar, entao o sapato
+    social nunca chega a ser ordenado. O titulo continua sendo a porta -- e
+    depois da poda de 27/09/2026 ele precisa citar esporte, nao roupa.
+    """
+    from promo.models import Offer
+    from promo.pipeline import load_grupos
+
+    grupo = next(g for g in load_grupos() if g.nome.endswith("Esportes"))
+    oferta = Offer(
+        source="mercadolivre",
+        external_id="MLB1",
+        title=titulo,
+        price=100.0,
+        url="https://produto.mercadolivre.com.br/MLB-1",
+        vitrine_categoria="MLB23262",
+    )
+
+    assert not grupo.aceita(oferta), titulo
