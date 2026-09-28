@@ -960,6 +960,42 @@
     {
       "term": "moda fitness masculino",
       "max_price": null
+    },
+    {
+      "term": "carta pokemon",
+      "max_price": null
+    },
+    {
+      "term": "cartas pokemon",
+      "max_price": null
+    },
+    {
+      "term": "pokemon estampas ilustradas",
+      "max_price": null
+    },
+    {
+      "term": "booster box pokemon",
+      "max_price": null
+    },
+    {
+      "term": "blister pokemon",
+      "max_price": null
+    },
+    {
+      "term": "elite trainer box pokemon",
+      "max_price": null
+    },
+    {
+      "term": "deck pokemon",
+      "max_price": null
+    },
+    {
+      "term": "lata pokemon",
+      "max_price": null
+    },
+    {
+      "term": "copag pokemon",
+      "max_price": null
     }
   ],
   "_comment_coupon": "Cupons de campanha do MERCADO LIVRE, preenchidos A MAO: sondadas em 08/09/2026, 17 rotas de cupom da API do ML devolvem 404 e a pagina /cupons devolve 403 para servidor, entao nao ha de onde ler sozinho. Campos: `ate` (validade, OBRIGATORIO), `temas` (so entra em titulo que cite um deles), `geral: true` (afirmacao explicita de que vale para tudo -- exigida no lugar de `temas`), `minimo` (valor minimo da compra). Falta de regra NAO e permissao: sem `ate`, ou sem `temas` e sem `geral`, o cupom nao entra. Motivo medido: dos 37 cupons do ML publicados no Promobit, 12 (32%) vinham sem regra nenhuma, 3 ja estavam vencidos e ainda listados como validos, e 6 venciam no mesmo dia. Varios validos para o mesmo produto saem como 'A ou B', porque cupom do ML tem limite de uso. NUNCA sai em oferta da Amazon. ANTES DE PREENCHER: o texto oficial do ML diz que o cupom nao e cumulativo com ofertas vigentes do proprio ML, e este bot so posta item em oferta -- teste um codigo num carrinho real antes de cadastrar, senao o recurso e natimorto. Lista vazia = posts sem cupom, que foi o estado dos 2.953 posts enviados entre 29/08 e 08/09.",
@@ -1608,7 +1644,7 @@
       "limite": 25
     }
   ],
-  "_comment_priority": "Temas com vaga garantida por rodada (PRIORITY_RESERVE no .env diz quantas). Sao pedacos de TITULO, nao termos de busca: a mesma oferta chega pela busca por termo, pelos mais vendidos da categoria e pela vitrine, e nao carrega qual das tres a trouxe -- o titulo carrega. Comparacao sem acento e em minusculo. Cuidado com pedaco curto demais: 'oleo' pegaria oleo de motor.",
+  "_comment_priority": "Temas com vaga garantida por rodada (PRIORITY_RESERVE no .env diz quantas). Sao pedacos de TITULO, nao termos de busca: a mesma oferta chega pela busca por termo, pelos mais vendidos da categoria e pela vitrine, e nao carrega qual das tres a trouxe -- o titulo carrega. Comparacao sem acento e em minusculo. Cuidado com pedaco curto demais: 'oleo' pegaria oleo de motor. Pokemon entrou em 28/09/2026 pelos termos que qualificam a CARTA, nao pela marca: 'pokemon' sozinho traria pelucia, chinelo e mochila, e pior, faria a mochila furar o `exclude` -- titulo que casa em priority passa pela barra. Tres armadilhas de substring evitadas de proposito: 'booster' sozinho esta em 'booster capilar' e 'booster de som', 'deck' em 'deck de madeira', e 'copag' vale tambem para baralho comum. Por isso 'booster box', 'deck pokemon' e 'estampas ilustradas' -- este ultimo e o nome oficial do TCG em portugues, e o mais preciso dos oito. 'pokemon tcg' foi cortado para caber no teto de 160: titulo brasileiro escreve 'Estampas Ilustradas', nao 'TCG', entao era o termo que menos pagava a vaga que ocupava. Os termos de busca correspondentes ficaram SEM max_price de proposito -- teto de preco corre na coleta, antes da pontuacao, e cortaria justamente o booster box caro que a prioridade existe para resgatar.",
   "priority": [
     "wella",
     "kerastase",
@@ -1761,7 +1797,15 @@
     "whoop",
     "corrida",
     "tenis de corrida",
-    "creatina"
+    "creatina",
+    "carta pokemon",
+    "cartas pokemon",
+    "estampas ilustradas",
+    "booster box",
+    "elite trainer box",
+    "blister pokemon",
+    "deck pokemon",
+    "lata pokemon"
   ],
   "_comment_exclude": "O oposto de priority: titulo que casa aqui NAO vira post. Para o produto que sai bem no ranking e ainda assim nao serve ao grupo -- mochila e barata e tem desconto alto, entao ganhava vaga toda rodada (10 dos ultimos 80 posts). A barra nao e absoluta: titulo que tambem casa em priority passa, e e assim que 'Mochila adidas' fica e 'Mochila de Viagem 50L' sai. Comparacao sem acento e em minusculo, igual a de priority.",
   "exclude": [
