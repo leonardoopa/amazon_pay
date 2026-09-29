@@ -706,3 +706,29 @@ def test_a_vitrine_carimba_a_pagina_de_origem(monkeypatch):
     sem_categoria = fonte._pagina(None, None)
 
     assert sem_categoria[0].vitrine_categoria == ""
+
+
+def test_o_teto_da_categoria_nao_corta_o_que_o_tema_resgata():
+    """Mesmo defeito de `test_os_termos_do_tema_nao_tem_teto_de_preco`, um nivel
+    acima: na categoria em vez da keyword.
+
+    `collect_categories` aplica `category.max_price` na COLETA, antes de
+    qualquer pontuacao -- `found = [o for o in found if o.price <=
+    category.max_price]`. Um produto cortado ali nunca chega a `score_campaign`,
+    entao a prioridade nao tem o que resgatar. Foi o que o kit Wella de R$ 612
+    ensinou sobre o teto do termo, e MLB1132 repetia com carta de Pokemon.
+
+    Medido no catalogo de producao em 29/09/2026: dos 104 titulos Pokemon, 41
+    estavam acima do teto de R$250 e 28 desses eram prioritarios pelos temas que
+    entraram em 28/09. Os dois maiores descontos do dia estavam entre os
+    cortados -- box de R$399,99 (de R$979,99, -59,2%) e display de R$327,92 (de
+    R$649,98, -49,5%).
+    """
+    from promo.pipeline import load_categories
+
+    brinquedos = next(c for c in load_categories() if c.id == "MLB1132")
+
+    assert brinquedos.max_price is None or brinquedos.max_price >= 400, (
+        "com teto abaixo de 400 o box de R$399,99 com 59,2% de desconto e "
+        "cortado na coleta, antes de a prioridade valer"
+    )

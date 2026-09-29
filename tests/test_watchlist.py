@@ -238,8 +238,15 @@ def test_a_reserva_ainda_discrimina():
     Ou seja: 152 termos hoje cobrem a mesma fatia que 80 cobriam. O teto sobe
     para 160; o que ele guarda continua sendo a fatia, nao a contagem, e o
     limite de metade nao mudou.
+
+    Remedido em 29/09/2026 para caber `pokemon tcg`, seguindo o que o commit de
+    28/09 pediu -- remedir a fatia, nao subir o teto no olho. Contra os 41.424
+    titulos do catalogo de producao, os 160 temas cobrem 9.631 (23,2%) e os 161
+    cobrem 9.635 (23,3%). A fatia nao se moveu porque o termo casa 5 titulos, e
+    e por isso que o teto pode subir: ele e proxy, e o proxy foi conferido
+    contra a coisa que ele representa.
     """
-    assert len(load_priority()) <= 160
+    assert len(load_priority()) <= 161
 
 
 def test_o_dior_e_o_givenchy_ficam_na_busca():
