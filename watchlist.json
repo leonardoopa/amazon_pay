@@ -1644,7 +1644,7 @@
       "limite": 25
     }
   ],
-  "_comment_priority": "Temas com vaga garantida por rodada (PRIORITY_RESERVE no .env diz quantas). Sao pedacos de TITULO, nao termos de busca: a mesma oferta chega pela busca por termo, pelos mais vendidos da categoria e pela vitrine, e nao carrega qual das tres a trouxe -- o titulo carrega. Comparacao sem acento e em minusculo. Cuidado com pedaco curto demais: 'oleo' pegaria oleo de motor. Pokemon entrou em 28/09/2026 pelos termos que qualificam a CARTA, nao pela marca: 'pokemon' sozinho traria pelucia, chinelo e mochila, e pior, faria a mochila furar o `exclude` -- titulo que casa em priority passa pela barra. Tres armadilhas de substring evitadas de proposito: 'booster' sozinho esta em 'booster capilar' e 'booster de som', 'deck' em 'deck de madeira', e 'copag' vale tambem para baralho comum. Por isso 'booster box', 'deck pokemon' e 'estampas ilustradas' -- este ultimo e o nome oficial do TCG em portugues, e o mais preciso dos oito. 'pokemon tcg' foi cortado para caber no teto de 160: titulo brasileiro escreve 'Estampas Ilustradas', nao 'TCG', entao era o termo que menos pagava a vaga que ocupava. Os termos de busca correspondentes ficaram SEM max_price de proposito -- teto de preco corre na coleta, antes da pontuacao, e cortaria justamente o booster box caro que a prioridade existe para resgatar.",
+  "_comment_priority": "Temas com vaga garantida por rodada (PRIORITY_RESERVE no .env diz quantas). Sao pedacos de TITULO, nao termos de busca: a mesma oferta chega pela busca por termo, pelos mais vendidos da categoria e pela vitrine, e nao carrega qual das tres a trouxe -- o titulo carrega. Comparacao sem acento e em minusculo. Cuidado com pedaco curto demais: 'oleo' pegaria oleo de motor. Pokemon entrou em 28/09/2026 pelos termos que qualificam a CARTA, nao pela marca: 'pokemon' sozinho traria pelucia, chinelo e mochila, e pior, faria a mochila furar o `exclude` -- titulo que casa em priority passa pela barra. Tres armadilhas de substring evitadas de proposito: 'booster' sozinho esta em 'booster capilar' e 'booster de som', 'deck' em 'deck de madeira', e 'copag' vale tambem para baralho comum. Por isso 'booster box', 'deck pokemon' e 'estampas ilustradas' -- este ultimo e o nome oficial do TCG em portugues, e o mais preciso dos oito. 'pokemon tcg' foi cortado para caber no teto de 160: titulo brasileiro escreve 'Estampas Ilustradas', nao 'TCG', entao era o termo que menos pagava a vaga que ocupava. Os termos de busca correspondentes ficaram SEM max_price de proposito -- teto de preco corre na coleta, antes da pontuacao, e cortaria justamente o booster box caro que a prioridade existe para resgatar. `pokemon tcg` voltou em 29/09/2026, depois de ter sido cortado em 28/09 para caber no teto de 160 temas. O corte partiu da suposicao de que titulo brasileiro escreve \"Estampas Ilustradas\" e nao \"TCG\", e o catalogo de producao desmente: `pokemon tcg` casa 5 titulos, todos produto legitimo de carta, e 4 deles nao sao alcancados por nenhum outro tema -- entre eles os dois maiores descontos Pokemon do dia, o box de R$399,99 (-59,2%) e o de R$179,00 (-55,2%). O proprio commit de 28/09 pediu que a proxima inclusao remedisse a fatia em vez de subir o teto no olho, e e o que foi feito: contra os 41.424 titulos do catalogo, a prioridade vai de 9.631 (23,2%) para 9.635 (23,3%). O que o teste guarda e a fatia ficar longe de metade, e ela nao se moveu.",
   "priority": [
     "wella",
     "kerastase",
@@ -1805,7 +1805,8 @@
     "elite trainer box",
     "blister pokemon",
     "deck pokemon",
-    "lata pokemon"
+    "lata pokemon",
+    "pokemon tcg"
   ],
   "_comment_exclude": "O oposto de priority: titulo que casa aqui NAO vira post. Para o produto que sai bem no ranking e ainda assim nao serve ao grupo -- mochila e barata e tem desconto alto, entao ganhava vaga toda rodada (10 dos ultimos 80 posts). A barra nao e absoluta: titulo que tambem casa em priority passa, e e assim que 'Mochila adidas' fica e 'Mochila de Viagem 50L' sai. Comparacao sem acento e em minusculo, igual a de priority.",
   "exclude": [
@@ -1968,7 +1969,7 @@
       "paginas": 2
     }
   ],
-  "_comment_categories": "Mais vendidos por categoria. Cada categoria custa ~21 chamadas POR DESCOBERTA (a lista + 2 por produto) -- e a descoberta agora roda a cada DISCOVERY_INTERVAL_HOURS, nao em toda rodada. Rode `promo ml-categories` pra ver os IDs.",
+  "_comment_categories": "Mais vendidos por categoria. Cada categoria custa ~21 chamadas POR DESCOBERTA (a lista + 2 por produto) -- e a descoberta agora roda a cada DISCOVERY_INTERVAL_HOURS, nao em toda rodada. Rode `promo ml-categories` pra ver os IDs. MLB1132 (Brinquedos e Hobbies) passou de max_price 250 para 700 em 29/09/2026. E o mesmo defeito que `test_os_termos_do_tema_nao_tem_teto_de_preco` ja guarda um nivel acima, na keyword: o teto corre na COLETA, dentro de `collect_categories`, antes de qualquer pontuacao -- entao ele corta o produto antes de a prioridade poder resgata-lo. Medido no catalogo de producao: dos 104 titulos Pokemon, 41 estao acima de R$250 e 28 desses sao prioritarios pelos temas que entraram em 28/09. Entre os cortados estavam os dois maiores descontos do dia -- box de R$399,99 (de R$979,99, -59,2%) e display de R$327,92 (de R$649,98, -49,5%). Caixa de carta colecionavel custa mais que brinquedo avulso, e o teto de 250 foi escolhido quando a categoria so servia brinquedo.",
   "categories": [
     {
       "id": "MLB1648",
@@ -2018,7 +2019,7 @@
     {
       "id": "MLB1132",
       "name": "Brinquedos e Hobbies",
-      "max_price": 250
+      "max_price": 700
     },
     {
       "id": "MLB264586",
