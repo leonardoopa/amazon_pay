@@ -271,6 +271,12 @@ def test_a_pista_chega_medida_a_fonte_do_ml(monkeypatch, banco_em_memoria):
 
     def handler(request: httpx.Request) -> httpx.Response:
         pedidos.append(request.url.path)
+        if request.url.path == "/products/MLB38617889":
+            # A pista nao trouxe foto; o catalogo tem.
+            return httpx.Response(
+                200,
+                json={"name": "Power Bank", "pictures": [{"url": "https://f/1.jpg"}]},
+            )
         return httpx.Response(
             200,
             json={
@@ -322,9 +328,10 @@ def test_a_pista_chega_medida_a_fonte_do_ml(monkeypatch, banco_em_memoria):
 
     achados = collect_de_outros_grupos(ml)
 
-    assert pedidos == ["/products/MLB38617889/items"]
+    assert pedidos == ["/products/MLB38617889/items", "/products/MLB38617889"]
     assert [o.external_id for o in achados] == ["MLB38617889"]
     assert achados[0].title == "Power Bank"
+    assert achados[0].image_url == "https://f/1.jpg"
 
 
 def test_um_id_que_a_api_recusa_nao_derruba_os_outros():

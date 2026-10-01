@@ -44,6 +44,11 @@ class FakeClient:
         raise AssertionError(f"rota nao combinada: {url}")
 
 
+# Os testes de preco passam uma foto: sem ela `_offer_for` pede uma ao catalogo,
+# e a foto nao e o assunto deles. O comportamento sem foto tem testes proprios.
+FOTO = "https://http2.mlstatic.com/D_NQ_NP_1-F.jpg"
+
+
 def build(rotas: dict[str, FakeResponse]) -> MercadoLivre:
     class Cfg:
         client_id = "1"
@@ -90,7 +95,7 @@ def test_pega_o_menor_preco_entre_os_anuncios():
         }
     )
 
-    offer = source._offer_for("MLB54982411", title="Celular", image_url=None)
+    offer = source._offer_for("MLB54982411", title="Celular", image_url=FOTO)
 
     assert offer is not None
     assert offer.price == 1289.0
@@ -111,7 +116,7 @@ def test_ignora_anuncio_usado():
         }
     )
 
-    offer = source._offer_for("MLB1", title="Produto", image_url=None)
+    offer = source._offer_for("MLB1", title="Produto", image_url=FOTO)
 
     assert offer is not None
     assert offer.price == 900.0  # o usado, mais barato, foi descartado
@@ -140,7 +145,7 @@ def test_monta_a_url_a_partir_do_id():
     """O catalogo devolve permalink vazio -- a URL tem que ser construida."""
     source = build({"/items": FakeResponse({"results": [listing("MLB700", 100.0)]})})
 
-    offer = source._offer_for("MLB54982411", title="Produto", image_url=None)
+    offer = source._offer_for("MLB54982411", title="Produto", image_url=FOTO)
 
     assert offer is not None
     assert offer.url == f"{SITE_HOST}/p/MLB54982411"
@@ -160,7 +165,7 @@ def test_leva_original_price_do_anuncio_vencedor():
         }
     )
 
-    offer = source._offer_for("MLB1", title="Produto", image_url=None)
+    offer = source._offer_for("MLB1", title="Produto", image_url=FOTO)
 
     assert offer is not None
     assert (offer.price, offer.original_price) == (1399.0, 1599.0)
@@ -180,10 +185,94 @@ def test_anuncio_sem_preco_e_descartado():
         }
     )
 
-    offer = source._offer_for("MLB1", title="Produto", image_url=None)
+    offer = source._offer_for("MLB1", title="Produto", image_url=FOTO)
 
     assert offer is not None
     assert offer.price == 250.0
+
+
+# ---------- foto que chega vazia ----------
+#
+# A rota B das landing pages manda `(mlb, titulo, None)` para `fetch_by_ids`.
+# Medido em 30/09/2026: 78 produtos de beleza e 217 posts so com texto, porque
+# `_offer_for` confiava na foto que recebia e a reconsulta, que le o banco,
+# repetia o vazio para sempre.
+
+
+def test_foto_vazia_e_buscada_no_catalogo():
+    source = build(
+        {
+            "/items": FakeResponse({"results": [listing("MLB700", 100.0)]}),
+            "/products/MLB57111180": FakeResponse(
+                {"name": "Serum", "pictures": [{"url": "https://f/1-F.jpg"}]}
+            ),
+        }
+    )
+
+    offer = source._offer_for("MLB57111180", title="Serum", image_url=None)
+
+    assert offer is not None
+    assert offer.image_url == "https://f/1-F.jpg"
+
+
+def test_foto_que_ja_veio_nao_gasta_chamada():
+    source = build({"/items": FakeResponse({"results": [listing("MLB700", 100.0)]})})
+
+    offer = source._offer_for("MLB1", title="Produto", image_url=FOTO)
+
+    assert offer is not None
+    assert offer.image_url == FOTO
+    assert not any(url.endswith("/products/MLB1") for url in source._client.pedidas)
+
+
+def test_produto_sem_anuncio_nao_busca_foto():
+    """Sem oferta nao ha post, e foto de post que nao existe e chamada perdida."""
+    source = build({"/items": FakeResponse({"results": []})})
+
+    assert source._offer_for("MLB1", title="Produto", image_url=None) is None
+    assert source._client.pedidas == [
+        "https://api.mercadolibre.com/products/MLB1/items"
+    ]
+
+
+def test_falha_na_foto_nao_derruba_a_oferta():
+    """Post sem foto e pior que com foto, mas melhor que nenhum post."""
+    source = build(
+        {
+            "/items": FakeResponse({"results": [listing("MLB700", 100.0)]}),
+            "/products/MLB1": FakeResponse({}, status_code=503),
+        }
+    )
+
+    # O FakeResponse levanta RuntimeError; o de verdade levanta httpx.HTTPError.
+    import httpx
+
+    def recusa():
+        raise httpx.HTTPStatusError(
+            "503", request=httpx.Request("GET", "http://x"), response=httpx.Response(503)
+        )
+
+    source._client.rotas["/products/MLB1"].raise_for_status = recusa  # type: ignore[method-assign]
+
+    offer = source._offer_for("MLB1", title="Produto", image_url=None)
+
+    assert offer is not None
+    assert offer.price == 100.0
+    assert offer.image_url is None
+
+
+def test_produto_de_catalogo_sem_foto_na_api_segue_sem_foto():
+    source = build(
+        {
+            "/items": FakeResponse({"results": [listing("MLB700", 100.0)]}),
+            "/products/MLB1": FakeResponse({"name": "Produto", "pictures": []}),
+        }
+    )
+
+    offer = source._offer_for("MLB1", title="Produto", image_url=None)
+
+    assert offer is not None
+    assert offer.image_url is None
 
 
 # ---------- search ----------

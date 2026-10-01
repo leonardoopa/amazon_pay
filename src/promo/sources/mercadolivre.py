@@ -288,6 +288,20 @@ class MercadoLivre:
         product = response.json()
         return (product.get("name") or ""), _best_image(product)
 
+    def _foto_do_produto(self, product_id: str) -> str | None:
+        """So a foto de um produto de catalogo, ou None quando nao deu.
+
+        Falhar aqui nao pode derrubar a oferta: o post sem foto e pior que o
+        post com foto, mas e melhor que nenhum post. Por isso o erro vira None
+        e a oferta segue; na proxima rodada a busca tenta de novo.
+        """
+        try:
+            meta = self._product_meta(product_id)
+        except httpx.HTTPError as exc:
+            log.debug("Foto de %s nao veio: %s", product_id, exc)
+            return None
+        return meta[1] if meta else None
+
     def categories(self) -> list[tuple[str, str]]:
         """Categorias raiz do site: (id, nome). Usado pelo `ml-categories`."""
         response = self._client.get(
@@ -361,6 +375,14 @@ class MercadoLivre:
         ]
         if not candidatos:
             return None
+
+        # Quem chama nem sempre tem a foto: a rota B das landing pages manda
+        # `None` porque a pagina so traz o link. Sem esta busca o produto
+        # entrava no banco sem imagem e a reconsulta, que le o banco, repetia
+        # isso para sempre -- medido em 30/09/2026, 78 produtos de beleza e 217
+        # posts so com texto. So paga a chamada extra quem chegou sem foto, e
+        # o upsert guarda o resultado, entao ela acontece uma vez por produto.
+        image_url = image_url or self._foto_do_produto(product_id)
 
         melhor = self._melhor_anuncio(candidatos, title)
         shipping = melhor.get("shipping") or {}
