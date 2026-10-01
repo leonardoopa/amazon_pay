@@ -146,7 +146,9 @@ def test_a_pista_leva_so_o_que_o_ml_publica():
     do anuncio, `url` do endereco canonico dele. Nenhum vem da mensagem que
     eles escreveram, e nenhum e o link de afiliado deles.
 
-    `origem` e so o nome do grupo, para o log.
+    `origem` e so o nome do grupo, para o log. `condicao` e uma das duas ou tres
+    expressoes curtas que NOS escrevemos ("no Pix") quando o preco da pista vem
+    de um texto da comunidade e nao do anuncio -- nunca a frase de ninguem.
     """
     p = Pista(external_id="MLB1", titulo="Tenis Osklen Casual", origem="xet")
 
@@ -159,7 +161,9 @@ def test_a_pista_leva_so_o_que_o_ml_publica():
         "preco",
         "preco_antes",
         "cupons",
+        "condicao",
     }
+    assert p.condicao == ""
 
 
 def test_a_pista_sem_foto_e_valida():

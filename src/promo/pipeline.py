@@ -1295,6 +1295,7 @@ def _offer_da_pista(pista) -> Offer | None:
         url=pista.url,
         original_price=pista.preco_antes or None,
         image_url=pista.imagem or None,
+        condicao=pista.condicao,
     )
 
 
@@ -1393,6 +1394,14 @@ def collect_de_outros_grupos(source) -> list[Offer]:
             da_api = fetch(alvos)
         except Exception as exc:  # noqa: BLE001 - fonte extra nao derruba a rodada
             log.warning("Nao consegui medir os produtos dos outros grupos: %s", exc)
+
+    # O endereco que a pista trouxe vence o que a API monta pelo ID. Para
+    # produto de usuario (`/up/MLBU...`) o da pista e o que alguem abriu num
+    # navegador, com o nome do produto no caminho; o da API e so o ID.
+    urls_da_pista = {
+        p.external_id: p.url for p in achadas if p.url and p.external_id not in resolvidos
+    }
+    da_api = [replace(o, url=urls_da_pista.get(o.external_id, o.url)) for o in da_api]
 
     found = da_pagina + da_api + da_amazon
     _VISTOS_EM_OUTRO_GRUPO.update(o.external_id for o in da_amazon)

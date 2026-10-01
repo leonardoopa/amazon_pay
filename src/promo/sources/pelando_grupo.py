@@ -30,14 +30,25 @@ Como o Pelando e lido: a pagina da oferta e HTML publico e o robots.txt libera
 motivo). O User-Agent diz o que o bot e. Dois pedidos por oferta, com pausa, e
 cada link resolvido uma vez por processo.
 
-O que fica de fora, de proposito:
+Tres formas de produto do ML aparecem, e cada uma segue um caminho:
 
-- Oferta do ML que nao e produto de catalogo (`/up/MLBU...`, `MLB-123...`). O
-  `/products/{id}/items` so responde por catalogo, e a pagina direta do ML
-  devolve `account-verification` para requisicao de servidor -- medido em
-  30/09/2026, nenhum dos tres enderecos testados abriu. Sem foto e sem preco do
-  ML, a oferta so teria o numero que a comunidade do Pelando escreveu.
-- Qualquer outra loja. O repasse existe para ML e Amazon.
+- Catalogo (`/p/MLB...`): a API mede o preco e traz a foto. Entra como pista sem
+  preco e sem endereco.
+- Produto de usuario (`/up/MLBU...`): a API `/products/{id}/items` responde e o
+  preco tambem e medido por nos -- medido em 30/09/2026, 3 de 3 --, mas ela nao
+  traz foto nem aceita `/products/{id}`. A foto e o endereco com o nome do
+  produto vem do Pelando.
+- Anuncio avulso (`MLB-123...`): a API recusa e a pagina direta do ML devolve
+  `account-verification` para servidor. O preco e a foto so existem no Pelando,
+  e o preco da comunidade costuma valer so com cupom empilhado. Por isso so
+  entra quando nao ha cupom nem mencao a cupom na descricao: o numero tem que
+  ser verdadeiro sozinho, ou com a condicao que da para dizer (Pix).
+
+Qualquer outra loja fica de fora: o repasse existe para ML e Amazon.
+
+A foto do Pelando (maior variante de `imageSrcset`, WebP de 480 px) e a imagem
+que quem postou subiu. A `openGraphImageUrl` NAO serve: e um cartao com a marca
+do Pelando desenhada, e iria para o nosso post com a logo deles.
 """
 
 from __future__ import annotations
@@ -66,8 +77,11 @@ LINK = re.compile(r"https?://pelando\.promo/[A-Za-z0-9_-]+", re.I)
 # para ser lido por aqui.
 PAGINA_DA_OFERTA = re.compile(r"^https://www\.pelando\.com\.br/d/[a-z0-9-]+", re.I)
 
-# O catalogo do ML: o unico formato que a API de preco aceita.
-CATALOGO_ML = re.compile(r"/p/(MLB\d{6,})", re.I)
+# Os formatos de produto do ML, lidos do caminho da URL (nunca da query: o
+# `?pdp_filters=item_id:MLB...` de um link de afiliado nao e o produto).
+CATALOGO_ML = re.compile(r"/p/(MLB\d{6,})(?:[/?#]|$)", re.I)
+USUARIO_ML = re.compile(r"/up/(MLBU\d{6,})(?:[/?#]|$)", re.I)
+ANUNCIO_ML = re.compile(r"/MLB-?(\d{6,})(?:[-_/]|$)", re.I)
 
 # `props` de cada ilha do Astro. A oferta mora na que tem `deal` com `sourceUrl`.
 _PROPS = re.compile(r'<astro-island[^>]*?\sprops="([^"]*)"')
@@ -95,6 +109,7 @@ class DealPelando:
     cupom: str = ""
     descricao: str = ""  # texto simples, sem HTML
     ativa: bool = True
+    imagem: str = ""  # a maior foto que o autor subiu; "" quando nao ha
 
 
 def links_do_pelando(texto: str) -> list[str]:
@@ -133,6 +148,20 @@ def _sem_html(texto: str) -> str:
     return re.sub(r"\s+", " ", _html.unescape(limpo)).strip()
 
 
+def _maior_foto(deal: dict) -> str:
+    """A maior variante da foto do autor, ou a miniatura quando so ha ela.
+
+    A `openGraphImageUrl` fica de fora de proposito: tem a marca do Pelando.
+    """
+    variantes = [
+        v for v in (deal.get("imageSrcset") or []) if isinstance(v, dict) and v.get("url")
+    ]
+    if variantes:
+        maior = max(variantes, key=lambda v: v.get("width") or 0)
+        return str(maior["url"]).strip()
+    return str(deal.get("imageUrl") or "").strip()
+
+
 def deal_da_pagina(pagina: str) -> DealPelando | None:
     """A oferta descrita na pagina `/d/...`, ou None quando nao da para ler.
 
@@ -156,6 +185,7 @@ def deal_da_pagina(pagina: str) -> DealPelando | None:
         except (TypeError, ValueError):
             preco = 0.0
         return DealPelando(
+            imagem=_maior_foto(deal),
             titulo=(deal.get("title") or "").strip(),
             preco=preco,
             loja=((deal.get("store") or {}).get("name") or "").strip(),
@@ -217,20 +247,70 @@ def _condicoes_do_deal(deal: DealPelando) -> tuple[str, ...]:
     return tuple(condicoes)
 
 
-def _classifica(deal: DealPelando) -> tuple[str, str] | None:
-    """(loja, id do produto) quando o repasse sabe tratar esta oferta.
+def _sem_rastreio(url: str) -> str:
+    """O endereco sem query e sem fragmento.
+
+    A query de um link do ML carrega o rastreio de quem o postou (`matt_tool`
+    e a ferramenta de afiliado dele). Levar isso para a nossa fila seria
+    publicar o que e dos outros -- e o Link Builder nao precisa de nada alem do
+    caminho.
+    """
+    return url.split("#", 1)[0].split("?", 1)[0]
+
+
+def _classifica(deal: DealPelando) -> tuple[str, str, str] | None:
+    """(loja, id do produto, tipo) quando o repasse sabe tratar esta oferta.
 
     O ID sai do endereco da loja que o Pelando guarda, nunca do redirecionador
-    deles. Devolve None para o que fica de fora -- ver o topo do modulo.
+    deles. `tipo` e "asin", "catalogo", "usuario" ou "anuncio". Devolve None
+    para o que fica de fora -- ver o topo do modulo.
     """
-    url = deal.url_da_loja
+    url = _sem_rastreio(deal.url_da_loja)
     if "amazon.com" in url:
         asin = extrair_asin(url)
-        return ("amazon", asin) if asin else None
+        return ("amazon", asin, "asin") if asin else None
     if "mercadolivre.com" in url:
         catalogo = CATALOGO_ML.search(url)
-        return ("mercadolivre", catalogo.group(1).upper()) if catalogo else None
+        if catalogo:
+            return ("mercadolivre", catalogo.group(1).upper(), "catalogo")
+        usuario = USUARIO_ML.search(url)
+        if usuario:
+            return ("mercadolivre", usuario.group(1).upper(), "usuario")
+        anuncio = ANUNCIO_ML.search(url)
+        if anuncio:
+            return ("mercadolivre", f"MLB{anuncio.group(1)}", "anuncio")
     return None
+
+
+def _preco_sem_condicao_dizivel(deal: DealPelando) -> bool:
+    """O preco do Pelando depende de cupom que o post nao saberia afirmar?
+
+    So importa onde o preco do post e o do Pelando (anuncio avulso do ML). O
+    cupom da comunidade costuma ser empilhado -- "aplique X e o cupom da loja
+    de 10%" --, e o preco so vale com todos eles.
+    """
+    return bool(deal.cupom) or "cupom" in deal.descricao.lower()
+
+
+def _o_que_so_o_pelando_sabe(deal: DealPelando, tipo: str) -> dict:
+    """Os campos da pista que o ML nao entrega e o Pelando entrega.
+
+    Catalogo: nenhum -- a API mede o preco e traz a foto, e a pista sem preco e
+    sem endereco e o que a manda por esse caminho.
+
+    Produto de usuario: o endereco com o nome do produto e a foto, mas NAO o
+    preco, que a API mede por nos.
+
+    Anuncio avulso: tudo, preco inclusive, e a condicao que o torna verdadeiro.
+    """
+    if tipo == "catalogo":
+        return {}
+    campos: dict = {"url": _sem_rastreio(deal.url_da_loja), "imagem": deal.imagem}
+    if tipo == "anuncio":
+        campos["preco"] = deal.preco
+        if NO_PIX.search(deal.descricao):
+            campos["condicao"] = "no Pix"
+    return campos
 
 
 def ofertas_do_grupo(
@@ -242,10 +322,10 @@ def ofertas_do_grupo(
 ) -> tuple[list[Pista], list[OfertaAmazon]]:
     """O que o grupo postou: (produtos do ML, ofertas da Amazon).
 
-    O ML sai como `Pista` SEM preco e SEM endereco, de proposito. Assim a oferta
-    segue o caminho da API de catalogo em `collect_de_outros_grupos`, que e o
-    que mede o preco por nos e busca a foto. Com preco na pista ela viraria
-    oferta pelo numero do Pelando, e sem foto.
+    O ML sai como `Pista`, e o que ela carrega decide o caminho em
+    `collect_de_outros_grupos`: sem preco ela vai para a API, que mede o preco
+    por nos; com preco ela vira oferta pelo numero do Pelando. Ver
+    `_o_que_so_o_pelando_sabe`.
 
     O cupom do ML vai na pista; o da Amazon vira condicao do preco, porque o
     cupom do ML nao existe la e o preco so vale com ele.
@@ -255,7 +335,7 @@ def ofertas_do_grupo(
     pistas: list[Pista] = []
     amazon: list[OfertaAmazon] = []
     vistos: set[str] = set()
-    sem_repasse = inativas = 0
+    sem_repasse = inativas = condicionais = 0
     tentados = 0
 
     with httpx.Client(
@@ -280,8 +360,11 @@ def ofertas_do_grupo(
                     sem_repasse += 1
                     continue
 
-                loja, produto = destino
+                loja, produto, tipo = destino
                 if produto in vistos:
+                    continue
+                if tipo == "anuncio" and _preco_sem_condicao_dizivel(deal):
+                    condicionais += 1
                     continue
                 vistos.add(produto)
                 if loja == "amazon":
@@ -293,25 +376,28 @@ def ofertas_do_grupo(
                             condicoes=_condicoes_do_deal(deal),
                         )
                     )
-                else:
-                    pistas.append(
-                        Pista(
-                            external_id=produto,
-                            titulo=deal.titulo,
-                            origem=origem,
-                            cupons=(deal.cupom,) if deal.cupom else (),
-                        )
+                    continue
+
+                pistas.append(
+                    Pista(
+                        external_id=produto,
+                        titulo=deal.titulo,
+                        origem=origem,
+                        cupons=(deal.cupom,) if deal.cupom else (),
+                        **_o_que_so_o_pelando_sabe(deal, tipo),
                     )
+                )
 
     log.info(
         "Grupo %s: %d link(s) do Pelando lidos, %d produto(s) do ML, %d da "
-        "Amazon, %d fora do repasse (outra loja ou ML fora do catalogo), %d "
-        "inativo(s).",
+        "Amazon, %d de outra loja, %d inativo(s), %d com preco que depende de "
+        "cupom.",
         origem or "pelando",
         tentados,
         len(pistas),
         len(amazon),
         sem_repasse,
         inativas,
+        condicionais,
     )
     return pistas, amazon
