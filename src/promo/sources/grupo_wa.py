@@ -132,6 +132,10 @@ class Pista:
     # Codigos de cupom citados na MESMA mensagem que trouxe o link. O codigo e
     # da campanha do ML, nao deles: funciona no carrinho de qualquer um.
     cupons: tuple[str, ...] = ()
+    # O que precisa sair colado no preco para ele ser verdadeiro ("no Pix").
+    # So existe quando o preco da pista nao e o do anuncio medido: vem de um
+    # texto que alguem escreveu, e o texto diz sob que condicao ele vale.
+    condicao: str = ""
 
 
 def _texto_da_mensagem(registro: dict) -> str:

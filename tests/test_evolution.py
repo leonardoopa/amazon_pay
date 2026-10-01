@@ -126,3 +126,29 @@ def test_backend_invalido_falha_com_nome():
             del os.environ["DELIVERY_BACKEND"]
         else:
             os.environ["DELIVERY_BACKEND"] = anterior
+
+
+def test_baixar_a_foto_por_conta_propria_diz_quem_somos(monkeypatch):
+    """A CDN do Pelando devolve 403 para o User-Agent padrao do httpx."""
+    import httpx
+
+    from promo.delivery import evolution as modulo
+
+    vistos: list[str] = []
+    real = httpx.Client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        vistos.append(request.headers["user-agent"])
+        return httpx.Response(200, content=b"RIFF....WEBP")
+
+    monkeypatch.setattr(
+        modulo.httpx, "Client", lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+    )
+    evo = FakeEvolution()
+
+    evo.send_image_bytes("https://media.pelando.com.br/x.jpg", "Oferta")
+
+    assert vistos == [modulo.MEDIA_USER_AGENT]
+    assert "promo-bot" in vistos[0]
+    path, payload = evo.enviados[0]
+    assert path == "/message/sendMedia" and payload["mediatype"] == "image"

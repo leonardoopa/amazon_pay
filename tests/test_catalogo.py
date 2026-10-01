@@ -275,6 +275,30 @@ def test_produto_de_catalogo_sem_foto_na_api_segue_sem_foto():
     assert offer.image_url is None
 
 
+# ---------- endereco do produto ----------
+
+
+def test_produto_de_catalogo_usa_p_e_produto_de_usuario_usa_up():
+    """A reconsulta monta a URL so pelo ID e grava por cima da que ja estava.
+
+    `/p/MLBU...` nao existe: sem esta distincao a reconsulta trocaria, no banco,
+    o endereco do produto de usuario por um que o Link Builder nao conhece.
+    """
+    from promo.sources.mercadolivre import _url_do_produto
+
+    assert _url_do_produto("MLB75001430") == f"{SITE_HOST}/p/MLB75001430"
+    assert _url_do_produto("MLBU4332315912") == f"{SITE_HOST}/up/MLBU4332315912"
+
+
+def test_oferta_de_produto_de_usuario_leva_o_endereco_up():
+    source = build({"/items": FakeResponse({"results": [listing("MLB700", 144.98)]})})
+
+    offer = source._offer_for("MLBU4332315912", title="Estante", image_url=FOTO)
+
+    assert offer is not None
+    assert offer.url == f"{SITE_HOST}/up/MLBU4332315912"
+
+
 # ---------- search ----------
 
 

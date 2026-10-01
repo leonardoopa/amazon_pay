@@ -43,6 +43,14 @@ ESPERAS_DA_MIDIA = (2.0, 6.0, 0.0)
 # grande.
 MEDIA_TIMEOUT = 20.0
 
+# Identificacao ao baixar a foto por conta propria. A CDN do Pelando fica atras
+# de um desafio do Cloudflare que devolve 403 para o User-Agent padrao do httpx
+# e deixa passar um que diga quem somos -- medido em 30/09/2026. A CDN do ML
+# aceita qualquer um.
+MEDIA_USER_AGENT = (
+    "promo-bot/1.0 (leitor de ofertas; contato via comunidadedodesconto.com.br)"
+)
+
 # Listar grupos e a chamada mais lenta da API: ela espera a sincronizacao do
 # Baileys com o celular. Numa conta com ~170 grupos passa de 30s.
 GROUPS_TIMEOUT = 120.0
@@ -203,7 +211,11 @@ class Evolution:
         banda nossa nem memoria com a imagem inteira, e funciona na maior parte
         das vezes.
         """
-        with httpx.Client(timeout=MEDIA_TIMEOUT, follow_redirects=True) as c:
+        with httpx.Client(
+            timeout=MEDIA_TIMEOUT,
+            follow_redirects=True,
+            headers={"User-Agent": MEDIA_USER_AGENT},
+        ) as c:
             resposta = c.get(image_url)
             resposta.raise_for_status()
             bruto = resposta.content

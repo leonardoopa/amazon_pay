@@ -63,6 +63,19 @@ PRODUCTS_PER_KEYWORD = 10
 PRODUCTS_PER_CATEGORY = 10
 
 
+def _url_do_produto(product_id: str) -> str:
+    """O endereco do produto pelo ID: `/p/` no catalogo, `/up/` no de usuario.
+
+    Produto de usuario (`MLBU...`) nao tem pagina em `/p/`. A reconsulta monta
+    a URL so pelo ID, e sem esta distincao ela trocaria no banco o endereco
+    bom, que veio de quem abriu o produto no navegador, por um que o Link
+    Builder nao conhece.
+    """
+    if product_id.startswith("MLBU"):
+        return f"{SITE_HOST}/up/{product_id}"
+    return f"{SITE_HOST}/p/{product_id}"
+
+
 def _best_image(product: dict) -> str | None:
     """Maior imagem do produto de catalogo.
 
@@ -396,7 +409,7 @@ class MercadoLivre:
                 if melhor.get("original_price")
                 else None
             ),
-            url=f"{SITE_HOST}/p/{product_id}",
+            url=_url_do_produto(product_id),
             currency=melhor.get("currency_id", "BRL"),
             image_url=image_url,
             category=melhor.get("category_id"),
