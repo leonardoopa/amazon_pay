@@ -1631,7 +1631,7 @@
       ]
     }
   ],
-  "_comment_grupos_fonte": "Grupos de WhatsApp lidos como fonte de DESCOBERTA -- o numero precisa estar neles. O que se aproveita e o FATO: qual anuncio esta em oferta e por quanto. Preco, riscado, foto e endereco canonico saem da propria pagina do produto no ML, que e publica. O texto e o link de afiliado deles NAO sao copiados: o post sai com redacao nossa, cupom nosso e link nosso, e a comissao fica com quem publicou. Esses produtos vao para o TOPO da fila, porque a curadoria ja foi feita por quem vive disso, e saem UMA VEZ so -- ja postado nao volta. `limite` e quantos links resolver por leitura: cada um custa uma pagina de ~370 KB do ML, porque o link de afiliado nao carrega o ID do anuncio na URL. Intervalo no .env, em GRUPOS_FONTE_INTERVALO_HORAS.",
+  "_comment_grupos_fonte": "Grupos de WhatsApp lidos como fonte de DESCOBERTA -- o numero precisa estar neles. O que se aproveita e o FATO: qual anuncio esta em oferta e por quanto. Preco, riscado, foto e endereco canonico saem da propria pagina do produto no ML, que e publica. O texto e o link de afiliado deles NAO sao copiados: o post sai com redacao nossa, cupom nosso e link nosso, e a comissao fica com quem publicou. Esses produtos vao para o TOPO da fila, porque a curadoria ja foi feita por quem vive disso, e saem UMA VEZ so -- ja postado nao volta. `limite` e quantos links resolver por leitura: cada um custa uma pagina de ~370 KB do ML, porque o link de afiliado nao carrega o ID do anuncio na URL. Intervalo no .env, em GRUPOS_FONTE_INTERVALO_HORAS. `tipo: pelando` marca o grupo cujo link e do Pelando (pelando.promo/XXXX) e nao da loja: ver sources/pelando_grupo. O ID do produto sai do endereco da loja que a pagina da oferta guarda, e so ML de catalogo e Amazon entram. Cada link custa DOIS pedidos ao Pelando, entao `limite` menor aqui.",
   "grupos_fonte": [
     {
       "nome": "xet das promocoes | 39",
@@ -1642,6 +1642,12 @@
       "nome": "Economizei | 26",
       "jid": "120363046034439841@g.us",
       "limite": 25
+    },
+    {
+      "nome": "Achadinhos Pelando Vip #BVA",
+      "jid": "120363427661444901@g.us",
+      "tipo": "pelando",
+      "limite": 15
     }
   ],
   "_comment_priority": "Temas com vaga garantida por rodada (PRIORITY_RESERVE no .env diz quantas). Sao pedacos de TITULO, nao termos de busca: a mesma oferta chega pela busca por termo, pelos mais vendidos da categoria e pela vitrine, e nao carrega qual das tres a trouxe -- o titulo carrega. Comparacao sem acento e em minusculo. Cuidado com pedaco curto demais: 'oleo' pegaria oleo de motor. Pokemon entrou em 28/09/2026 pelos termos que qualificam a CARTA, nao pela marca: 'pokemon' sozinho traria pelucia, chinelo e mochila, e pior, faria a mochila furar o `exclude` -- titulo que casa em priority passa pela barra. Tres armadilhas de substring evitadas de proposito: 'booster' sozinho esta em 'booster capilar' e 'booster de som', 'deck' em 'deck de madeira', e 'copag' vale tambem para baralho comum. Por isso 'booster box', 'deck pokemon' e 'estampas ilustradas' -- este ultimo e o nome oficial do TCG em portugues, e o mais preciso dos oito. 'pokemon tcg' foi cortado para caber no teto de 160: titulo brasileiro escreve 'Estampas Ilustradas', nao 'TCG', entao era o termo que menos pagava a vaga que ocupava. Os termos de busca correspondentes ficaram SEM max_price de proposito -- teto de preco corre na coleta, antes da pontuacao, e cortaria justamente o booster box caro que a prioridade existe para resgatar. `pokemon tcg` voltou em 29/09/2026, depois de ter sido cortado em 28/09 para caber no teto de 160 temas. O corte partiu da suposicao de que titulo brasileiro escreve \"Estampas Ilustradas\" e nao \"TCG\", e o catalogo de producao desmente: `pokemon tcg` casa 5 titulos, todos produto legitimo de carta, e 4 deles nao sao alcancados por nenhum outro tema -- entre eles os dois maiores descontos Pokemon do dia, o box de R$399,99 (-59,2%) e o de R$179,00 (-55,2%). O proprio commit de 28/09 pediu que a proxima inclusao remedisse a fatia em vez de subir o teto no olho, e e o que foi feito: contra os 41.424 titulos do catalogo, a prioridade vai de 9.631 (23,2%) para 9.635 (23,3%). O que o teste guarda e a fatia ficar longe de metade, e ela nao se moveu.",

@@ -221,13 +221,16 @@ def test_sem_pista_a_ordem_e_a_de_antes():
 
 
 def test_o_watchlist_real_tem_os_grupos_fonte():
-    """Os dois grupos que o dono pediu em 12/09/2026: xet e Economizei."""
+    """Os grupos que o dono pediu: xet e Economizei (12/09/2026), Pelando Vip (30/09)."""
     from promo.pipeline import load_grupos_fonte
 
-    jids = {f["jid"] for f in load_grupos_fonte()}
+    fontes = {f["jid"]: f for f in load_grupos_fonte()}
 
-    assert "120363241588284782@g.us" in jids  # xet das promocoes | 39
-    assert "120363046034439841@g.us" in jids  # Economizei | 26
+    assert "120363241588284782@g.us" in fontes  # xet das promocoes | 39
+    assert "120363046034439841@g.us" in fontes  # Economizei | 26
+    # O link deste e do Pelando, nao da loja: sem `tipo` ele iria para o leitor
+    # de link do ML e nao acharia nada.
+    assert fontes["120363427661444901@g.us"]["tipo"] == "pelando"
 
 
 def test_fonte_sem_jid_fica_de_fora(tmp_path):
