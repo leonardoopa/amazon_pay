@@ -1333,6 +1333,14 @@ def collect_de_outros_grupos(source) -> list[Offer]:
     da_amazon: list[Offer] = []
     achadas = []
     for fonte in fontes:
+        if fonte.get("tipo") == "pelando":
+            # O link deste grupo e do Pelando, nao da loja: ver
+            # `sources/pelando_grupo`. Nao ha o que pedir a `pistas` nem a
+            # `_amazon_do_grupo`, que so reconhecem link do ML e da Amazon.
+            pistas_do_grupo, amazon_do_grupo = _pelando_do_grupo(config, fonte)
+            achadas += pistas_do_grupo
+            da_amazon += amazon_do_grupo
+            continue
         da_amazon += _amazon_do_grupo(config, fonte)
         achadas += pistas(
             base_url=config.base_url,
@@ -1412,7 +1420,7 @@ def _amazon_do_grupo(config, fonte: dict) -> list[Offer]:
     `condicao` -- "em 2x", "Programe e Poupe" -- viaja junto porque sem ela o
     numero e falso.
     """
-    from .sources.amazon_grupo import PRODUTO_CANONICO, ofertas_do_grupo
+    from .sources.amazon_grupo import ofertas_do_grupo
     from .sources.grupo_wa import ler_mensagens
 
     if not amazon_partner_tag():
@@ -1430,21 +1438,55 @@ def _amazon_do_grupo(config, fonte: dict) -> list[Offer]:
         log.warning("Nao consegui ler a Amazon do grupo %s: %s", fonte.get("nome"), exc)
         return []
 
+    return [_offer_da_amazon(o) for o in ofertas]
+
+
+def _offer_da_amazon(oferta) -> Offer:
+    """A `OfertaAmazon` de um grupo-fonte como Offer, sem tag nenhuma na URL."""
+    from .sources.amazon_grupo import PRODUTO_CANONICO
     from .sources.amazon_link import imagem_do_asin
 
-    return [
-        Offer(
-            source="amazon",
-            external_id=o.asin,
-            title=o.titulo,
-            price=o.preco,
-            url=PRODUTO_CANONICO.format(asin=o.asin),
-            original_price=o.preco_antes or None,
-            image_url=imagem_do_asin(o.asin),
-            condicao=o.condicao,
+    return Offer(
+        source="amazon",
+        external_id=oferta.asin,
+        title=oferta.titulo,
+        price=oferta.preco,
+        url=PRODUTO_CANONICO.format(asin=oferta.asin),
+        original_price=oferta.preco_antes or None,
+        image_url=imagem_do_asin(oferta.asin),
+        condicao=oferta.condicao,
+    )
+
+
+def _pelando_do_grupo(config, fonte: dict) -> tuple[list, list[Offer]]:
+    """(pistas do ML, ofertas da Amazon) de um grupo cujo link e do Pelando.
+
+    A Amazon so entra com a tag nossa configurada, igual ao `_amazon_do_grupo`:
+    post sem tag e trabalho de graca para a Amazon. O ML nao depende disso.
+    """
+    from .sources.grupo_wa import ler_mensagens
+    from .sources.pelando_grupo import ofertas_do_grupo
+
+    try:
+        registros = ler_mensagens(
+            config.base_url,
+            config.instance,
+            config.api_key,
+            fonte["jid"],
+            50,
         )
-        for o in ofertas
-    ]
+        pistas_ml, ofertas = ofertas_do_grupo(
+            registros,
+            origem=fonte.get("nome", ""),
+            limite_links=int(fonte.get("limite", 15)),
+        )
+    except Exception as exc:  # noqa: BLE001 - fonte extra nunca derruba a rodada
+        log.warning("Nao consegui ler o grupo %s: %s", fonte.get("nome"), exc)
+        return [], []
+
+    if not amazon_partner_tag():
+        return pistas_ml, []
+    return pistas_ml, [_offer_da_amazon(o) for o in ofertas]
 
 
 def _due(chave: str, intervalo_horas: float) -> bool:
