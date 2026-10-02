@@ -264,6 +264,36 @@ def drip_interval_seconds() -> float:
     return float(_optional("DRIP_INTERVAL_SECONDS", "150"))
 
 
+def entrega_continua() -> bool:
+    """Se uma thread propria goteja a fila, independente da rodada de coleta.
+
+    Ligada por padrao. Existe porque a entrega vivia DENTRO da rodada: o grupo
+    recebia uma rajada no fim de cada uma e ficava mudo o resto do tempo. Medido
+    em 02/10/2026, o Geral mandou 12 posts em 17 minutos (14h47 a 15h04) e nada
+    depois disso: a coleta leva 35 a 45 minutos, e os 36 posts que esperavam
+    expiraram antes da proxima drenagem.
+
+    So vale para o backend 'evolution'. 'false' devolve a drenagem de dentro da
+    rodada, como era.
+    """
+    return _optional("ENTREGA_CONTINUA", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+
+
+def tematico_gap_seconds() -> float:
+    """Intervalo minimo entre dois posts do MESMO grupo tematico.
+
+    O Geral tem o teto por hora (`MAX_DO_GERAL_POR_HORA`); os tematicos nao
+    tinham teto nenhum, so a fila curta. Com a entrega continua eles passam a ter
+    este piso. 900 s e no maximo 4 por hora por grupo, que e o que Mulheres (4,1
+    por hora) e Esportes (3,4) ja faziam na media de 72 horas.
+    """
+    return float(_optional("TEMATICO_GAP_SEGUNDOS", "900"))
+
+
 def quiet_window() -> tuple[time, time] | None:
     """Faixa do dia em que o grupo recebe muito menos post.
 
@@ -457,6 +487,26 @@ def max_do_geral_por_hora() -> int:
     continua percorrendo a fila depois que o Geral sai dela.
     """
     return _int("MAX_DO_GERAL_POR_HORA", 0)
+
+
+def max_comida_e_bebida_por_run() -> int:
+    """Quantas ofertas de comida e bebida dos grupos-fonte entram por rodada,
+    mesmo com a fila cheia.
+
+    Pedido do dono em 02/10/2026, depois de uma vodka que o xet postou nao
+    chegar ao grupo: bebida e comida tem que aparecer, sempre. A fila cheia era
+    o que as barrava -- `MAX_PENDING_QUEUE` conta os posts de TODOS os grupos,
+    e com 78 pendentes contra um teto de 30 nenhuma oferta de outro grupo
+    entrava, nem a vodka.
+
+    Este numero e o freio dessa excecao. Sem ele, um dia de promocao de
+    supermercado furaria a contrapressao da fila inteira. O ritmo de ENVIO nao
+    muda: `MAX_DO_GERAL_POR_HORA` e o gotejamento continuam valendo, e o que
+    muda e a ordem -- ver `prioridade` em `_prioridade_do_post`.
+
+    0 desliga a excecao.
+    """
+    return _int("MAX_COMIDA_E_BEBIDA_POR_RODADA", 8)
 
 
 # Sentinela de "sem teto" para `MAX_PISTAS_POR_RUN`. Grande o bastante para
