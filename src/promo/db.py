@@ -937,6 +937,33 @@ def enviados_na_janela(
     ).fetchone()[0]
 
 
+def segundos_desde_ultimo_envio(
+    conn: sqlite3.Connection, grupo_jid: str | None = None
+) -> float | None:
+    """Segundos desde o ultimo post enviado, em todos os grupos ou num so.
+
+    None quando nada saiu ainda. Lido do banco, e nao de uma variavel, para o
+    ritmo sobreviver a reinicio do container: contador em memoria zeraria e o
+    primeiro minuto depois do deploy sairia em rajada.
+    """
+    if grupo_jid is None:
+        linha = conn.execute(
+            "SELECT MAX(COALESCE(sent_at, created_at)) FROM posts WHERE status = 'sent'"
+        ).fetchone()
+    else:
+        linha = conn.execute(
+            "SELECT MAX(COALESCE(sent_at, created_at)) FROM posts "
+            "WHERE status = 'sent' AND grupo_jid = ?",
+            (grupo_jid,),
+        ).fetchone()
+    if not linha or not linha[0]:
+        return None
+    quando = datetime.fromisoformat(linha[0])
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=UTC)
+    return max(0.0, (now() - quando).total_seconds())
+
+
 def mark_post_sent(conn: sqlite3.Connection, post_id: int) -> None:
     conn.execute(
         "UPDATE posts SET status = 'sent', sent_at = ? WHERE id = ?",

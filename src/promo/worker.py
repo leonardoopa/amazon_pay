@@ -45,6 +45,27 @@ def stamp_run(erro: str | None = None) -> None:
         log.exception("Nao consegui carimbar o fim da rodada")
 
 
+def start_drenagem(stop: threading.Event) -> threading.Thread | None:
+    """Sobe a thread que goteja a fila, ou None quando nao se aplica.
+
+    Dois donos, como o `loop`: o comando `daemon` e o lifespan da API. So existe
+    para o backend 'evolution' -- o 'cloud' tem janela de 24h e template, que
+    pedem a drenagem de dentro da rodada. `ENTREGA_CONTINUA=false` desliga.
+    """
+    from .config import delivery_backend, entrega_continua
+
+    if not entrega_continua() or delivery_backend() != "evolution":
+        return None
+
+    from .pipeline import drenar_continuamente
+
+    thread = threading.Thread(
+        target=drenar_continuamente, args=(stop,), name="promo-drip", daemon=True
+    )
+    thread.start()
+    return thread
+
+
 def loop(
     stop: threading.Event,
     interval: float,

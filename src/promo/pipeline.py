@@ -8,6 +8,7 @@ import json
 import logging
 import random
 import re
+import threading
 import time
 from datetime import date, datetime
 from dataclasses import dataclass, replace
@@ -51,6 +52,7 @@ from .config import (
     quiet_window,
     reserva_de_prioridade_do_grupo,
     run_interval_seconds,
+    tematico_gap_seconds,
     track_limit,
 )
 from .copywriter import Copywriter, com_convite, fallback_copy
@@ -69,6 +71,7 @@ from .db import (
     hours_since,
     now,
     pending_posts,
+    segundos_desde_ultimo_envio,
     mesmo_produto,
     products_in_cooldown,
     produtos_ja_postados,
@@ -2796,6 +2799,169 @@ def _vagas_do_geral(conn) -> int | None:
     return max(0, teto - enviados_na_janela(conn, "", 60))
 
 
+# ---------- entrega continua ----------
+#
+# A drenagem de `flush_pending` mora dentro da rodada: ela so roda quando a
+# rodada chama `deliver`. A coleta leva de 35 a 45 minutos, entao o grupo recebia
+# uma rajada no fim de cada rodada e ficava mudo o resto -- medido em 02/10/2026,
+# 12 posts do Geral entre 14h47 e 15h04 e nenhum depois, enquanto 36 esperavam e
+# expiravam. A rajada tambem e o padrao que o antifraude da Meta procura.
+#
+# Aqui o envio e uma thread propria, um post por vez, no ritmo do gotejamento.
+# A rodada so ENFILEIRA. Os tetos continuam os mesmos: o do Geral por hora, e o
+# intervalo entre posts.
+
+# Um remetente por vez, dentro do processo.
+_ENVIO = threading.Lock()
+
+# Ligado enquanto a thread de entrega continua vive. Lido por `flush_pending`.
+_DRENAGEM_CONTINUA = threading.Event()
+
+# Quanto a thread espera quando nao ha o que enviar, e quando a instancia caiu.
+ESPERA_SEM_NADA = 10.0
+ESPERA_APOS_QUEDA = 60.0
+
+ENVIOU = "enviou"
+NADA = "nada"
+RECUAR = "recuar"
+
+
+def _gap_minimo_global() -> float:
+    """O menor intervalo aceitavel entre dois posts quaisquer.
+
+    E o piso do `_drip_gap` (o intervalo com o jitter para baixo). A thread
+    espera o `_drip_gap` inteiro depois de cada envio; este piso so existe para
+    o reinicio nao soltar um post logo atras do outro.
+    """
+    base = drip_interval_seconds()
+    if em_horario_silencioso():
+        base *= quiet_drip_multiplier()
+    return base * (1 - DRIP_JITTER)
+
+
+def _gap_minimo_do_grupo(grupo_jid: str) -> float:
+    """O intervalo minimo entre dois posts do mesmo grupo.
+
+    O Geral reparte o teto por hora em intervalos iguais (com 20% de folga), em
+    vez de gastar tudo numa rajada e esperar a janela correr. Os tematicos tem o
+    piso de `TEMATICO_GAP_SEGUNDOS`. Na janela de silencio o intervalo global ja
+    esta multiplicado e domina.
+    """
+    if em_horario_silencioso():
+        return 0.0
+    if grupo_jid == "":
+        teto = max_do_geral_por_hora()
+        return 0.8 * 3600 / teto if teto > 0 else 0.0
+    return tematico_gap_seconds()
+
+
+def drip_once(delivery=None) -> str:
+    """Envia no maximo UM post, se o ritmo deixar. Devolve o que aconteceu.
+
+    A vez e de quem esta ha mais tempo sem sair, entre os grupos que podem
+    receber agora. Dentro de cada grupo vale a ordem da fila: prioridade e
+    depois chegada, entao comida e bebida de outro grupo saem na frente.
+
+    Estado so no banco -- ultimo envio de cada grupo e a contagem da janela --,
+    de proposito: com o container reiniciando, o ritmo continua de onde parou.
+    """
+    if not _ENVIO.acquire(blocking=False):
+        return NADA
+    try:
+        with connect() as conn:
+            velhos = expire_stale_posts(conn)
+            if velhos:
+                log.warning(
+                    "%d post(s) descartados por preco velho (mais de %d min na fila).",
+                    len(velhos),
+                    post_max_age_minutes(),
+                )
+
+            desde = segundos_desde_ultimo_envio(conn)
+            if desde is not None and desde < _gap_minimo_global():
+                return NADA
+
+            cabecas: dict[str, object] = {}
+            for linha in pending_posts(conn):
+                cabecas.setdefault(linha["grupo_jid"] or "", linha)
+
+            elegiveis = []
+            for jid, linha in cabecas.items():
+                do_grupo = segundos_desde_ultimo_envio(conn, jid)
+                if do_grupo is not None and do_grupo < _gap_minimo_do_grupo(jid):
+                    continue
+                if jid == "":
+                    vagas = _vagas_do_geral(conn)
+                    if vagas is not None and vagas <= 0:
+                        continue
+                espera = float("inf") if do_grupo is None else do_grupo
+                elegiveis.append((espera, linha))
+
+        if not elegiveis:
+            return NADA
+
+        # Quem esta ha mais tempo sem sair. Empate (varios nunca enviaram) fica
+        # com a ordem de insercao: a do `pending_posts`, prioridade primeiro.
+        elegiveis.sort(key=lambda par: par[0], reverse=True)
+        linha = elegiveis[0][1]
+        post_id = linha["id"]
+        grupo_jid = linha["grupo_jid"] or ""
+
+        delivery = delivery or build_delivery()
+        try:
+            delivery.send_post(linha["copy"], linha["image_url"], grupo_jid or None)
+        except WindowClosed:
+            log.warning("Janela de 24h fechada; a entrega continua para por um minuto.")
+            return RECUAR
+        except NotConnected as exc:
+            # Reparar exige o QR na mao. Os posts ficam pendentes e saem quando
+            # o numero voltar -- e a thread nao insiste a cada dez segundos.
+            log.error("Instancia da Evolution caiu; a fila espera: %s", exc)
+            return RECUAR
+        except Exception as exc:  # noqa: BLE001
+            # `mark_post_failed` conta a tentativa e so desiste depois de
+            # `MAX_SEND_ATTEMPTS`; ate la o post continua pendente. A espera
+            # longa evita gastar as tentativas em trinta segundos.
+            log.error("Falha ao enviar post %d: %s", post_id, exc)
+            with connect() as conn:
+                mark_post_failed(conn, post_id, str(exc))
+            return RECUAR
+
+        with connect() as conn:
+            mark_post_sent(conn, post_id)
+        log.info("Entrega continua: post %d enviado (%s).", post_id, grupo_jid or "Geral")
+        return ENVIOU
+    finally:
+        _ENVIO.release()
+
+
+def drenar_continuamente(stop: threading.Event) -> None:
+    """O laco da thread: um post, espera o gotejamento, de novo, ate `stop`.
+
+    Uma excecao inesperada vira log e uma pausa, nunca o fim da thread: sem ela o
+    grupo voltaria ao silencio e ninguem saberia por que.
+    """
+    _DRENAGEM_CONTINUA.set()
+    log.info("Entrega continua ligada: um post por vez, sem esperar a rodada.")
+    try:
+        while not stop.is_set():
+            try:
+                resultado = drip_once()
+            except Exception:  # noqa: BLE001
+                log.exception("Entrega continua falhou")
+                resultado = RECUAR
+            if resultado == ENVIOU:
+                espera = _drip_gap()
+            elif resultado == RECUAR:
+                espera = ESPERA_APOS_QUEDA
+            else:
+                espera = ESPERA_SEM_NADA
+            stop.wait(espera)
+    finally:
+        _DRENAGEM_CONTINUA.clear()
+        log.info("Entrega continua desligada.")
+
+
 def flush_pending(
     budget_seconds: float | None = None,
     sleep=time.sleep,
@@ -2820,6 +2986,12 @@ def flush_pending(
     conta, drenar antes E depois da coleta dobraria o tempo de gotejamento e a
     rodada invadiria a seguinte.
     """
+    if _DRENAGEM_CONTINUA.is_set():
+        # Quem goteja agora e a thread de `drenar_continuamente`. Drenar aqui
+        # tambem seria a rajada de volta, e a rajada e o que deixava o grupo
+        # mudo entre uma rodada e outra.
+        return 0.0
+
     inicio = monotonic()
     delivery = build_delivery()
 

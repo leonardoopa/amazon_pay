@@ -264,6 +264,36 @@ def drip_interval_seconds() -> float:
     return float(_optional("DRIP_INTERVAL_SECONDS", "150"))
 
 
+def entrega_continua() -> bool:
+    """Se uma thread propria goteja a fila, independente da rodada de coleta.
+
+    Ligada por padrao. Existe porque a entrega vivia DENTRO da rodada: o grupo
+    recebia uma rajada no fim de cada uma e ficava mudo o resto do tempo. Medido
+    em 02/10/2026, o Geral mandou 12 posts em 17 minutos (14h47 a 15h04) e nada
+    depois disso: a coleta leva 35 a 45 minutos, e os 36 posts que esperavam
+    expiraram antes da proxima drenagem.
+
+    So vale para o backend 'evolution'. 'false' devolve a drenagem de dentro da
+    rodada, como era.
+    """
+    return _optional("ENTREGA_CONTINUA", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+
+
+def tematico_gap_seconds() -> float:
+    """Intervalo minimo entre dois posts do MESMO grupo tematico.
+
+    O Geral tem o teto por hora (`MAX_DO_GERAL_POR_HORA`); os tematicos nao
+    tinham teto nenhum, so a fila curta. Com a entrega continua eles passam a ter
+    este piso. 900 s e no maximo 4 por hora por grupo, que e o que Mulheres (4,1
+    por hora) e Esportes (3,4) ja faziam na media de 72 horas.
+    """
+    return float(_optional("TEMATICO_GAP_SEGUNDOS", "900"))
+
+
 def quiet_window() -> tuple[time, time] | None:
     """Faixa do dia em que o grupo recebe muito menos post.
 
