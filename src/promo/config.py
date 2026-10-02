@@ -459,6 +459,26 @@ def max_do_geral_por_hora() -> int:
     return _int("MAX_DO_GERAL_POR_HORA", 0)
 
 
+def max_comida_e_bebida_por_run() -> int:
+    """Quantas ofertas de comida e bebida dos grupos-fonte entram por rodada,
+    mesmo com a fila cheia.
+
+    Pedido do dono em 02/10/2026, depois de uma vodka que o xet postou nao
+    chegar ao grupo: bebida e comida tem que aparecer, sempre. A fila cheia era
+    o que as barrava -- `MAX_PENDING_QUEUE` conta os posts de TODOS os grupos,
+    e com 78 pendentes contra um teto de 30 nenhuma oferta de outro grupo
+    entrava, nem a vodka.
+
+    Este numero e o freio dessa excecao. Sem ele, um dia de promocao de
+    supermercado furaria a contrapressao da fila inteira. O ritmo de ENVIO nao
+    muda: `MAX_DO_GERAL_POR_HORA` e o gotejamento continuam valendo, e o que
+    muda e a ordem -- ver `prioridade` em `_prioridade_do_post`.
+
+    0 desliga a excecao.
+    """
+    return _int("MAX_COMIDA_E_BEBIDA_POR_RODADA", 8)
+
+
 # Sentinela de "sem teto" para `MAX_PISTAS_POR_RUN`. Grande o bastante para
 # nunca ser o limite -- quem segura passa a ser so o tamanho da fila.
 SEM_TETO = 10_000
