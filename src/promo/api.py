@@ -25,7 +25,13 @@ from .config import api_secret, api_worker, run_interval_seconds
 from .db import connect, get_meta, hours_since, init_db, stats
 from .manual import OfertaInvalida, enfileirar, escrever_texto, preparar_oferta_amazon
 from .pipeline import run
-from .worker import LAST_ERROR_KEY, LAST_RUN_KEY, loop, start_drenagem
+from .worker import (
+    LAST_ERROR_KEY,
+    LAST_RUN_KEY,
+    loop,
+    start_drenagem,
+    start_fonte_rapida,
+)
 
 log = logging.getLogger("promo")
 
@@ -71,6 +77,8 @@ async def lifespan(app: FastAPI):
         log.info("Worker iniciado (intervalo de %ds).", intervalo)
         # A entrega vive fora da rodada: ver `pipeline.drenar_continuamente`.
         start_drenagem(_stop)
+        # E o ciclo curto dos grupos prioritarios, que depende dela.
+        start_fonte_rapida(_stop)
     else:
         log.info("Worker desligado (API_WORKER=false). So a API responde.")
 

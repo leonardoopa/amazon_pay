@@ -216,7 +216,7 @@ def cmd_daemon(args: argparse.Namespace) -> int:
     O container padrao hoje sobe pelo `serve`, que roda este mesmo loop e ainda
     responde /health. Este comando fica pra quem nao quer porta aberta.
     """
-    from .worker import loop, start_drenagem
+    from .worker import loop, start_drenagem, start_fonte_rapida
 
     init_db()
     interval = args.interval or run_interval_seconds()
@@ -235,6 +235,7 @@ def cmd_daemon(args: argparse.Namespace) -> int:
     tarefa = (lambda: cmd_collect(args)) if args.collect_only else run
     if not args.collect_only:
         start_drenagem(stop)
+        start_fonte_rapida(stop)
     codigo = loop(stop, interval, tarefa)
 
     log.info("Daemon encerrado.")
