@@ -22,6 +22,7 @@ import base64
 import hashlib
 import logging
 import secrets
+import threading
 import urllib.parse
 import webbrowser
 from datetime import timedelta
@@ -61,6 +62,13 @@ PRODUCTS_PER_KEYWORD = 10
 # mas aqui cada produto custa DOIS GETs (nome/foto + preco) porque a lista de
 # destaques so traz IDs -- entao o teto e mais apertado que o da busca.
 PRODUCTS_PER_CATEGORY = 10
+
+
+# O refresh_token do ML e de uso unico. Com o ciclo rapido do #BVA rodando ao
+# lado da rodada completa, duas threads podem ver o access_token vencido ao mesmo
+# tempo; sem este lock as duas pediriam o refresh e a segunda levaria
+# `invalid_grant`, derrubando a autorizacao inteira.
+_TOKEN_LOCK = threading.Lock()
 
 
 def _url_do_produto(product_id: str) -> str:
@@ -193,25 +201,28 @@ class MercadoLivre:
     def access_token(self) -> str:
         from datetime import datetime
 
-        with connect() as conn:
-            row = load_token(conn, PROVIDER)
+        # Relido DENTRO do lock: quem esperou encontra o token que a outra
+        # thread acabou de renovar, e nao pede um refresh de novo.
+        with _TOKEN_LOCK:
+            with connect() as conn:
+                row = load_token(conn, PROVIDER)
 
-        if row is None:
-            raise RuntimeError(
-                "Mercado Livre nao autorizado ainda. Rode o comando `ml-auth`."
-            )
+            if row is None:
+                raise RuntimeError(
+                    "Mercado Livre nao autorizado ainda. Rode o comando `ml-auth`."
+                )
 
-        if datetime.fromisoformat(row["expires_at"]) > now():
-            return row["access_token"]
+            if datetime.fromisoformat(row["expires_at"]) > now():
+                return row["access_token"]
 
-        if not row["refresh_token"]:
-            raise RuntimeError(
-                "Token do ML expirou e nao ha refresh_token. Rode ml-auth de novo."
-            )
+            if not row["refresh_token"]:
+                raise RuntimeError(
+                    "Token do ML expirou e nao ha refresh_token. Rode ml-auth de novo."
+                )
 
-        self._refresh(row["refresh_token"])
-        with connect() as conn:
-            return load_token(conn, PROVIDER)["access_token"]
+            self._refresh(row["refresh_token"])
+            with connect() as conn:
+                return load_token(conn, PROVIDER)["access_token"]
 
     # ---------- Busca ----------
 

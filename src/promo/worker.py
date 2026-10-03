@@ -66,10 +66,55 @@ def start_drenagem(stop: threading.Event) -> threading.Thread | None:
     return thread
 
 
+def start_fonte_rapida(stop: threading.Event) -> threading.Thread | None:
+    """Sobe o ciclo curto dos grupos-fonte prioritarios, ou None.
+
+    So existe com entrega continua (senao o post enfileirado esperaria o fim da
+    rodada completa), no backend 'evolution', e quando algum grupo do
+    watchlist tem `prioridade: true`.
+    """
+    from .config import (
+        delivery_backend,
+        entrega_continua,
+        fonte_rapida,
+        fonte_rapida_intervalo_segundos,
+    )
+
+    if not fonte_rapida() or not entrega_continua() or delivery_backend() != "evolution":
+        return None
+
+    from . import pipeline
+
+    if not pipeline.tem_fonte_prioritaria():
+        return None
+
+    intervalo = fonte_rapida_intervalo_segundos()
+
+    def alvo() -> None:
+        # Enquanto este ciclo vive, ele e o dono dessas fontes: a rodada completa
+        # as pula, e o mesmo produto nao nasce duas vezes.
+        pipeline._FAST_LANE_ATIVA.set()
+        log.info("Ciclo rapido ligado: fontes prioritarias a cada %.0fs.", intervalo)
+        try:
+            loop(
+                stop,
+                intervalo,
+                lambda: pipeline.run(rapido=True),
+                registrar_fim=False,
+            )
+        finally:
+            pipeline._FAST_LANE_ATIVA.clear()
+
+    thread = threading.Thread(target=alvo, name="promo-rapido", daemon=True)
+    thread.start()
+    return thread
+
+
 def loop(
     stop: threading.Event,
     interval: float,
     task: Callable[[], object],
+    registrar_fim: bool = True,
 ) -> int:
     """Executa `task` a CADA `interval` segundos ate `stop` ser sinalizado.
 
@@ -84,6 +129,10 @@ def loop(
     assumia que `interval` era o periodo do ciclo. As duas pontas agora
     concordam: descontar o tempo gasto faz o ciclo durar `interval` de verdade.
 
+    `registrar_fim=False` e do ciclo rapido: o carimbo `last_run` e o que o
+    /health le para saber se a rodada COMPLETA esta viva, e um ciclo curto que
+    carimbasse tambem esconderia a morte dela.
+
     Devolve 2 se faltar configuracao -- nao adianta tentar de novo, o .env nao
     se preenche sozinho. Qualquer outra excecao vira log e a proxima rodada
     acontece normalmente: queda de rede nao pode parar o bot ate alguem notar.
@@ -92,13 +141,15 @@ def loop(
         inicio = monotonic()
         try:
             task()
-            stamp_run()
+            if registrar_fim:
+                stamp_run()
         except MissingConfig as exc:
             log.error("Configuracao faltando: %s", exc)
             return 2
         except Exception as exc:  # noqa: BLE001 - uma rodada ruim nao mata o loop
             log.exception("Rodada falhou: %s", exc)
-            stamp_run(str(exc))
+            if registrar_fim:
+                stamp_run(str(exc))
 
         gasto = monotonic() - inicio
         # Piso de espera para rodada que falha rapido: sem ele, um erro

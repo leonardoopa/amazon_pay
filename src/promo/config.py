@@ -283,6 +283,34 @@ def entrega_continua() -> bool:
     }
 
 
+def fonte_rapida() -> bool:
+    """Se os grupos-fonte `prioridade: true` ganham um ciclo proprio e curto.
+
+    Ligada por padrao. A rodada completa leva de 35 a 56 minutos (coleta do ML,
+    leitura do xet e do Economizei), e uma oferta do #BVA que chega no comeco
+    dela so vira post no fim. O ciclo rapido le SO os grupos prioritarios, a cada
+    `FONTE_RAPIDA_INTERVALO_SEGUNDOS`, e enfileira o que for novo.
+
+    Depende da entrega continua: sem a thread que goteja, o post enfileirado so
+    sairia no fim da rodada completa e o ciclo rapido nao adiantaria nada.
+    """
+    return _optional("FONTE_RAPIDA", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+
+
+def fonte_rapida_intervalo_segundos() -> float:
+    """Segundos entre duas leituras do ciclo rapido. Padrao: 3 minutos.
+
+    O #BVA posta cerca de uma mensagem a cada 6 minutos, entao 180 s pega cada
+    uma em meia leitura. Cada ciclo custa um pedido a Evolution e dois ao Pelando
+    por link NOVO -- os ja resolvidos ficam em cache.
+    """
+    return float(_optional("FONTE_RAPIDA_INTERVALO_SEGUNDOS", "180"))
+
+
 def tematico_gap_seconds() -> float:
     """Intervalo minimo entre dois posts do MESMO grupo tematico.
 

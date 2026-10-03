@@ -217,8 +217,9 @@ def test_sem_a_chave_nada_e_prioritario(monkeypatch, coleta):
     assert pipeline._DA_FONTE_PRIORITARIA == set()
 
 
-def test_a_marca_e_trocada_a_cada_leitura(monkeypatch, coleta):
-    """O que foi prioritario ontem e reaparece hoje pela vitrine nao e especial."""
+def test_a_marca_e_somada_e_nao_trocada(monkeypatch, coleta):
+    """O ciclo rapido e a rodada completa leem em threads diferentes: uma troca
+    de uma apagaria a marca que a outra acabou de por."""
     prioritaria("ANTIGO")
     fontes(
         monkeypatch,
@@ -227,7 +228,19 @@ def test_a_marca_e_trocada_a_cada_leitura(monkeypatch, coleta):
 
     pipeline.collect_de_outros_grupos(MLFalso())
 
-    assert "ANTIGO" not in pipeline._DA_FONTE_PRIORITARIA
+    assert {"ANTIGO", "MLB_BVA"} <= pipeline._DA_FONTE_PRIORITARIA
+
+
+def test_o_conjunto_nao_cresce_sem_limite(monkeypatch, coleta):
+    pipeline._DA_FONTE_PRIORITARIA.update(f"X{i}" for i in range(6000))
+    fontes(
+        monkeypatch,
+        {"jid": "bva@g.us", "nome": "BVA", "tipo": "pelando", "prioridade": True},
+    )
+
+    pipeline.collect_de_outros_grupos(MLFalso())
+
+    assert len(pipeline._DA_FONTE_PRIORITARIA) < 100
 
 
 def test_o_watchlist_real_marca_o_bva_como_prioritario():

@@ -546,8 +546,23 @@ _CUPONS_DO_OUTRO_GRUPO: dict[str, tuple[str, ...]] = {}
 _DA_FONTE_PRIORITARIA: set[str] = set()
 
 
+# Ligado enquanto o ciclo rapido vive (ver `worker.start_fonte_rapida`). Enquanto
+# estiver ligado, a rodada completa nao le as fontes prioritarias: elas sao do
+# ciclo rapido, e ler nas duas faria o mesmo produto nascer duas vezes.
+_FAST_LANE_ATIVA = threading.Event()
+
+# Limite de tamanho do conjunto acima: ele so cresce (ver `collect_de_outros_grupos`)
+# e um processo que roda semanas nao pode acumular sem fim.
+_MAX_PRIORITARIAS_LEMBRADAS = 5000
+
+
 def _de_fonte_prioritaria(offer: Offer) -> bool:
     return offer.external_id in _DA_FONTE_PRIORITARIA
+
+
+def tem_fonte_prioritaria() -> bool:
+    """Algum grupo-fonte do watchlist tem `prioridade: true`?"""
+    return any(f.get("prioridade") for f in load_grupos_fonte())
 
 
 def _barrada_na_selecao(
@@ -1369,7 +1384,19 @@ def _offer_da_pista(pista) -> Offer | None:
     )
 
 
-def collect_de_outros_grupos(source) -> list[Offer]:
+def collect_rapido(sources: list) -> list[Offer]:
+    """Ofertas SO das fontes prioritarias, para o ciclo rapido.
+
+    Quem sabe medir o preco do catalogo e a fonte do ML; a da Amazon e a da
+    vitrine nao tem `fetch_by_ids`, e a chamada com elas devolveria o mesmo.
+    """
+    catalogo = next((s for s in sources if hasattr(s, "fetch_by_ids")), None)
+    if catalogo is None:
+        return []
+    return collect_de_outros_grupos(catalogo, so_prioritarias=True)
+
+
+def collect_de_outros_grupos(source, so_prioritarias: bool = False) -> list[Offer]:
     """Produtos que grupos concorrentes acabaram de postar.
 
     O produto e o preco vem deles; o texto, o link de afiliado e todos os
@@ -1383,13 +1410,21 @@ def collect_de_outros_grupos(source) -> list[Offer]:
     from .sources.grupo_wa import pistas
 
     fontes = load_grupos_fonte()
+    if so_prioritarias:
+        fontes = [f for f in fontes if f.get("prioridade")]
+    elif _FAST_LANE_ATIVA.is_set():
+        fontes = [f for f in fontes if not f.get("prioridade")]
     # `fetch_by_ids` cobre so o que a pagina nao trouxe, entao a fonte sem ele
     # ainda rende. Antes ele era obrigatorio, porque era o unico jeito de ter
     # preco.
     fetch = getattr(source, "fetch_by_ids", None) or (lambda _alvos: [])
     if not fontes:
         return []
-    if not _due("last_grupos_fonte", grupos_fonte_intervalo_horas()):
+    # O ciclo rapido e pacado pelo proprio laco; o intervalo de horas e o carimbo
+    # abaixo sao da rodada completa, e o ciclo curto nao pode consumi-los.
+    if not so_prioritarias and not _due(
+        "last_grupos_fonte", grupos_fonte_intervalo_horas()
+    ):
         return []
 
     try:
@@ -1399,7 +1434,8 @@ def collect_de_outros_grupos(source) -> list[Offer]:
         # oficial da Meta simplesmente nao tem esta fonte.
         return []
 
-    _stamp("last_grupos_fonte")
+    if not so_prioritarias:
+        _stamp("last_grupos_fonte")
 
     da_amazon: list[Offer] = []
     achadas = []
@@ -1426,9 +1462,13 @@ def collect_de_outros_grupos(source) -> list[Offer]:
             prioritarias.update(p.external_id for p in pistas_do_grupo)
             prioritarias.update(o.external_id for o in amazon_do_grupo)
 
-    # Trocado, e nao somado: o produto que foi prioritario ontem e reaparece hoje
-    # pela vitrine nao tem nada de especial.
-    _DA_FONTE_PRIORITARIA.clear()
+    # Somado, e nao trocado: o ciclo rapido e a rodada completa leem em threads
+    # diferentes, e uma troca de uma apagaria a marca que a outra acabou de por.
+    # O que se perde e a precisao de "so e prioritario o que o grupo postou
+    # agora" -- e o "sai uma vez so" e o cooldown seguram a repeticao de qualquer
+    # jeito.
+    if len(_DA_FONTE_PRIORITARIA) > _MAX_PRIORITARIAS_LEMBRADAS:
+        _DA_FONTE_PRIORITARIA.clear()
     _DA_FONTE_PRIORITARIA.update(prioritarias)
     if not achadas and not da_amazon:
         return []
@@ -1991,7 +2031,14 @@ def refetch_tracked(source, rules: Rules) -> list[Offer]:
     return found
 
 
-def run(dry_run: bool = False) -> list[ScoredOffer]:
+def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
+    """A rodada: coleta, filtra, escreve e enfileira.
+
+    `rapido=True` e o ciclo curto dos grupos-fonte prioritarios: le so eles, nao
+    drena a fila (quem goteja e a thread de entrega continua) e nao faz a busca
+    propria dos grupos tematicos. Tudo o mais -- pontuacao, cooldown, link de
+    afiliado, texto -- e o mesmo caminho da rodada completa.
+    """
     rules = Rules.load()
     sources = build_sources()
     by_name = {source.name: source for source in sources}
@@ -2009,7 +2056,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     # que a drenagem de agora gastar sai do que a do fim tem para gastar.
     orcamento = run_interval_seconds() * 0.8
     gasto = 0.0
-    if not dry_run:
+    if not dry_run and not rapido:
         try:
             gasto = flush_pending(orcamento)
         except MissingConfig:
@@ -2022,7 +2069,12 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             # e ele que faz a oferta virar verificada depois.
             log.warning("Drenagem antes da coleta falhou: %s", exc)
 
-    offers = collect(sources, load_watchlist(), rules, load_categories())
+    if rapido:
+        offers = collect_rapido(sources)
+        if not offers:
+            return []
+    else:
+        offers = collect(sources, load_watchlist(), rules, load_categories())
 
     picked: list[ScoredOffer] = []
     with connect() as conn:
@@ -2455,7 +2507,9 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         for scored in sem_link:
             log.warning("  %s  %s", scored.offer.external_id, scored.offer.url)
 
-    exclusivos = _rodada_dos_grupos(unique, rules, temas, copywriter, by_name)
+    exclusivos = (
+        [] if rapido else _rodada_dos_grupos(unique, rules, temas, copywriter, by_name)
+    )
 
     if dry_run:
         for _, text in drafts:
