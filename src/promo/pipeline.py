@@ -32,6 +32,7 @@ from .config import (
     family_cooldown_minutes,
     max_comida_e_bebida_por_run,
     max_do_geral_por_hora,
+    max_fonte_prioritaria_por_run,
     max_pending_queue,
     max_pistas_por_run,
     max_por_grupo_tematico,
@@ -532,6 +533,70 @@ _VISTOS_EM_OUTRO_GRUPO: set[str] = set()
 # que o checkout recusa. O que diz a quem o cupom serve e o anuncio que veio
 # junto dele.
 _CUPONS_DO_OUTRO_GRUPO: dict[str, tuple[str, ...]] = {}
+
+
+# Produtos de grupos-fonte marcados `"prioridade": true` no watchlist.json, nesta
+# rodada. Preenchido por `collect_de_outros_grupos`.
+#
+# Pedido do dono em 03/10/2026 sobre o Achadinhos Pelando VIP #BVA: "preciso que
+# os produtos desse grupo sejam enviados". Em 30 horas, de 62 produtos da
+# Amazon que o grupo postou so 18 chegaram a virar post -- o resto morreu na
+# fila cheia, na trava de nome e marca, ou nao entrou. Esta marca tira essas
+# tres travas do caminho.
+_DA_FONTE_PRIORITARIA: set[str] = set()
+
+
+def _de_fonte_prioritaria(offer: Offer) -> bool:
+    return offer.external_id in _DA_FONTE_PRIORITARIA
+
+
+def _barrada_na_selecao(
+    scored: ScoredOffer, barrados: list[str], temas: list[str]
+) -> bool:
+    """A lista de exclusao nao vale para a fonte prioritaria.
+
+    Smartphone e mochila estao barrados por escolha do dono, mas num grupo que
+    ele mandou enviar por inteiro a curadoria e a do grupo, e nao a nossa.
+    """
+    if _de_fonte_prioritaria(scored.offer):
+        return False
+    return e_barrada(scored.offer, barrados, temas)
+
+
+def _repete_nome_e_marca(scored: ScoredOffer, recentes: list[str]) -> bool:
+    """A trava de 24 h de "mesmo nome e marca" -- que a fonte prioritaria dispensa.
+
+    Ela barrava as variantes do cafe L'OR (ASINs diferentes, sabores e tamanhos
+    diferentes) por causa de uma so que tinha saido. A trava do MESMO produto
+    (`bloqueados`) continua valendo para todos.
+    """
+    if _de_fonte_prioritaria(scored.offer):
+        return False
+    return any(mesmo_produto(t, scored.offer.title) for t in recentes)
+
+
+def _separar_da_fonte_prioritaria(
+    *listas: list[ScoredOffer],
+) -> tuple[list[ScoredOffer], list[list[ScoredOffer]]]:
+    """(ofertas da fonte prioritaria, uma por produto; as listas sem elas).
+
+    Sai de TODAS as listas antes do corte por cota: uma oferta do #BVA que
+    caiu em `picked` (porque a nossa medicao tambem a achou) seria cortada pela
+    folga da fila do mesmo jeito que o repasse.
+    """
+    prioritarias: list[ScoredOffer] = []
+    vistas: set[str] = set()
+    restos: list[list[ScoredOffer]] = []
+    for lista in listas:
+        resto = []
+        for scored in lista:
+            if not _de_fonte_prioritaria(scored.offer):
+                resto.append(scored)
+            elif scored.offer.product_id not in vistas:
+                vistas.add(scored.offer.product_id)
+                prioritarias.append(scored)
+        restos.append(resto)
+    return prioritarias, restos
 
 
 def _veio_de_outro_grupo(offer: Offer) -> bool:
@@ -1338,24 +1403,33 @@ def collect_de_outros_grupos(source) -> list[Offer]:
 
     da_amazon: list[Offer] = []
     achadas = []
+    prioritarias: set[str] = set()
     for fonte in fontes:
         if fonte.get("tipo") == "pelando":
             # O link deste grupo e do Pelando, nao da loja: ver
             # `sources/pelando_grupo`. Nao ha o que pedir a `pistas` nem a
             # `_amazon_do_grupo`, que so reconhecem link do ML e da Amazon.
             pistas_do_grupo, amazon_do_grupo = _pelando_do_grupo(config, fonte)
-            achadas += pistas_do_grupo
-            da_amazon += amazon_do_grupo
-            continue
-        da_amazon += _amazon_do_grupo(config, fonte)
-        achadas += pistas(
-            base_url=config.base_url,
-            instancia=config.instance,
-            chave=config.api_key,
-            jid=fonte["jid"],
-            nome=fonte.get("nome", ""),
-            limite_links=int(fonte.get("limite", 15)),
-        )
+        else:
+            amazon_do_grupo = _amazon_do_grupo(config, fonte)
+            pistas_do_grupo = pistas(
+                base_url=config.base_url,
+                instancia=config.instance,
+                chave=config.api_key,
+                jid=fonte["jid"],
+                nome=fonte.get("nome", ""),
+                limite_links=int(fonte.get("limite", 15)),
+            )
+        achadas += pistas_do_grupo
+        da_amazon += amazon_do_grupo
+        if fonte.get("prioridade"):
+            prioritarias.update(p.external_id for p in pistas_do_grupo)
+            prioritarias.update(o.external_id for o in amazon_do_grupo)
+
+    # Trocado, e nao somado: o produto que foi prioritario ontem e reaparece hoje
+    # pela vitrine nao tem nada de especial.
+    _DA_FONTE_PRIORITARIA.clear()
+    _DA_FONTE_PRIORITARIA.update(prioritarias)
     if not achadas and not da_amazon:
         return []
 
@@ -1661,8 +1735,9 @@ def e_comida_ou_bebida(
 def _prioridade_do_post(offer: Offer) -> int:
     """Qual faixa da fila de entrega o post ocupa. Maior sai antes.
 
-    2 -- comida e bebida de outro grupo. Pedido do dono em 02/10/2026: tem que
-         aparecer. Sai na frente de tudo, inclusive do resto do repasse.
+    2 -- comida e bebida de outro grupo (pedido do dono em 02/10/2026: tem que
+         aparecer) e tudo que vem de uma fonte `prioridade: true` (03/10/2026).
+         Sai na frente de tudo, inclusive do resto do repasse.
     1 -- o resto do repasse: a pista sai na frente do que nos medimos.
     0 -- o que nos escolhemos.
 
@@ -1673,7 +1748,9 @@ def _prioridade_do_post(offer: Offer) -> int:
     """
     if not _veio_de_outro_grupo(offer):
         return 0
-    return 2 if e_comida_ou_bebida(offer) else 1
+    if _de_fonte_prioritaria(offer) or e_comida_ou_bebida(offer):
+        return 2
+    return 1
 
 
 def _admitir_pistas(
@@ -2150,10 +2227,10 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     barrados = load_exclude()
     if barrados:
         antes = len(picked) + len(repasses) + len(pistas_agora)
-        picked = [s for s in picked if not e_barrada(s.offer, barrados, temas)]
-        repasses = [s for s in repasses if not e_barrada(s.offer, barrados, temas)]
+        picked = [s for s in picked if not _barrada_na_selecao(s, barrados, temas)]
+        repasses = [s for s in repasses if not _barrada_na_selecao(s, barrados, temas)]
         pistas_agora = [
-            s for s in pistas_agora if not e_barrada(s.offer, barrados, temas)
+            s for s in pistas_agora if not _barrada_na_selecao(s, barrados, temas)
         ]
         fora = antes - len(picked) - len(repasses) - len(pistas_agora)
         if fora:
@@ -2168,8 +2245,10 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             # Mesmo nome e mesma marca so voltam no dia seguinte. Marca
             # diferente passa: quatro wheys de quatro fabricantes sao quatro
             # ofertas, e so a assinatura curta os via como uma.
-            if any(mesmo_produto(t, s.offer.title) for t in recentes):
+            if _repete_nome_e_marca(s, recentes):
                 return False
+            if _de_fonte_prioritaria(s.offer):
+                return True  # nem a familia da categoria a segura
             return (
                 familia_do_titulo(s.offer.title, CATEGORIA)
                 not in categorias_bloqueadas
@@ -2194,7 +2273,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
             s
             for s in pistas_agora
             if s.offer.product_id not in bloqueados
-            and not any(mesmo_produto(t, s.offer.title) for t in recentes)
+            and not _repete_nome_e_marca(s, recentes)
         ]
 
         repetidos = antes - len(picked) - len(repasses)
@@ -2214,6 +2293,17 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
     if em_horario_silencioso():
         teto = min(teto, quiet_max_offers_per_run())
         log.info("Horario silencioso: aceitando no maximo %d oferta(s).", teto)
+
+    # A fonte prioritaria sai ANTES de qualquer corte por cota ou por fila.
+    prioritarias, (picked, repasses, pistas_agora) = _separar_da_fonte_prioritaria(
+        picked, repasses, pistas_agora
+    )
+    prioritarias.sort(key=lambda s: s.discount_pct, reverse=True)
+    teto_prioritarias = max_fonte_prioritaria_por_run()
+    if len(prioritarias) > teto_prioritarias:
+        # Passou do freio: o excedente segue o caminho normal do repasse.
+        pistas_agora = prioritarias[teto_prioritarias:] + pistas_agora
+        prioritarias = prioritarias[:teto_prioritarias]
 
     espaco = max(0, min(teto, max_pending_queue() - na_fila))
     if espaco < teto:
@@ -2259,7 +2349,7 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
         # montes e que o leitor le como repeticao.
         novas = _um_por_produto(novas)
 
-        admitidas = _admitir_pistas(novas, na_fila, len(picked))
+        admitidas = _admitir_pistas(novas, na_fila, len(picked) + len(prioritarias))
         if len(novas) > len(admitidas):
             log.info(
                 "%d pista(s) do outro grupo ficaram de fora: entram %d nesta "
@@ -2279,6 +2369,13 @@ def run(dry_run: bool = False) -> list[ScoredOffer]:
                 len(admitidas),
                 na_frente,
             )
+
+    if prioritarias:
+        picked = prioritarias + picked
+        log.info(
+            "%d oferta(s) de fonte prioritaria na frente da fila, fora de toda cota.",
+            len(prioritarias),
+        )
 
     verificadas = sum(1 for s in picked if s.verified)
     log.info(

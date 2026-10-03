@@ -509,6 +509,17 @@ def max_comida_e_bebida_por_run() -> int:
     return _int("MAX_COMIDA_E_BEBIDA_POR_RODADA", 8)
 
 
+def max_fonte_prioritaria_por_run() -> int:
+    """Quantas ofertas de grupos-fonte `prioridade: true` entram por rodada.
+
+    O freio da excecao, como o de comida e bebida: a fonte prioritaria fura a
+    fila cheia, a exclusao e a trava de nome e marca, e um numero baixo aqui
+    impede que uma rodada com cem links inunde o grupo. O #BVA posta cerca de 6
+    mensagens por hora, entao 20 por rodada nunca e o limite na pratica.
+    """
+    return _int("MAX_FONTE_PRIORITARIA_POR_RODADA", 20)
+
+
 # Sentinela de "sem teto" para `MAX_PISTAS_POR_RUN`. Grande o bastante para
 # nunca ser o limite -- quem segura passa a ser so o tamanho da fila.
 SEM_TETO = 10_000
