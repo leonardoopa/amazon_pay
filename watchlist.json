@@ -1631,7 +1631,7 @@
       ]
     }
   ],
-  "_comment_grupos_fonte": "Grupos de WhatsApp lidos como fonte de DESCOBERTA -- o numero precisa estar neles. O que se aproveita e o FATO: qual anuncio esta em oferta e por quanto. Preco, riscado, foto e endereco canonico saem da propria pagina do produto no ML, que e publica. O texto e o link de afiliado deles NAO sao copiados: o post sai com redacao nossa, cupom nosso e link nosso, e a comissao fica com quem publicou. Esses produtos vao para o TOPO da fila, porque a curadoria ja foi feita por quem vive disso, e saem UMA VEZ so -- ja postado nao volta. `limite` e quantos links resolver por leitura: cada um custa uma pagina de ~370 KB do ML, porque o link de afiliado nao carrega o ID do anuncio na URL. Intervalo no .env, em GRUPOS_FONTE_INTERVALO_HORAS. `tipo: pelando` marca o grupo cujo link e do Pelando (pelando.promo/XXXX) e nao da loja: ver sources/pelando_grupo. O ID do produto sai do endereco da loja que a pagina da oferta guarda, e so ML de catalogo e Amazon entram. Cada link custa DOIS pedidos ao Pelando, entao `limite` menor aqui.",
+  "_comment_grupos_fonte": "Grupos de WhatsApp lidos como fonte de DESCOBERTA -- o numero precisa estar neles. O que se aproveita e o FATO: qual anuncio esta em oferta e por quanto. Preco, riscado, foto e endereco canonico saem da propria pagina do produto no ML, que e publica. O texto e o link de afiliado deles NAO sao copiados: o post sai com redacao nossa, cupom nosso e link nosso, e a comissao fica com quem publicou. Esses produtos vao para o TOPO da fila, porque a curadoria ja foi feita por quem vive disso, e saem UMA VEZ so -- ja postado nao volta. `limite` e quantos links resolver por leitura: cada um custa uma pagina de ~370 KB do ML, porque o link de afiliado nao carrega o ID do anuncio na URL. Intervalo no .env, em GRUPOS_FONTE_INTERVALO_HORAS. `tipo: pelando` marca o grupo cujo link e do Pelando (pelando.promo/XXXX) e nao da loja: ver sources/pelando_grupo. O ID do produto sai do endereco da loja que a pagina da oferta guarda, e so ML de catalogo e Amazon entram. Cada link custa DOIS pedidos ao Pelando, entao `limite` menor aqui. `prioridade: true` (pedido do dono em 03/10/2026: os produtos do #BVA tem que ser enviados) tira tudo que vem do grupo da fila cheia, da lista de exclusao e da trava de 24 h de nome e marca, e poe na faixa 2 da entrega. Continuam valendo a trava do MESMO produto e o 'sai uma vez so'. Ficam de fora o que o repasse nao sabe tratar: outras lojas (AliExpress, Adidas, KaBuM, Shopee, Magalu...) e ML fora do catalogo com cupom.",
   "grupos_fonte": [
     {
       "nome": "xet das promocoes | 39",
@@ -1647,6 +1647,7 @@
       "nome": "Achadinhos Pelando Vip #BVA",
       "jid": "120363427661444901@g.us",
       "tipo": "pelando",
+      "prioridade": true,
       "limite": 15
     }
   ],
