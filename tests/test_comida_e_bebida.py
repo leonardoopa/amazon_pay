@@ -95,6 +95,12 @@ def limpa_vistos():
         "Energético Red Bull 250ml Pack 24",
         "Panetone Bauducco Gotas de Chocolate 500g",
         "Pasta de Amendoim Integral Mandubim 1kg",
+        # Casos reais do #BVA em 03/10/2026 que o primeiro corte da lista deixou passar.
+        "Pringles Pack Promo 3 Sabores Batata Frita",
+        "Refrigerante Coca-Cola Original 2L Pack 6",
+        "Cerveja Skol Pilsen Lata 269ml Pack 15",
+        "Leite UHT Integral Italac 1L Caixa 12",
+        "Ovos Brancos Grandes Caixa 30 Unidades",
     ],
 )
 def test_comida_e_bebida_de_verdade(titulo):

@@ -1673,7 +1673,10 @@
     "miojo", "lamen", "nutella", "pasta de amendoim", "pasta de avela", "tapioca",
     "goiabada", "pacoca", "bala", "pirulito", "chiclete", "gelatina",
     "pudim", "milho verde", "ervilha", "palmito", "azeitona", "conserva",
-    "extrato de tomate", "caldo"
+    "extrato de tomate", "caldo", "pringles", "batata frita", "batata", "chips", "doritos",
+    "cheetos", "ruffles", "fandangos", "coca cola", "coca-cola", "pepsi", "guarana", "fanta",
+    "sprite", "monster energy", "heineken", "brahma", "skol", "budweiser", "stella artois",
+    "corona extra", "leite uht", "leite ninho", "ovo", "bolo", "refresco em po"
   ],
   "_comment_nao_e_comida": "Titulo que cita comida ou bebida e NAO e comida nem bebida: o aparelho, a taca, o perfume de nome gostoso. Vence comida_e_bebida. Cuidado com termo generico: 'creme' sozinho barraria o creme de leite, por isso so os cremes de pele. Sabor de suplemento (whey sabor cappuccino) e cor de roupa (vinho) citam comida sem ser comida.",
   "nao_e_comida": [
