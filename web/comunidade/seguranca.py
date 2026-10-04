@@ -122,7 +122,9 @@ class LimiteDeLoginMiddleware:
 
         # O admin responde 302 quando o login dá certo e 200 (com o formulário
         # e o erro) quando não dá. `request.user` já está resolvido aqui.
-        entrou = getattr(request, "user", None) is not None and request.user.is_authenticated
+        entrou = (
+            getattr(request, "user", None) is not None and request.user.is_authenticated
+        )
         if entrou:
             cache.delete(chave)
         elif limite > 0:

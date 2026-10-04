@@ -48,7 +48,9 @@ def anuncio(preco: float, oficial: bool, riscado: float | None = None) -> dict:
     return listing
 
 
-def fonte(anuncios: list[dict], temas: list[str] | None = None, nome: str = "") -> MercadoLivre:
+def fonte(
+    anuncios: list[dict], temas: list[str] | None = None, nome: str = ""
+) -> MercadoLivre:
     produto = dict(PRODUTO, name=nome or PRODUTO["name"])
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -156,4 +158,6 @@ def test_acento_no_titulo_nao_escapa_do_tema():
     """O vendedor digita o titulo; o tema e escrito a mao no watchlist.json."""
     anuncios = [anuncio(80.90, oficial=False), anuncio(127.50, oficial=True)]
 
-    assert oferta(anuncios, ["mascara"], nome="Máscara Wella Blondorplex").price == 127.50
+    assert (
+        oferta(anuncios, ["mascara"], nome="Máscara Wella Blondorplex").price == 127.50
+    )

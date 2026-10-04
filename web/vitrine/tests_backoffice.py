@@ -54,7 +54,10 @@ class TelaDaAmazon(TestCase):
     def setUp(self):
         self.url = reverse("vitrine:amazon_add")
         self.staff = get_user_model().objects.create_user(
-            "dono", password="uma-senha-longa-de-teste", is_staff=True, is_superuser=True
+            "dono",
+            password="uma-senha-longa-de-teste",
+            is_staff=True,
+            is_superuser=True,
         )
 
     # ---------- quem pode entrar ----------
@@ -183,7 +186,10 @@ class LimiteDeLogin(TestCase):
         cache.clear()
         self.url = "/admin/login/"
         get_user_model().objects.create_user(
-            "dono", password="uma-senha-longa-de-teste", is_staff=True, is_superuser=True
+            "dono",
+            password="uma-senha-longa-de-teste",
+            is_staff=True,
+            is_superuser=True,
         )
 
     def errar(self, cliente=None):
@@ -298,7 +304,9 @@ class CacheCompartilhado(TestCase):
         backend = settings.CACHES["default"]["BACKEND"]
 
         self.assertTrue(
-            any(k in backend.lower() for k in ("filebased", "db", "memcached", "redis")),
+            any(
+                k in backend.lower() for k in ("filebased", "db", "memcached", "redis")
+            ),
             f"Backend {backend} não é compartilhado entre workers.",
         )
 

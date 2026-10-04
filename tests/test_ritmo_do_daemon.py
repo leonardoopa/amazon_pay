@@ -36,7 +36,6 @@ def rodar(duracao_da_rodada: float, interval: float, vezes: int = 1):
     def wait(segundos):
         esperas.append(segundos)
         chamadas["n"] += 1
-        return None
 
     stop.wait.side_effect = wait
 

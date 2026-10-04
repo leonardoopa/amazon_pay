@@ -52,7 +52,9 @@ def test_nenhuma_categoria_repetida():
 
 def test_ids_de_categoria_tem_a_forma_do_ml():
     """MLB seguido de digitos. Qualquer outra coisa e 404 na descoberta."""
-    fora = [c["id"] for c in DADOS["categories"] if not re.fullmatch(r"MLB\d+", c["id"])]
+    fora = [
+        c["id"] for c in DADOS["categories"] if not re.fullmatch(r"MLB\d+", c["id"])
+    ]
 
     assert fora == []
 

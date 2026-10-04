@@ -4,15 +4,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('vitrine', '0002_grupo_jid_grupo_membros_atualizados_em_clique'),
+        ("vitrine", "0002_grupo_jid_grupo_membros_atualizados_em_clique"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='clique',
-            name='origem',
-            field=models.CharField(choices=[('topo', 'barra do topo'), ('cinema', 'filme de abertura'), ('hero', 'chamada principal'), ('grupos', 'cartão do grupo'), ('oferta', 'página de oferta'), ('post', 'assinatura do post no grupo'), ('desconhecida', 'sem origem declarada')], default='desconhecida', max_length=20),
+            model_name="clique",
+            name="origem",
+            field=models.CharField(
+                choices=[
+                    ("topo", "barra do topo"),
+                    ("cinema", "filme de abertura"),
+                    ("hero", "chamada principal"),
+                    ("grupos", "cartão do grupo"),
+                    ("oferta", "página de oferta"),
+                    ("post", "assinatura do post no grupo"),
+                    ("desconhecida", "sem origem declarada"),
+                ],
+                default="desconhecida",
+                max_length=20,
+            ),
         ),
     ]

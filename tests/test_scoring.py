@@ -233,12 +233,20 @@ def test_o_piso_em_reais_tambem_vale_no_repasse(conn):
     from promo.scoring import score_campaign
 
     magra = Offer(
-        source="ml_ofertas", external_id="MLB9", title="Whey",
-        price=237.0, url="https://x", original_price=239.0,
+        source="ml_ofertas",
+        external_id="MLB9",
+        title="Whey",
+        price=237.0,
+        url="https://x",
+        original_price=239.0,
     )
     gorda = Offer(
-        source="ml_ofertas", external_id="MLB9", title="Whey",
-        price=200.0, url="https://x", original_price=239.0,
+        source="ml_ofertas",
+        external_id="MLB9",
+        title="Whey",
+        price=200.0,
+        url="https://x",
+        original_price=239.0,
     )
 
     assert score_campaign(conn, magra, DEZ_REAIS) is None
@@ -308,8 +316,11 @@ def test_o_piso_da_verificada_sobrevive_ao_tema_prioritario(conn, monkeypatch):
 
     monkeypatch.setenv("PRIORITY_MIN_DISCOUNT_PCT", "0")
     whey = Offer(
-        source="mercadolivre", external_id="MLB123", title="Tasty Whey 3w Gourmet",
-        price=95.0, url="https://x",
+        source="mercadolivre",
+        external_id="MLB123",
+        title="Tasty Whey 3w Gourmet",
+        price=95.0,
+        url="https://x",
     )
     afrouxadas = regras_do_tema(whey, VERIFICADA_10, ["whey"])
 
@@ -342,8 +353,12 @@ def test_o_repasse_nao_usa_o_piso_da_verificada(conn):
     from promo.scoring import score_campaign
 
     vitrine = Offer(
-        source="ml_ofertas", external_id="MLB9", title="P",
-        price=94.0, url="https://x", original_price=100.0,
+        source="ml_ofertas",
+        external_id="MLB9",
+        title="P",
+        price=94.0,
+        url="https://x",
+        original_price=100.0,
     )
 
     assert score_campaign(conn, vitrine, VERIFICADA_10) is not None  # -6%

@@ -56,9 +56,7 @@ def test_produto_que_ja_saiu_aparece_na_lista():
     conn = make_conn("MLB1", "MLB2")
     create_post(conn, "mercadolivre:MLB1", 49.99, 69.99, 28.6, "texto")
 
-    achados = produtos_ja_postados(
-        conn, ["mercadolivre:MLB1", "mercadolivre:MLB2"]
-    )
+    achados = produtos_ja_postados(conn, ["mercadolivre:MLB1", "mercadolivre:MLB2"])
 
     assert achados == {"mercadolivre:MLB1"}
 
@@ -68,9 +66,7 @@ def test_post_ainda_na_fila_ja_conta_como_enviado():
     conn = make_conn("MLB1")
     create_post(conn, "mercadolivre:MLB1", 49.99, 69.99, 28.6, "texto")
 
-    assert produtos_ja_postados(conn, ["mercadolivre:MLB1"]) == {
-        "mercadolivre:MLB1"
-    }
+    assert produtos_ja_postados(conn, ["mercadolivre:MLB1"]) == {"mercadolivre:MLB1"}
 
 
 def test_post_que_falhou_nao_conta():
@@ -91,9 +87,7 @@ def test_sem_prazo_nenhum():
         (post,),
     )
 
-    assert produtos_ja_postados(conn, ["mercadolivre:MLB1"]) == {
-        "mercadolivre:MLB1"
-    }
+    assert produtos_ja_postados(conn, ["mercadolivre:MLB1"]) == {"mercadolivre:MLB1"}
 
 
 def test_lista_vazia_nao_consulta_o_banco():
@@ -105,9 +99,7 @@ def test_muitos_produtos_numa_consulta_so():
     for i in range(0, 40, 2):
         create_post(conn, f"mercadolivre:MLB{i}", 10.0, 20.0, 50.0, "texto")
 
-    achados = produtos_ja_postados(
-        conn, [f"mercadolivre:MLB{i}" for i in range(40)]
-    )
+    achados = produtos_ja_postados(conn, [f"mercadolivre:MLB{i}" for i in range(40)])
 
     assert len(achados) == 20
     assert "mercadolivre:MLB0" in achados

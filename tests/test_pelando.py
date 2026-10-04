@@ -83,7 +83,8 @@ def test_mes_desconhecido_nao_vira_data():
 
 def test_sem_recorte_o_cupom_vale_no_site_todo():
     regra = regra_do_slug(
-        BASE + "cupom-mercado-livre-oferece-rdollar-60-off-em-rdollar-499-08-set-2026-ade5"
+        BASE
+        + "cupom-mercado-livre-oferece-rdollar-60-off-em-rdollar-499-08-set-2026-ade5"
     )
 
     assert regra["restrito"] is False
@@ -116,7 +117,8 @@ def test_qualificador_conhecido_vira_tema():
 def test_qualificador_desconhecido_continua_restrito():
     """Recorte que nao da para traduzir e recorte que nao da para prometer."""
     regra = regra_do_slug(
-        BASE + "cupom-30porcento-off-em-selecionados-jardinagem-e-piscina-08-set-2026-a1"
+        BASE
+        + "cupom-30porcento-off-em-selecionados-jardinagem-e-piscina-08-set-2026-a1"
     )
 
     assert regra["restrito"] is True
@@ -141,7 +143,8 @@ def html_com_codigo(code: str, inativo: str = "false") -> str:
     return (
         '<div class="coupon-code-copiable" data-inactive="%s" data-astro-cid-x>'
         '<span class="code" data-astro-cid-y>%s</span>'
-        '<button data-code="%s" class="copy">Copiar</button></div>' % (inativo, code, code)
+        '<button data-code="%s" class="copy">Copiar</button></div>'
+        % (inativo, code, code)
     )
 
 
