@@ -271,7 +271,10 @@ def test_post_normal_nasce_sem_prioridade():
 
     conn = banco()
     scored = ScoredOffer(
-        offer=oferta(), baseline=200.0, discount_pct=22.5, observations=9,
+        offer=oferta(),
+        baseline=200.0,
+        discount_pct=22.5,
+        observations=9,
         lowest_ever=False,
     )
     record_offer(conn, scored.offer)
@@ -469,7 +472,9 @@ def test_foto_nova_substitui_a_antiga():
         image_url="https://http2.mlstatic.com/velha.jpg",
     )
     record_offer(conn, original)
-    record_offer(conn, replace(original, image_url="https://http2.mlstatic.com/nova.jpg"))
+    record_offer(
+        conn, replace(original, image_url="https://http2.mlstatic.com/nova.jpg")
+    )
 
     assert (
         conn.execute("SELECT image_url FROM products").fetchone()[0]

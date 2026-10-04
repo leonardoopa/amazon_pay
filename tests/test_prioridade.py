@@ -59,7 +59,9 @@ def oferta(titulo: str, preco: float, desconto: float, fonte="mercadolivre"):
 
 
 def test_reconhece_o_tema_no_titulo():
-    assert e_prioritaria(oferta("Máscara Wella Blondorplex 150ml", 124.0, 48).offer, TEMAS)
+    assert e_prioritaria(
+        oferta("Máscara Wella Blondorplex 150ml", 124.0, 48).offer, TEMAS
+    )
 
 
 def test_acento_e_caixa_nao_atrapalham():
@@ -69,7 +71,9 @@ def test_acento_e_caixa_nao_atrapalham():
 
 
 def test_titulo_sem_tema_nao_e_prioritario():
-    assert not e_prioritaria(oferta("Smart Tv 43 Samsung Crystal", 1500.0, 30).offer, TEMAS)
+    assert not e_prioritaria(
+        oferta("Smart Tv 43 Samsung Crystal", 1500.0, 30).offer, TEMAS
+    )
 
 
 def test_sem_temas_nada_e_prioritario():
@@ -307,7 +311,7 @@ def test_os_temas_ja_vem_normalizados():
 
 
 def test_tema_curto_demais_nao_entra():
-    """"oleo" sozinho pegaria oleo de motor, "kit" pegaria a watchlist inteira.
+    """ "oleo" sozinho pegaria oleo de motor, "kit" pegaria a watchlist inteira.
 
     Quatro e o piso porque "nike" e "puma" tem quatro letras e sao marcas que
     o grupo pediu pelo nome. Nao ha palavra comum de produto em portugues que
@@ -466,11 +470,14 @@ def test_o_piso_do_tema_nao_inventa_desconto(monkeypatch):
     conn.executescript(SCHEMA)
     sem_queda = anuncio("Shampoo Wella Invigo", 441.80, None)
 
-    assert score_campaign(conn, sem_queda, regras_do_tema(sem_queda, regras(), TEMAS)) is None
+    assert (
+        score_campaign(conn, sem_queda, regras_do_tema(sem_queda, regras(), TEMAS))
+        is None
+    )
 
 
 def test_o_cooldown_de_repeticao_continua_valendo_no_tema(monkeypatch):
-    """"Sempre que aparecer" nao pode virar o mesmo shampoo a cada rodada --
+    """ "Sempre que aparecer" nao pode virar o mesmo shampoo a cada rodada --
     e isso que faz sair do grupo justamente quem o tema queria trazer."""
     from promo.pipeline import regras_do_tema
 
@@ -492,8 +499,7 @@ def test_os_termos_do_tema_nao_tem_teto_de_preco():
     com_teto = [
         w.term
         for w in load_watchlist()
-        if w.max_price is not None
-        and any(tema in w.term for tema in temas)
+        if w.max_price is not None and any(tema in w.term for tema in temas)
     ]
 
     assert com_teto == []
@@ -594,7 +600,7 @@ def test_perfume_ja_era_tema_e_continua():
 
 
 def test_o_que_vem_da_pagina_de_perfumes_e_prioritario():
-    """"lembrando de prioridade aos produtos daqueles links que te mandei,
+    """ "lembrando de prioridade aos produtos daqueles links que te mandei,
     principalmente os perfumes e as coisas para mulheres".
 
     O caso real: "Perfume Sedutor Arabe Sabah 100ml" e o primeiro item da
@@ -689,7 +695,8 @@ def test_a_vitrine_carimba_a_pagina_de_origem(monkeypatch):
             pass
 
     monkeypatch.setattr(
-        fonte, "_client",
+        fonte,
+        "_client",
         type("C", (), {"get": staticmethod(lambda *a, **k: Resposta())})(),
         raising=False,
     )

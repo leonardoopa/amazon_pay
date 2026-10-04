@@ -358,7 +358,7 @@ def _cards_com_preco(no, achados: list | None = None, nivel: int = 0) -> list:
 
 
 def titulo_do_slug(slug: str) -> str:
-    """"idole-lancome-perfume-feminino-100ml" -> "Idole Lancome Perfume ...".
+    """ "idole-lancome-perfume-feminino-100ml" -> "Idole Lancome Perfume ...".
 
     O titulo importa mais que estetica: e nele que tema, prioridade e exclusao
     casam. Sem titulo o produto nao entra em grupo nenhum.

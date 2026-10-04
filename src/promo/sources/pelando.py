@@ -64,8 +64,18 @@ CODIGO = re.compile(
 )
 
 MESES = {
-    "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
-    "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
+    "jan": 1,
+    "fev": 2,
+    "mar": 3,
+    "abr": 4,
+    "mai": 5,
+    "jun": 6,
+    "jul": 7,
+    "ago": 8,
+    "set": 9,
+    "out": 10,
+    "nov": 11,
+    "dez": 12,
 }
 
 # "em selecionados" aparece em 46 dos 121 slugs do ML. Quando vem sozinho, o
@@ -197,7 +207,9 @@ def _e_do_mercado_livre(url: str) -> bool:
     return "mercado-livre" in url or "-meli-" in url
 
 
-def buscar(limite: int = 20, pausa: float = 1.2, timeout: float = 25.0) -> list[CupomPelando]:
+def buscar(
+    limite: int = 20, pausa: float = 1.2, timeout: float = 25.0
+) -> list[CupomPelando]:
     """Os cupons do ML mais recentes que o Pelando ainda marca como ativos.
 
     `limite` existe porque sao 121 URLs do ML no sitemap e abrir todas seria
@@ -217,8 +229,11 @@ def buscar(limite: int = 20, pausa: float = 1.2, timeout: float = 25.0) -> list[
             for u in re.findall(r"<loc>([^<]+)</loc>", indice.text)
             if _e_do_mercado_livre(u)
         ]
-        log.info("Pelando: %d cupons do ML no sitemap; lendo os %d mais recentes.",
-                 len(urls), min(limite, len(urls)))
+        log.info(
+            "Pelando: %d cupons do ML no sitemap; lendo os %d mais recentes.",
+            len(urls),
+            min(limite, len(urls)),
+        )
 
         cupons: list[CupomPelando] = []
         vistos: set[str] = set()

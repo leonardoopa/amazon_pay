@@ -38,7 +38,9 @@ from promo.pipeline import (  # noqa: E402
 )
 
 
-def oferta(titulo: str, external_id: str = "B006ILMIGE", source: str = "amazon") -> Offer:
+def oferta(
+    titulo: str, external_id: str = "B006ILMIGE", source: str = "amazon"
+) -> Offer:
     return Offer(
         source=source,
         external_id=external_id,

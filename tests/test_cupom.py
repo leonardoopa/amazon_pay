@@ -132,10 +132,12 @@ def test_formato_antigo_vencido_tambem_sai(tmp_path):
 def test_load_coupon_devolve_o_primeiro(tmp_path):
     caminho = escrever(
         tmp_path,
-        {"codes": [
-            {"code": "UM", "ate": AMANHA, "geral": True},
-            {"code": "DOIS", "ate": AMANHA, "geral": True},
-        ]},
+        {
+            "codes": [
+                {"code": "UM", "ate": AMANHA, "geral": True},
+                {"code": "DOIS", "ate": AMANHA, "geral": True},
+            ]
+        },
     )
 
     assert load_coupon(caminho) == "UM"
@@ -152,14 +154,19 @@ def test_cupom_de_roupa_sai_em_roupa():
     """PAGUEMENOS, medido em 08/09/2026: 18% so em roupas e acessorios."""
     cupons = [{"code": "PAGUEMENOS", "temas": ["cueca", "camiseta"], "minimo": 29.0}]
 
-    assert cupom_para(oferta("Kit 5 Cuecas Boxer Microfibra", 40.0), cupons) == "PAGUEMENOS"
+    assert (
+        cupom_para(oferta("Kit 5 Cuecas Boxer Microfibra", 40.0), cupons)
+        == "PAGUEMENOS"
+    )
 
 
 def test_cupom_de_roupa_nao_sai_em_secador():
     """O erro que faz a pessoa desconfiar do grupo."""
     cupons = [{"code": "PAGUEMENOS", "temas": ["cueca", "camiseta"], "minimo": 29.0}]
 
-    assert cupom_para(oferta("Secador de Cabelos Taiff Easy 1700w", 133.0), cupons) is None
+    assert (
+        cupom_para(oferta("Secador de Cabelos Taiff Easy 1700w", 133.0), cupons) is None
+    )
 
 
 def test_cupom_sem_tema_vale_para_tudo():
@@ -360,7 +367,12 @@ def test_a_categoria_manda_quando_existe():
 
 def test_cupom_do_watchlist_sem_categoria_continua_por_tema():
     """Cupom cadastrado a mao nao tem ID: a regra dele e o tema."""
-    manual = {"code": "PAGUEMENOS", "minimo": 29.0, "categorias": [], "temas": ["cueca"]}
+    manual = {
+        "code": "PAGUEMENOS",
+        "minimo": 29.0,
+        "categorias": [],
+        "temas": ["cueca"],
+    }
     cueca = com_categoria("Kit 5 Cuecas Boxer", None, 40.0)
 
     assert cupom_para(cueca, [manual]) == "PAGUEMENOS"
@@ -620,8 +632,13 @@ def test_prioritario_com_cupom_ainda_manda_no_topo():
 
 def geral(code, desconto, tipo="PERCENT", teto=0.0, minimo=1.0):
     return {
-        "code": code, "desconto": desconto, "tipo": tipo,
-        "teto": teto, "minimo": minimo, "temas": [], "categorias": [],
+        "code": code,
+        "desconto": desconto,
+        "tipo": tipo,
+        "teto": teto,
+        "minimo": minimo,
+        "temas": [],
+        "categorias": [],
     }
 
 
@@ -758,7 +775,7 @@ def test_cupom_restrito_entra_no_preco_quando_o_codigo_diz_a_marca(
 
 
 def test_cupom_de_campanha_entra_no_preco_de_qualquer_produto(com_preco_de_cupom):
-    """"TORCIDA" e campanha: nao recorta por marca, entao vale aqui tambem."""
+    """ "TORCIDA" e campanha: nao recorta por marca, entao vale aqui tambem."""
     from promo.pipeline import preco_com_cupom
 
     o = oferta("Kit Progressiva Titanium Liss", 149.99)
@@ -802,8 +819,13 @@ def fixo(code, valor, minimo=0.0):
     """Minimo 0 por padrao de proposito: e o formato que a fonte entrega
     incompleto, e o que os testes desta secao exercitam."""
     return {
-        "code": code, "desconto": valor, "tipo": "FIXED",
-        "teto": 0.0, "minimo": minimo, "temas": [], "categorias": [],
+        "code": code,
+        "desconto": valor,
+        "tipo": "FIXED",
+        "teto": 0.0,
+        "minimo": minimo,
+        "temas": [],
+        "categorias": [],
     }
 
 
@@ -888,8 +910,13 @@ def test_percentual_sem_minimo_tambem_e_recusado():
     from promo.pipeline import preco_com_cupom
 
     valemais = {
-        "code": "VALEMAIS", "desconto": 10.0, "tipo": "PERCENT",
-        "teto": 0.0, "minimo": 0.0, "temas": [], "categorias": [],
+        "code": "VALEMAIS",
+        "desconto": 10.0,
+        "tipo": "PERCENT",
+        "teto": 0.0,
+        "minimo": 0.0,
+        "temas": [],
+        "categorias": [],
     }
     o = oferta("Relogio Casio Vintage", 382.57)
 
@@ -944,15 +971,24 @@ def oferta_ml(titulo: str, preco: float = 100.0):
     from promo.models import Offer
 
     return Offer(
-        source="mercadolivre", external_id="MLB1", title=titulo, price=preco,
+        source="mercadolivre",
+        external_id="MLB1",
+        title=titulo,
+        price=preco,
         url="https://mercadolivre.com.br/MLB1",
     )
 
 
 def cupom_restrito(code: str, minimo: float = 5.0) -> dict:
     return {
-        "code": code, "minimo": minimo, "desconto": 15.0, "tipo": "PERCENT",
-        "teto": 150.0, "categorias": [], "temas": [], "restrito": True,
+        "code": code,
+        "minimo": minimo,
+        "desconto": 15.0,
+        "tipo": "PERCENT",
+        "teto": 150.0,
+        "categorias": [],
+        "temas": [],
+        "restrito": True,
         "ate": "2030-01-01",
     }
 
@@ -964,7 +1000,10 @@ def test_o_codigo_da_marca_vira_o_recorte_do_cupom():
 
     cupons = [cupom_restrito("AVENE15")]
 
-    assert cupom_para(oferta_ml("Avene Hydrance Creme Hidratante 40g"), cupons) == "AVENE15"
+    assert (
+        cupom_para(oferta_ml("Avene Hydrance Creme Hidratante 40g"), cupons)
+        == "AVENE15"
+    )
     assert cupom_para(oferta_ml("Aparador de Pelos Kemei KM-6511"), cupons) is None
 
 
@@ -992,7 +1031,9 @@ def test_cupom_de_marca_nao_sai_em_produto_de_outra_marca():
 
     for code in ("AVENE15", "MANTECORP14", "MAYBELLINENOMELI"):
         assert (
-            cupom_para(oferta_ml("Aparador de Pelos Kemei KM-6511"), [cupom_restrito(code)])
+            cupom_para(
+                oferta_ml("Aparador de Pelos Kemei KM-6511"), [cupom_restrito(code)]
+            )
             is None
         )
 
@@ -1011,7 +1052,7 @@ def test_cupom_nao_restrito_continua_valendo_para_tudo():
 
 
 def test_o_sufixo_do_ml_sai_antes_da_marca():
-    """"NOMELI" precisa sair antes de "MELI", senao MAYBELLINENOMELI viraria
+    """ "NOMELI" precisa sair antes de "MELI", senao MAYBELLINENOMELI viraria
     "maybellineno" e nao casaria com titulo nenhum."""
     from promo.pipeline import _marca_do_codigo
 

@@ -793,8 +793,10 @@ def test_o_fallback_monta_a_linha_com_o_cupom():
     from promo.copywriter import fallback_copy
 
     texto = fallback_copy(
-        make_scored(baseline=189.0), "https://x",
-        coupon="TORCIDA", preco_com_cupom=105.61,
+        make_scored(baseline=189.0),
+        "https://x",
+        coupon="TORCIDA",
+        preco_com_cupom=105.61,
     )
 
     assert "por *R$ 105,61* com o cupom" in texto
@@ -814,9 +816,7 @@ def test_preco_de_cupom_solto_e_recusado():
     from promo.copywriter import _reject_preco_de_cupom_solto
 
     with pytest.raises(RuntimeError, match="sem dizer que e com o"):
-        _reject_preco_de_cupom_solto(
-            "De R$ 189,00 por *R$ 105,61*", "TORCIDA", 105.61
-        )
+        _reject_preco_de_cupom_solto("De R$ 189,00 por *R$ 105,61*", "TORCIDA", 105.61)
 
 
 def test_preco_de_cupom_com_a_expressao_passa():

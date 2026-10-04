@@ -65,14 +65,10 @@ def make_conn() -> sqlite3.Connection:
 
 
 def postar(conn, preco, baseline, desconto, dias_atras=0.0):
-    post_id = create_post(
-        conn, "mercadolivre:MLB1", preco, baseline, desconto, "texto"
-    )
+    post_id = create_post(conn, "mercadolivre:MLB1", preco, baseline, desconto, "texto")
     if dias_atras:
         quando = (now() - timedelta(days=dias_atras)).isoformat()
-        conn.execute(
-            "UPDATE posts SET created_at = ? WHERE id = ?", (quando, post_id)
-        )
+        conn.execute("UPDATE posts SET created_at = ? WHERE id = ?", (quando, post_id))
     return post_id
 
 

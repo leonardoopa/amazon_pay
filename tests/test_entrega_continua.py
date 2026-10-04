@@ -66,17 +66,27 @@ def agora() -> datetime:
     return datetime.now(UTC)
 
 
-def enfileirar(conn, nome: str, grupo: str = GERAL, prioridade: int = 0,
-               idade_min: float = 1.0) -> int:
+def enfileirar(
+    conn, nome: str, grupo: str = GERAL, prioridade: int = 0, idade_min: float = 1.0
+) -> int:
     """Um post pendente, criado `idade_min` minutos atras."""
     oferta = Offer(
-        source="mercadolivre", external_id=nome, title=f"Produto {nome}",
-        price=100.0, url=f"https://mercadolivre.com.br/{nome}",
+        source="mercadolivre",
+        external_id=nome,
+        title=f"Produto {nome}",
+        price=100.0,
+        url=f"https://mercadolivre.com.br/{nome}",
     )
     record_offer(conn, oferta)
     post_id = create_post(
-        conn, oferta.product_id, 100.0, 150.0, 33.0, f"texto {nome}",
-        grupo_jid=grupo, prioridade=prioridade,
+        conn,
+        oferta.product_id,
+        100.0,
+        150.0,
+        33.0,
+        f"texto {nome}",
+        grupo_jid=grupo,
+        prioridade=prioridade,
     )
     criado = (agora() - timedelta(minutes=idade_min)).isoformat()
     conn.execute("UPDATE posts SET created_at = ? WHERE id = ?", (criado, post_id))
@@ -87,8 +97,11 @@ def enfileirar(conn, nome: str, grupo: str = GERAL, prioridade: int = 0,
 def ja_enviado(conn, nome: str, grupo: str, ha_segundos: float) -> None:
     """Um post enviado `ha_segundos` atras, para o ritmo ter de onde contar."""
     oferta = Offer(
-        source="mercadolivre", external_id=nome, title=f"Produto {nome}",
-        price=100.0, url=f"https://mercadolivre.com.br/{nome}",
+        source="mercadolivre",
+        external_id=nome,
+        title=f"Produto {nome}",
+        price=100.0,
+        url=f"https://mercadolivre.com.br/{nome}",
     )
     record_offer(conn, oferta)
     post_id = create_post(
@@ -103,7 +116,9 @@ def ja_enviado(conn, nome: str, grupo: str, ha_segundos: float) -> None:
 
 
 def status(conn, post_id: int) -> str:
-    return conn.execute("SELECT status FROM posts WHERE id = ?", (post_id,)).fetchone()[0]
+    return conn.execute("SELECT status FROM posts WHERE id = ?", (post_id,)).fetchone()[
+        0
+    ]
 
 
 # ---------- um post por vez ----------
@@ -354,13 +369,20 @@ def test_a_rodada_so_enfileira_quando_a_thread_esta_ligada(banco, monkeypatch):
     monkeypatch.setattr(pipeline, "build_delivery", lambda: entrega)
     pipeline._DRENAGEM_CONTINUA.set()
     oferta = Offer(
-        source="mercadolivre", external_id="NOVO", title="Produto novo",
-        price=100.0, url="https://mercadolivre.com.br/NOVO",
+        source="mercadolivre",
+        external_id="NOVO",
+        title="Produto novo",
+        price=100.0,
+        url="https://mercadolivre.com.br/NOVO",
     )
     record_offer(banco, oferta)
     scored = ScoredOffer(
-        offer=oferta, baseline=150.0, discount_pct=33.0, observations=0,
-        lowest_ever=False, verified=False,
+        offer=oferta,
+        baseline=150.0,
+        discount_pct=33.0,
+        observations=0,
+        lowest_ever=False,
+        verified=False,
     )
     grupos = [pipeline.GrupoDestino(nome="Geral", jid="")]
 
@@ -368,7 +390,12 @@ def test_a_rodada_so_enfileira_quando_a_thread_esta_ligada(banco, monkeypatch):
 
     assert gasto == 0.0
     assert entrega.enviados == []
-    assert banco.execute("SELECT COUNT(*) FROM posts WHERE status = 'pending'").fetchone()[0] == 1
+    assert (
+        banco.execute("SELECT COUNT(*) FROM posts WHERE status = 'pending'").fetchone()[
+            0
+        ]
+        == 1
+    )
 
 
 # ---------- a thread ----------

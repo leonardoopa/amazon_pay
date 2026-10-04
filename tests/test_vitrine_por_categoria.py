@@ -351,7 +351,9 @@ def test_as_categorias_de_esporte_apontam_para_o_grupo_de_esportes():
         "MLB31447",  # Camisetas e Regatas -- 8 adidas
         "MLB455528",  # Agasalhos -- 4 adidas
     ):
-        assert "Esportes" in mapa.get(esperado, ()), f"{esperado} nao aponta para Esportes"
+        assert "Esportes" in mapa.get(
+            esperado, ()
+        ), f"{esperado} nao aponta para Esportes"
 
 
 @pytest.mark.parametrize(

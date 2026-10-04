@@ -46,7 +46,9 @@ def test_mala_de_viagem_e_barrada():
 
 
 def test_mochila_de_menina_e_barrada():
-    assert e_barrada(oferta("Mochila Infantil Menina Escolar Unicórnio"), BARRADOS, TEMAS)
+    assert e_barrada(
+        oferta("Mochila Infantil Menina Escolar Unicórnio"), BARRADOS, TEMAS
+    )
 
 
 def test_acento_e_caixa_nao_escapam_da_barra():
@@ -61,9 +63,7 @@ def test_mochila_da_marca_passa():
     """A excecao e o pedido inteiro: barrar tudo apagaria o que se quer manter."""
     assert not e_barrada(oferta("Mochila Essentials adidas Preta 24L"), BARRADOS, TEMAS)
     assert not e_barrada(oferta("Mochila Nike Brasilia 9.5 Treino"), BARRADOS, TEMAS)
-    assert not e_barrada(
-        oferta("Mochila The North Face Borealis 28L"), BARRADOS, TEMAS
-    )
+    assert not e_barrada(oferta("Mochila The North Face Borealis 28L"), BARRADOS, TEMAS)
 
 
 def test_a_marca_tem_precedencia_sobre_a_barra():
@@ -179,7 +179,7 @@ def test_os_telefones_reais_sao_barrados():
 
 
 def test_o_gloss_nao_e_confundido_com_telefone():
-    """"Liphoney" contem "iphone". Foi por isso que `iphone` ficou fora."""
+    """ "Liphoney" contem "iphone". Foi por isso que `iphone` ficou fora."""
     gloss = oferta("Gloss Fran By Franciny Ehlke Liphoney Mel Liphoney-mel")
 
     assert not e_barrada(gloss, load_exclude(), load_priority())

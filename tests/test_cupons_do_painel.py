@@ -69,7 +69,7 @@ def cru(**extra) -> dict:
 def test_acha_o_cupom_solto_no_html():
     """O estado nao vem num `window.__X__`: cada cupom aparece solto. Decodificar
     a partir da chave de abertura sobrevive a mudanca de layout."""
-    html = '<div>lixo</div><script>var x = [%s];</script>' % json.dumps(cru())
+    html = "<div>lixo</div><script>var x = [%s];</script>" % json.dumps(cru())
 
     assert len(_cupons_do_html(html)) == 1
 
@@ -206,7 +206,7 @@ def test_so_a_folha_do_caminho_conta():
 
 
 def test_conectivo_nao_vira_tema():
-    """"Bermudas e Shorts" com o "e" dentro casaria com qualquer titulo."""
+    """ "Bermudas e Shorts" com o "e" dentro casaria com qualquer titulo."""
     from promo.sources.ml_cupons import temas_de_categoria
 
     assert "e" not in temas_de_categoria("Roupas > Bermudas e Shorts")
@@ -225,7 +225,7 @@ def test_acento_some_do_tema():
 
 
 def test_palavra_generica_de_vestuario_nao_vira_tema():
-    """"Moda Fitness" nao pode virar o tema "moda", que casa com tudo."""
+    """ "Moda Fitness" nao pode virar o tema "moda", que casa com tudo."""
     from promo.sources.ml_cupons import temas_de_categoria
 
     assert temas_de_categoria("Calçados > Moda Fitness") == ["fitness"]

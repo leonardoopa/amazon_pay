@@ -186,12 +186,18 @@ def test_produto_de_outro_grupo_vai_para_o_topo():
 
     def pontuada(eid, desconto):
         offer = Offer(
-            source="mercadolivre", external_id=eid, title="Produto " + eid,
-            price=100.0, url="u",
+            source="mercadolivre",
+            external_id=eid,
+            title="Produto " + eid,
+            price=100.0,
+            url="u",
         )
         return ScoredOffer(
-            offer=offer, baseline=200.0, discount_pct=desconto,
-            observations=9, lowest_ever=False,
+            offer=offer,
+            baseline=200.0,
+            discount_pct=desconto,
+            observations=9,
+            lowest_ever=False,
         )
 
     _VISTOS_EM_OUTRO_GRUPO.clear()
@@ -200,7 +206,9 @@ def test_produto_de_outro_grupo_vai_para_o_topo():
         ofertas = [pontuada("MLB_NOSSO", 60.0), pontuada("MLB_DO_XET", 15.0)]
         ordem = [
             s.offer.external_id
-            for s in sorted(ofertas, key=lambda s: chave_da_fila(s, [], []), reverse=True)
+            for s in sorted(
+                ofertas, key=lambda s: chave_da_fila(s, [], []), reverse=True
+            )
         ]
 
         assert ordem == ["MLB_DO_XET", "MLB_NOSSO"]
@@ -214,9 +222,16 @@ def test_sem_pista_a_ordem_e_a_de_antes():
     from promo.pipeline import _VISTOS_EM_OUTRO_GRUPO, chave_da_fila
 
     _VISTOS_EM_OUTRO_GRUPO.clear()
-    offer = Offer(source="mercadolivre", external_id="X", title="P", price=100.0, url="u")
-    s = ScoredOffer(offer=offer, baseline=200.0, discount_pct=30.0,
-                    observations=9, lowest_ever=False)
+    offer = Offer(
+        source="mercadolivre", external_id="X", title="P", price=100.0, url="u"
+    )
+    s = ScoredOffer(
+        offer=offer,
+        baseline=200.0,
+        discount_pct=30.0,
+        observations=9,
+        lowest_ever=False,
+    )
 
     assert chave_da_fila(s, [], [])[0] is False
 
@@ -302,8 +317,10 @@ def test_a_pista_chega_medida_a_fonte_do_ml(monkeypatch, banco_em_memoria):
 
     ml = MercadoLivre(
         MercadoLivreConfig(
-            client_id="1", client_secret="2",
-            redirect_uri="https://example.com/callback", site_id="MLB",
+            client_id="1",
+            client_secret="2",
+            redirect_uri="https://example.com/callback",
+            site_id="MLB",
         )
     )
     ml._client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -361,16 +378,23 @@ def test_um_id_que_a_api_recusa_nao_derruba_os_outros():
             200,
             json={
                 "results": [
-                    {"price": 90.0, "condition": "new", "currency_id": "BRL",
-                     "shipping": {}, "category_id": "MLB1"}
+                    {
+                        "price": 90.0,
+                        "condition": "new",
+                        "currency_id": "BRL",
+                        "shipping": {},
+                        "category_id": "MLB1",
+                    }
                 ]
             },
         )
 
     ml = MercadoLivre(
         MercadoLivreConfig(
-            client_id="1", client_secret="2",
-            redirect_uri="https://example.com/callback", site_id="MLB",
+            client_id="1",
+            client_secret="2",
+            redirect_uri="https://example.com/callback",
+            site_id="MLB",
         )
     )
     ml._client = httpx.Client(transport=httpx.MockTransport(handler))

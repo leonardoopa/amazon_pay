@@ -30,9 +30,7 @@ from promo.pipeline import GrupoDestino, load_grupos  # noqa: E402
 
 def escrever(tmp_path: Path, grupos) -> Path:
     caminho = tmp_path / "watchlist.json"
-    caminho.write_text(
-        json.dumps({"keywords": [], "grupos": grupos}), encoding="utf-8"
-    )
+    caminho.write_text(json.dumps({"keywords": [], "grupos": grupos}), encoding="utf-8")
     return caminho
 
 
@@ -102,9 +100,7 @@ def test_sem_bloco_grupos_ha_um_destino_so(tmp_path):
 def test_jid_vazio_e_legitimo_no_geral(tmp_path):
     """Vazio quer dizer "o destino padrao do .env" -- e o que preserva o
     cooldown dos 3.063 posts que ja existem."""
-    caminho = escrever(
-        tmp_path, [{"nome": "Geral", "jid": "", "temas": []}]
-    )
+    caminho = escrever(tmp_path, [{"nome": "Geral", "jid": "", "temas": []}])
 
     assert load_grupos(caminho)[0].jid == ""
 
@@ -237,7 +233,9 @@ def test_o_perfume_masculino_deixou_de_entrar_em_18_09_2026():
 
 def test_cueca_nao_entra_no_grupo_de_mulheres():
     grupo = GrupoDestino(
-        jid="120@g.us", nome="Mulheres", temas=("lupo", "calcinha"),
+        jid="120@g.us",
+        nome="Mulheres",
+        temas=("lupo", "calcinha"),
         exclui=("cueca",),
     )
 
@@ -249,7 +247,9 @@ def test_cueca_nao_entra_no_grupo_de_mulheres():
 def test_a_exclusao_do_grupo_nao_derruba_o_resto_da_marca():
     """O tema continua valendo para o que ele deveria trazer."""
     grupo = GrupoDestino(
-        jid="120@g.us", nome="Mulheres", temas=("lupo", "calcinha"),
+        jid="120@g.us",
+        nome="Mulheres",
+        temas=("lupo", "calcinha"),
         exclui=("cueca",),
     )
 

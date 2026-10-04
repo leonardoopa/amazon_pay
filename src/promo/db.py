@@ -384,9 +384,7 @@ def last_post(conn: sqlite3.Connection, product_id: str) -> sqlite3.Row | None:
     ).fetchone()
 
 
-def produtos_ja_postados(
-    conn: sqlite3.Connection, product_ids: list[str]
-) -> set[str]:
+def produtos_ja_postados(conn: sqlite3.Connection, product_ids: list[str]) -> set[str]:
     """Quais destes produtos o grupo ja recebeu alguma vez, sem prazo.
 
     O cooldown responde "faz pouco tempo?"; esta responde "ja saiu?". As duas
@@ -544,22 +542,81 @@ def create_post(
 # corta. O leitor ve o mesmo tenis quatro vezes; a regra ve quatro produtos.
 _VARIANTES = {
     # genero e faixa etaria
-    "masculino", "masculina", "feminino", "feminina", "unissex", "infantil",
-    "adulto", "menino", "menina",
+    "masculino",
+    "masculina",
+    "feminino",
+    "feminina",
+    "unissex",
+    "infantil",
+    "adulto",
+    "menino",
+    "menina",
     # cor
-    "branco", "branca", "preto", "preta", "cinza", "azul", "vermelho",
-    "vermelha", "verde", "amarelo", "amarela", "rosa", "roxo", "roxa", "bege",
-    "marrom", "dourado", "dourada", "prateado", "prateada", "violeta", "vinho",
-    "laranja", "nude", "colorido", "colorida",
+    "branco",
+    "branca",
+    "preto",
+    "preta",
+    "cinza",
+    "azul",
+    "vermelho",
+    "vermelha",
+    "verde",
+    "amarelo",
+    "amarela",
+    "rosa",
+    "roxo",
+    "roxa",
+    "bege",
+    "marrom",
+    "dourado",
+    "dourada",
+    "prateado",
+    "prateada",
+    "violeta",
+    "vinho",
+    "laranja",
+    "nude",
+    "colorido",
+    "colorida",
     # tamanho e acabamento
-    "liso", "lisa", "estampado", "estampada", "grande", "pequeno", "pequena",
-    "medio", "media", "br", "un", "gg", "pp",
+    "liso",
+    "lisa",
+    "estampado",
+    "estampada",
+    "grande",
+    "pequeno",
+    "pequena",
+    "medio",
+    "media",
+    "br",
+    "un",
+    "gg",
+    "pp",
 }
 
 # Palavras que nao ajudam a distinguir um produto de outro.
 _VAZIAS = {
-    "a", "as", "com", "cor", "da", "das", "de", "do", "dos", "e", "em", "kit",
-    "na", "no", "o", "os", "para", "por", "pra", "um", "uma",
+    "a",
+    "as",
+    "com",
+    "cor",
+    "da",
+    "das",
+    "de",
+    "do",
+    "dos",
+    "e",
+    "em",
+    "kit",
+    "na",
+    "no",
+    "o",
+    "os",
+    "para",
+    "por",
+    "pra",
+    "um",
+    "uma",
 }
 
 
@@ -574,13 +631,53 @@ CATEGORIA = 2
 # Sao justamente as palavras que fazem dois anuncios do mesmo whey parecerem
 # produtos diferentes, entao saem da comparacao.
 _APRESENTACAO = {
-    "sabor", "sabores", "refil", "pote", "pacote", "embalagem", "frasco",
-    "unidade", "unidades", "uni", "pares", "par", "pack", "caixa",
-    "kg", "kgs", "grama", "gramas", "ml", "litro", "litros", "lt",
-    "chocolate", "baunilha", "morango", "coco", "cookies", "banana", "leite",
-    "neutro", "mocaccino", "caramelo", "doce", "avela", "frutas", "cereja",
-    "limao", "uva", "abacaxi", "maracuja", "manga", "creme",
-    "original", "novo", "nova", "premium", "plus",
+    "sabor",
+    "sabores",
+    "refil",
+    "pote",
+    "pacote",
+    "embalagem",
+    "frasco",
+    "unidade",
+    "unidades",
+    "uni",
+    "pares",
+    "par",
+    "pack",
+    "caixa",
+    "kg",
+    "kgs",
+    "grama",
+    "gramas",
+    "ml",
+    "litro",
+    "litros",
+    "lt",
+    "chocolate",
+    "baunilha",
+    "morango",
+    "coco",
+    "cookies",
+    "banana",
+    "leite",
+    "neutro",
+    "mocaccino",
+    "caramelo",
+    "doce",
+    "avela",
+    "frutas",
+    "cereja",
+    "limao",
+    "uva",
+    "abacaxi",
+    "maracuja",
+    "manga",
+    "creme",
+    "original",
+    "novo",
+    "nova",
+    "premium",
+    "plus",
 }
 
 
@@ -688,9 +785,7 @@ def familia_do_titulo(titulo: str, palavras: int = 3) -> str:
     """
     tokens = re.findall(r"[a-z]+", sem_acento(titulo))
     significativas = [
-        t
-        for t in tokens
-        if t not in _VAZIAS and t not in _VARIANTES and len(t) > 1
+        t for t in tokens if t not in _VAZIAS and t not in _VARIANTES and len(t) > 1
     ]
     # Ordenado, e nao na ordem do titulo: o mesmo produto aparece como
     # "Camiseta Feminina Adizero Essentials" e "Camiseta Feminina Essentials
@@ -724,7 +819,9 @@ def titulos_recentes(
     comparar, e esse resumo e que errava -- ver `mesmo_produto`. Aqui os
     titulos vao inteiros, e quem compara decide.
     """
-    return [row["title"] for row in _titulos_postados(conn, cooldown_minutes, grupo_jid)]
+    return [
+        row["title"] for row in _titulos_postados(conn, cooldown_minutes, grupo_jid)
+    ]
 
 
 def _titulos_postados(
@@ -917,9 +1014,7 @@ def pending_posts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def enviados_na_janela(
-    conn: sqlite3.Connection, grupo_jid: str, minutos: int
-) -> int:
+def enviados_na_janela(conn: sqlite3.Connection, grupo_jid: str, minutos: int) -> int:
     """Quantos posts ja sairam NESTE grupo nos ultimos `minutos`.
 
     Conta por `sent_at` e cai para `created_at` no post antigo, que e gravado

@@ -142,7 +142,9 @@ def test_baixar_a_foto_por_conta_propria_diz_quem_somos(monkeypatch):
         return httpx.Response(200, content=b"RIFF....WEBP")
 
     monkeypatch.setattr(
-        modulo.httpx, "Client", lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+        modulo.httpx,
+        "Client",
+        lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
     )
     evo = FakeEvolution()
 

@@ -112,8 +112,15 @@ def test_o_icone_do_full_sozinho_nao_e_frete_gratis():
     so_full = {
         "type": "shipping_v2",
         "shipping_v2": [
-            {"values": [{"type": "icon", "key": "full_icon",
-                         "icon": {"key": "vpp_full_icon"}}]}
+            {
+                "values": [
+                    {
+                        "type": "icon",
+                        "key": "full_icon",
+                        "icon": {"key": "vpp_full_icon"},
+                    }
+                ]
+            }
         ],
     }
 
@@ -126,8 +133,15 @@ def test_o_texto_visivel_nao_serve_de_chave():
     mentiroso = {
         "type": "shipping_v2",
         "shipping_v2": [
-            {"values": [{"type": "label", "key": "shipping_cost",
-                         "label": {"text": "Frete gratis"}}]}
+            {
+                "values": [
+                    {
+                        "type": "label",
+                        "key": "shipping_cost",
+                        "label": {"text": "Frete gratis"},
+                    }
+                ]
+            }
         ],
     }
 

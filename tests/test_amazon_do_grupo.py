@@ -113,7 +113,7 @@ def test_preco_sozinho_sai_sem_riscado():
 
 
 def test_o_milhar_com_ponto_nao_vira_numero_errado():
-    """"R$ 1.999,99" tem que virar 1999.99, nunca 1.99999 nem 199999."""
+    """ "R$ 1.999,99" tem que virar 1999.99, nunca 1.99999 nem 199999."""
     preco, _antes = _precos_da_mensagem("Por R$ 1.999,99")
 
     assert preco == 1999.99

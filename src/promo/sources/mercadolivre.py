@@ -450,7 +450,9 @@ class MercadoLivre:
             oficiais = [c for c in candidatos if c.get("official_store_id")]
             if oficiais:
                 return min(oficiais, key=lambda listing: listing["price"])
-            log.info("Sem loja oficial para '%s'; vai o anuncio mais barato.", title[:60])
+            log.info(
+                "Sem loja oficial para '%s'; vai o anuncio mais barato.", title[:60]
+            )
         return min(candidatos, key=lambda listing: listing["price"])
 
     # ---------- Afiliado ----------

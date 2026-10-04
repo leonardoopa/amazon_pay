@@ -70,7 +70,7 @@ def test_perfume_cai_em_mulheres_e_em_perfumes():
 
 
 def test_cadeirinha_de_bebe_nao_entra_no_casa():
-    """"cadeira" e tema do Casa e casaria em cadeirinha de bebe, que e outro
+    """ "cadeira" e tema do Casa e casaria em cadeirinha de bebe, que e outro
     produto e outro publico. So a palavra do produto separa os dois."""
     assert destinos("Cadeirinha de Bebe para Carro Burigotto") == ["Geral"]
 
@@ -168,7 +168,7 @@ def test_a_prioridade_de_perfumes_e_a_marca_importada():
 
 
 def test_a_fila_nao_e_tema_do_esportes():
-    """"fila esportivo" nao casava titulo nenhum em 24.242 do catalogo: o ML
+    """ "fila esportivo" nao casava titulo nenhum em 24.242 do catalogo: o ML
     escreve "Tenis Fila Vector". A marca sozinha nao serve -- "fila" esta
     dentro de "afiliado" e de "filamento"."""
     esportes = _grupo("Esportes")
@@ -319,7 +319,9 @@ def test_o_que_nao_casa_a_prioridade_fica_so_no_grupo(monkeypatch):
 
     temas = pipeline.load_priority()
 
-    assert not pipeline._cabe_no_geral(scored_de("Organizador De Gaveta Colmeia"), temas)
+    assert not pipeline._cabe_no_geral(
+        scored_de("Organizador De Gaveta Colmeia"), temas
+    )
 
 
 def test_o_cooldown_do_geral_continua_valendo(monkeypatch):
@@ -539,7 +541,6 @@ def outra(numero: int, titulo: str) -> Offer:
     )
 
 
-
 # ---------- o recorte de 17/09/2026: perfume importado e maquiagem de marca ----
 
 
@@ -591,7 +592,7 @@ def test_o_perfumes_recusa_a_marca_que_nao_e_perfume(titulo, armadilha):
     ],
 )
 def test_a_maquiagem_de_marca_entra_no_grupo_de_mulheres(titulo):
-    """"tem MUITA COISA PARA MULHER, maquiagens de tudo que e marca, boas
+    """ "tem MUITA COISA PARA MULHER, maquiagens de tudo que e marca, boas
     marcas, quero que essas maquiagens sejam prioridade" -- 17/09/2026."""
     assert "Mulheres" in destinos(titulo), titulo
 
@@ -604,7 +605,7 @@ def test_a_maquiagem_de_marca_entra_no_grupo_de_mulheres(titulo):
     ],
 )
 def test_o_mulheres_recusa_o_que_so_compartilha_letras(titulo, armadilha):
-    """"amend" esta dentro de "amendoim" (51 titulos do catalogo, quase todos
+    """ "amend" esta dentro de "amendoim" (51 titulos do catalogo, quase todos
     comida) e "creamy" dentro de "whey bar creamy". Por isso os temas sao
     "amend essencial" e "creamy skincare", e nao a marca sozinha."""
     assert "Mulheres" not in destinos(titulo), f"{titulo} entrou por {armadilha!r}"
@@ -913,7 +914,7 @@ def test_o_exige_e_so_do_perfumes():
     ],
 )
 def test_o_masculino_nao_entra_no_grupo_de_mulheres(titulo):
-    """"tudo que tiver masculino, nao e pra ser enviado no grupo das mulheres"
+    """ "tudo que tiver masculino, nao e pra ser enviado no grupo das mulheres"
     -- 18/09/2026.
 
     Medido antes da mudanca: 17 dos 119 posts enviados ao grupo em 48h eram
@@ -964,7 +965,7 @@ def test_o_perfume_feminino_continua_no_grupo_de_mulheres():
     ],
 )
 def test_o_arbo_nao_traz_carboidrato(titulo):
-    """"arbo" (a linha Arbo do Boticario) esta dentro de "percarbonato",
+    """ "arbo" (a linha Arbo do Boticario) esta dentro de "percarbonato",
     "carboidrato", "carbon" e "barbotine".
 
     A maltodextrina esta na lista porque foi o caso que o dono viu no grupo em

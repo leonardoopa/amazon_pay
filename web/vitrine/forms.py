@@ -86,7 +86,10 @@ class OfertaAmazonForm(forms.Form):
         label="Título",
         max_length=200,
         widget=forms.TextInput(
-            attrs={"placeholder": "Creatina Monohidratada 300g Max Titanium", "size": 60}
+            attrs={
+                "placeholder": "Creatina Monohidratada 300g Max Titanium",
+                "size": 60,
+            }
         ),
     )
     preco = forms.DecimalField(

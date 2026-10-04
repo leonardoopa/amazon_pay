@@ -27,15 +27,22 @@ from promo.sources.grupo_wa import Pista  # noqa: E402
 
 def oferta(titulo: str, external_id: str, source: str = "amazon") -> Offer:
     return Offer(
-        source=source, external_id=external_id, title=titulo, price=50.0,
+        source=source,
+        external_id=external_id,
+        title=titulo,
+        price=50.0,
         url=f"https://exemplo.com/{external_id}",
     )
 
 
 def pontuada(titulo: str, external_id: str, desconto: float = 0.0) -> ScoredOffer:
     return ScoredOffer(
-        offer=oferta(titulo, external_id), baseline=50.0, discount_pct=desconto,
-        observations=0, lowest_ever=False, verified=False,
+        offer=oferta(titulo, external_id),
+        baseline=50.0,
+        discount_pct=desconto,
+        observations=0,
+        lowest_ever=False,
+        verified=False,
     )
 
 
@@ -59,7 +66,10 @@ def prioritaria(*ids: str) -> None:
 def test_tudo_da_fonte_prioritaria_ganha_a_faixa_2_mesmo_sem_ser_comida():
     prioritaria("B0NOTEBOOK")
 
-    assert pipeline._prioridade_do_post(oferta("Notebook Dell i5-1334U", "B0NOTEBOOK")) == 2
+    assert (
+        pipeline._prioridade_do_post(oferta("Notebook Dell i5-1334U", "B0NOTEBOOK"))
+        == 2
+    )
 
 
 def test_repasse_comum_continua_na_faixa_1():
@@ -167,14 +177,16 @@ def coleta(monkeypatch, banco_em_memoria):
     )
     # A fonte comum: uma pista do ML. A prioritaria e a do Pelando, abaixo.
     monkeypatch.setattr(
-        grupo_wa, "pistas",
+        grupo_wa,
+        "pistas",
         lambda **k: [Pista(external_id="MLB_COMUM", titulo="Comum", origem="xet")],
     )
     monkeypatch.setattr("promo.pipeline._amazon_do_grupo", lambda c, f: [])
     from promo.sources import pelando_grupo
 
     monkeypatch.setattr(
-        pelando_grupo, "ofertas_do_grupo",
+        pelando_grupo,
+        "ofertas_do_grupo",
         lambda *a, **k: (
             [Pista(external_id="MLB_BVA", titulo="Do BVA", origem="bva")],
             [],

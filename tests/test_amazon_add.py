@@ -177,9 +177,12 @@ def test_url_sem_asin_e_recusada(banco):
         [
             "amazon-add",
             "https://www.amazon.com.br/s?k=creatina",
-            "--titulo", "Creatina",
-            "--preco", "89.90",
-            "--de", "129.90",
+            "--titulo",
+            "Creatina",
+            "--preco",
+            "89.90",
+            "--de",
+            "129.90",
             "--sem-ia",
         ]
     )
@@ -193,10 +196,14 @@ def test_preco_maior_que_o_de_e_recusado(banco):
     nenhum."""
     codigo = main(
         [
-            "amazon-add", URL,
-            "--titulo", "Creatina",
-            "--preco", "129.90",
-            "--de", "89.90",
+            "amazon-add",
+            URL,
+            "--titulo",
+            "Creatina",
+            "--preco",
+            "129.90",
+            "--de",
+            "89.90",
             "--sem-ia",
         ]
     )
@@ -208,10 +215,14 @@ def test_preco_maior_que_o_de_e_recusado(banco):
 def test_preco_igual_ao_de_e_recusado(banco):
     codigo = main(
         [
-            "amazon-add", URL,
-            "--titulo", "Creatina",
-            "--preco", "89.90",
-            "--de", "89.90",
+            "amazon-add",
+            URL,
+            "--titulo",
+            "Creatina",
+            "--preco",
+            "89.90",
+            "--de",
+            "89.90",
             "--sem-ia",
         ]
     )
@@ -222,10 +233,14 @@ def test_preco_igual_ao_de_e_recusado(banco):
 def test_preco_zero_e_recusado(banco):
     codigo = main(
         [
-            "amazon-add", URL,
-            "--titulo", "Creatina",
-            "--preco", "0",
-            "--de", "89.90",
+            "amazon-add",
+            URL,
+            "--titulo",
+            "Creatina",
+            "--preco",
+            "0",
+            "--de",
+            "89.90",
             "--sem-ia",
         ]
     )

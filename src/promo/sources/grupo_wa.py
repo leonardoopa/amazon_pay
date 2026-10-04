@@ -44,9 +44,7 @@ USER_AGENT = (
 )
 
 # Links do ML em qualquer forma que apareca numa mensagem.
-LINK = re.compile(
-    r"https?://(?:meli\.la|(?:\w+\.)?mercadolivre\.com\.br)/\S+", re.I
-)
+LINK = re.compile(r"https?://(?:meli\.la|(?:\w+\.)?mercadolivre\.com\.br)/\S+", re.I)
 
 # O ID do anuncio no corpo da pagina social. `item_id` e o campo do produto em
 # destaque; os outros MLB que aparecem no HTML sao da vitrine do perfil e
@@ -97,8 +95,20 @@ CODIGO_DE_CUPOM = re.compile(r"[`*\"'“”]([A-Z][A-Z0-9]{4,24})[`*\"'“”]")
 # curta de proposito: so o que ja apareceu de verdade, e so por igualdade
 # exata -- "LEVEAGORA" e cupom, "AGORA" nao.
 _NAO_SAO_CUPOM = frozenset(
-    {"AGORA", "APENAS", "AQUI", "CLIQUE", "COMPRE", "FRETE", "GRATIS",
-     "HOJE", "LINK", "OFERTA", "PROMO", "ULTIMAS"}
+    {
+        "AGORA",
+        "APENAS",
+        "AQUI",
+        "CLIQUE",
+        "COMPRE",
+        "FRETE",
+        "GRATIS",
+        "HOJE",
+        "LINK",
+        "OFERTA",
+        "PROMO",
+        "ULTIMAS",
+    }
 )
 
 # Quanto do corpo, depois do titulo, ainda e o cartao do produto. Um cartao
@@ -214,7 +224,11 @@ def links_das_mensagens(registros: list[dict]) -> list[str]:
 
 
 def ler_mensagens(
-    base_url: str, instancia: str, chave: str, jid: str, limite: int = 50,
+    base_url: str,
+    instancia: str,
+    chave: str,
+    jid: str,
+    limite: int = 50,
     timeout: float = 30.0,
 ) -> list[dict]:
     """As mensagens mais recentes do grupo, pela Evolution."""
@@ -222,9 +236,7 @@ def ler_mensagens(
         resposta = cliente.post(
             f"{base_url.rstrip('/')}/chat/findMessages/{instancia}",
             headers={"apikey": chave, "Content-Type": "application/json"},
-            content=json.dumps(
-                {"where": {"key": {"remoteJid": jid}}, "limit": limite}
-            ),
+            content=json.dumps({"where": {"key": {"remoteJid": jid}}, "limit": limite}),
         )
         resposta.raise_for_status()
         corpo = resposta.json()
