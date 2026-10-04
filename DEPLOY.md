@@ -228,6 +228,20 @@ o site pelo IP, mas **não divulgue esse endereço**: sem TLS, o e-mail digitado
 no formulário trafega em texto claro e o WhatsApp mostra aviso de link não
 seguro.
 
+**Outro app no mesmo servidor, por subdomínio.** O Caddy é o único dono de 80/443,
+então um segundo app (hoje, o placar do TSE do repo `vote_count`) entra atrás dele
+em vez de abrir porta própria. O `Caddyfile` tem um segundo bloco, endereçado por
+`VOTOS_ADDRESS`, que repassa para `contador:8000`. Para ligar:
+
+1. Crie o A record do subdomínio (ex.: `votos`) para o IP do servidor e confira
+   com `dig +short A votos.seudominio.com.br`, antes de tudo.
+2. Acrescente `VOTOS_ADDRESS=votos.seudominio.com.br` ao `.env`.
+3. Suba o contador com o override dele (`compose.vps.yaml`, no repo `vote_count`),
+   que o põe na rede `amazon_pay_default` para o Caddy achá-lo pelo nome.
+
+Sem `VOTOS_ADDRESS` o bloco escuta em `:8099`, que o compose não publica. Se o
+contador estiver fora do ar, só o subdomínio dele responde 502.
+
 ## 3. Build e autorização do Mercado Livre
 
 ```bash

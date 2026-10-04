@@ -25,3 +25,24 @@
 		format console
 	}
 }
+
+# Placar do TSE (repo vote_count), num subdominio do mesmo dominio -- nao
+# custa dominio novo. VOTOS_ADDRESS vem do .env; sem ele o compose usa `:8099`,
+# porta que nao e publicada, entao o bloco fica inerte.
+#
+# O container `contador` mora em outro compose (~/contador na VPS) e so e
+# alcancavel por nome porque o override dele o coloca na rede amazon_pay_default.
+# Se ele estiver fora do ar, so este bloco responde 502; o site acima nao sente.
+#
+# Aponte o A record do subdominio para o IP ANTES de subir: o Let's Encrypt
+# valida pelo proprio nome, e tentativa falha entra no limite dele.
+{$VOTOS_ADDRESS} {
+	encode zstd gzip
+
+	reverse_proxy contador:8000
+
+	log {
+		output stdout
+		format console
+	}
+}
