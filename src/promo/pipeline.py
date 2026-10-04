@@ -28,7 +28,6 @@ from .config import (
     hot_interval_minutes,
     hot_margin_pct,
     hot_track_limit,
-    category_cooldown_minutes,
     family_cooldown_minutes,
     max_comida_e_bebida_por_run,
     max_do_geral_por_hora,
@@ -185,9 +184,7 @@ def load_grupos_fonte(path: Path | None = None) -> list[dict]:
     """
     path = path or ROOT / "watchlist.json"
     data = json.loads(path.read_text(encoding="utf-8"))
-    return [
-        g for g in (data.get("grupos_fonte") or []) if (g.get("jid") or "").strip()
-    ]
+    return [g for g in (data.get("grupos_fonte") or []) if (g.get("jid") or "").strip()]
 
 
 def load_grupos(path: Path | None = None) -> list[GrupoDestino]:
@@ -220,9 +217,7 @@ def load_grupos(path: Path | None = None) -> list[GrupoDestino]:
                 nome=(cru.get("nome") or jid).strip(),
                 temas=tuple(sem_acento(x) for x in cru.get("temas") or ()),
                 exclui=tuple(sem_acento(x) for x in cru.get("exclui") or ()),
-                prioridade=tuple(
-                    sem_acento(x) for x in cru.get("prioridade") or ()
-                ),
+                prioridade=tuple(sem_acento(x) for x in cru.get("prioridade") or ()),
                 exige=tuple(sem_acento(x) for x in cru.get("exige") or ()),
                 max_por_rodada=int(cru.get("max_por_rodada") or 0),
             )
@@ -436,7 +431,9 @@ def preco_com_cupom(offer: Offer, cupons: list[dict]) -> float | None:
     # Do que rende mais para o que rende menos, parando no primeiro que
     # produz um preco possivel. Escolher so o melhor e desistir se ele nao
     # servir jogaria fora o segundo, que costuma servir.
-    for melhor in sorted(servem, key=lambda c: _quanto_economiza(offer, c), reverse=True):
+    for melhor in sorted(
+        servem, key=lambda c: _quanto_economiza(offer, c), reverse=True
+    ):
         economia = _quanto_economiza(offer, melhor)
         if economia <= 0:
             continue
@@ -486,9 +483,7 @@ def _quanto_economiza(offer: Offer, cupom: dict) -> float:
     return min(bruto, teto) if teto else bruto
 
 
-def chave_da_fila(
-    scored: ScoredOffer, cupons: list[dict], temas: list[str]
-) -> tuple:
+def chave_da_fila(scored: ScoredOffer, cupons: list[dict], temas: list[str]) -> tuple:
     """A ordem da fila, em quatro criterios. Maior ganha.
 
     1. PRIORITARIO COM CUPOM. E a unica oferta que junta as duas coisas que o
@@ -770,29 +765,108 @@ def _marca_do_codigo(code: str) -> str:
 _MARCAS_EM_CUPOM = frozenset(
     {
         # dermocosmetico e farmacia
-        "avene", "mantecorp", "cerave", "laroche", "vichy", "neutrogena",
-        "eucerin", "bioderma", "sallve", "principia", "adcos", "dermage",
-        "nivea", "dove", "episol", "isdin",
+        "avene",
+        "mantecorp",
+        "cerave",
+        "laroche",
+        "vichy",
+        "neutrogena",
+        "eucerin",
+        "bioderma",
+        "sallve",
+        "principia",
+        "adcos",
+        "dermage",
+        "nivea",
+        "dove",
+        "episol",
+        "isdin",
         # maquiagem
-        "maybelline", "rubyrose", "vult", "payot", "dailus", "eudora",
-        "avon", "natura", "boticario", "quemdisseberenice", "oceane",
-        "marimaria", "brunatavares", "franciny", "bocarosa",
+        "maybelline",
+        "rubyrose",
+        "vult",
+        "payot",
+        "dailus",
+        "eudora",
+        "avon",
+        "natura",
+        "boticario",
+        "quemdisseberenice",
+        "oceane",
+        "marimaria",
+        "brunatavares",
+        "franciny",
+        "bocarosa",
         # cabelo
-        "wella", "kerastase", "loreal", "redken", "cadiveu", "brae",
-        "truss", "lolacosmetics", "widicare", "salonline", "haskell",
-        "inoar", "amend", "pantene", "elseve", "seda", "tresemme",
-        "bioextratus", "nioxin", "joico", "schwarzkopf",
+        "wella",
+        "kerastase",
+        "loreal",
+        "redken",
+        "cadiveu",
+        "brae",
+        "truss",
+        "lolacosmetics",
+        "widicare",
+        "salonline",
+        "haskell",
+        "inoar",
+        "amend",
+        "pantene",
+        "elseve",
+        "seda",
+        "tresemme",
+        "bioextratus",
+        "nioxin",
+        "joico",
+        "schwarzkopf",
         # esporte e vestuario
-        "nike", "adidas", "puma", "olympikus", "mizuno", "asics",
-        "newbalance", "fila", "lupo", "hering", "reserva", "colcci",
+        "nike",
+        "adidas",
+        "puma",
+        "olympikus",
+        "mizuno",
+        "asics",
+        "newbalance",
+        "fila",
+        "lupo",
+        "hering",
+        "reserva",
+        "colcci",
         # suplemento
-        "growth", "maxtitanium", "integralmedica", "probiotica", "dux",
-        "atlhetica", "blackskull", "darkness", "yopro", "whey",
+        "growth",
+        "maxtitanium",
+        "integralmedica",
+        "probiotica",
+        "dux",
+        "atlhetica",
+        "blackskull",
+        "darkness",
+        "yopro",
+        "whey",
         # eletro e casa
-        "philips", "mondial", "electrolux", "britania", "arno", "oster",
-        "tramontina", "brinox", "cadence", "wap", "philco", "multilaser",
-        "samsung", "xiaomi", "motorola", "positivo", "lenovo", "acer",
-        "jbl", "sony", "lg", "intelbras", "tplink",
+        "philips",
+        "mondial",
+        "electrolux",
+        "britania",
+        "arno",
+        "oster",
+        "tramontina",
+        "brinox",
+        "cadence",
+        "wap",
+        "philco",
+        "multilaser",
+        "samsung",
+        "xiaomi",
+        "motorola",
+        "positivo",
+        "lenovo",
+        "acer",
+        "jbl",
+        "sony",
+        "lg",
+        "intelbras",
+        "tplink",
     }
 )
 
@@ -902,8 +976,10 @@ def cupons_vigentes(path: Path | None = None) -> list[dict]:
         c for c in do_painel if c.get("ate") and date.fromisoformat(c["ate"]) >= hoje
     ]
     if len(frescos) < len(do_painel):
-        log.info("%d cupom(ns) venceram desde a ultima leitura.",
-                 len(do_painel) - len(frescos))
+        log.info(
+            "%d cupom(ns) venceram desde a ultima leitura.",
+            len(do_painel) - len(frescos),
+        )
 
     return frescos + load_coupons(path)
 
@@ -1134,9 +1210,7 @@ def collect(
     descobrir = _time_to_discover()
     # Quem sabe precificar por ID de catalogo. A landing da rota B traz link de
     # produto sem preco, e sem esta fonte ela nao tem como virar oferta.
-    catalogo = next(
-        (s for s in sources if hasattr(s, "fetch_by_ids")), None
-    )
+    catalogo = next((s for s in sources if hasattr(s, "fetch_by_ids")), None)
 
     # Fatia desta rodada. Sem fatia (0), a lista inteira, que era o
     # comportamento antes de a rodada de descoberta virar 21 minutos de
@@ -1248,7 +1322,9 @@ def _iso_now() -> str:
     return now().isoformat()
 
 
-def collect_vitrine(source, categories: list[tuple[str, int]] | None = None) -> list[Offer]:
+def collect_vitrine(
+    source, categories: list[tuple[str, int]] | None = None
+) -> list[Offer]:
     """Ofertas do dia do ML. Uma requisicao traz ~45 produtos.
 
     Roda em toda rodada de proposito: e a fonte mais barata que temos, e a
@@ -1518,7 +1594,9 @@ def collect_de_outros_grupos(source, so_prioritarias: bool = False) -> list[Offe
     # produto de usuario (`/up/MLBU...`) o da pista e o que alguem abriu num
     # navegador, com o nome do produto no caminho; o da API e so o ID.
     urls_da_pista = {
-        p.external_id: p.url for p in achadas if p.url and p.external_id not in resolvidos
+        p.external_id: p.url
+        for p in achadas
+        if p.url and p.external_id not in resolvidos
     }
     da_api = [replace(o, url=urls_da_pista.get(o.external_id, o.url)) for o in da_api]
 
@@ -1720,9 +1798,7 @@ def e_prioritaria(offer: Offer, temas: list[str]) -> bool:
         return False
     if origem in load_vitrine_prioritarias():
         return True
-    return any(
-        p["path"] == origem and p["prioridade"] for p in load_landing_pages()
-    )
+    return any(p["path"] == origem and p["prioridade"] for p in load_landing_pages())
 
 
 def load_comida_e_bebida(path: Path | None = None) -> tuple[list[str], list[str]]:
@@ -1883,9 +1959,7 @@ def regras_do_tema(offer: Offer, rules: Rules, temas: list[str]) -> Rules:
     return replace(rules, min_discount_pct=piso)
 
 
-def _priorizar_baratos(
-    escolhidas: list[ScoredOffer], limite: int
-) -> list[ScoredOffer]:
+def _priorizar_baratos(escolhidas: list[ScoredOffer], limite: int) -> list[ScoredOffer]:
     """Vagas primeiro para o que esta na faixa de foco, sem excluir o resto.
 
     Produto caro nao e barrado -- e uma queda real num item de R$ 3.000
@@ -1954,9 +2028,7 @@ def _intercalar_por_fonte(
     return saida
 
 
-def collect_categories(
-    source, categories: list[Category]
-) -> tuple[list[Offer], bool]:
+def collect_categories(source, categories: list[Category]) -> tuple[list[Offer], bool]:
     """Mais vendidos das categorias acompanhadas.
 
     Devolve as ofertas e se ALGUMA categoria respondeu. O segundo valor existe
@@ -2177,22 +2249,15 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
         # caiu contra o nosso historico, e essa e razao propria para postar de
         # novo, venha o produto de onde vier. `score_campaign` e `score_pista`
         # nao tem razao propria nenhuma -- a razao e que eles postaram.
-        de_fora = [
-            s
-            for s in repasses + pistas_agora
-            if _veio_de_outro_grupo(s.offer)
-        ]
+        de_fora = [s for s in repasses + pistas_agora if _veio_de_outro_grupo(s.offer)]
         if de_fora:
-            ja_saiu = produtos_ja_postados(
-                conn, [s.offer.product_id for s in de_fora]
-            )
+            ja_saiu = produtos_ja_postados(conn, [s.offer.product_id for s in de_fora])
             if ja_saiu:
                 repasses = [
                     s
                     for s in repasses
                     if not (
-                        _veio_de_outro_grupo(s.offer)
-                        and s.offer.product_id in ja_saiu
+                        _veio_de_outro_grupo(s.offer) and s.offer.product_id in ja_saiu
                     )
                 ]
                 pistas_agora = [
@@ -2302,8 +2367,7 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
             if _de_fonte_prioritaria(s.offer):
                 return True  # nem a familia da categoria a segura
             return (
-                familia_do_titulo(s.offer.title, CATEGORIA)
-                not in categorias_bloqueadas
+                familia_do_titulo(s.offer.title, CATEGORIA) not in categorias_bloqueadas
             )
 
         picked = [s for s in picked if passa(s)]
@@ -2373,9 +2437,7 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
         restantes = [
             s
             for s in _um_por_produto(repasses)
-            if not any(
-                mesmo_produto(j.offer.title, s.offer.title) for j in picked
-            )
+            if not any(mesmo_produto(j.offer.title, s.offer.title) for j in picked)
         ]
         picked += _priorizar_temas(restantes, espaco - len(picked), temas)
 
@@ -2414,7 +2476,9 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
         picked = admitidas + picked
         if admitidas:
             termos, nao_e = load_comida_e_bebida()
-            na_frente = sum(1 for s in admitidas if e_comida_ou_bebida(s.offer, termos, nao_e))
+            na_frente = sum(
+                1 for s in admitidas if e_comida_ou_bebida(s.offer, termos, nao_e)
+            )
             log.info(
                 "%d oferta(s) do outro grupo na frente da fila, fora da cota "
                 "(%d de comida ou bebida).",
@@ -2606,9 +2670,7 @@ def _rodada_dos_grupos(
                 saida.append((geral, scored, text))
                 para_o_geral += 1
 
-        log.info(
-            "%s: %d oferta(s) pela busca propria.", grupo.nome, len(escolhidas)
-        )
+        log.info("%s: %d oferta(s) pela busca propria.", grupo.nome, len(escolhidas))
 
     if para_o_geral:
         log.info(
@@ -2685,8 +2747,7 @@ def prioritaria_no_grupo(offer: Offer, grupo: GrupoDestino) -> bool:
     if not origem:
         return False
     return any(
-        grupo.nome.endswith(nome)
-        for nome in origens_por_grupo().get(origem, ())
+        grupo.nome.endswith(nome) for nome in origens_por_grupo().get(origem, ())
     )
 
 
@@ -2725,9 +2786,7 @@ def _escolhe_para_o_grupo(
     if tem_prioridade:
         candidatas.sort(key=lambda o: not prioritaria_no_grupo(o, grupo))
 
-    reserva = (
-        min(reserva_de_prioridade_do_grupo(), limite) if tem_prioridade else 0
-    )
+    reserva = min(reserva_de_prioridade_do_grupo(), limite) if tem_prioridade else 0
 
     with connect() as conn:
         bloqueados = products_in_cooldown(conn, grupo_jid=grupo.jid)
@@ -2756,9 +2815,7 @@ def _escolhe_para_o_grupo(
                     break
 
         if reserva > 0:
-            prioritarias = [
-                o for o in candidatas if prioritaria_no_grupo(o, grupo)
-            ]
+            prioritarias = [o for o in candidatas if prioritaria_no_grupo(o, grupo)]
             preenche(prioritarias, reserva)
             if escolhidas:
                 log.info(
@@ -3080,7 +3137,9 @@ def drip_once(delivery=None) -> str:
 
         with connect() as conn:
             mark_post_sent(conn, post_id)
-        log.info("Entrega continua: post %d enviado (%s).", post_id, grupo_jid or "Geral")
+        log.info(
+            "Entrega continua: post %d enviado (%s).", post_id, grupo_jid or "Geral"
+        )
         return ENVIOU
     finally:
         _ENVIO.release()

@@ -521,8 +521,10 @@ def cmd_cupons(args: argparse.Namespace) -> int:
             codigo = cupom_para(fingida, cupons)
             if codigo:
                 acertos += 1
-                print(f"  {codigo:<16} {row['category'] or '(sem categoria)':<12} "
-                      f"{row['title'][:46]}")
+                print(
+                    f"  {codigo:<16} {row['category'] or '(sem categoria)':<12} "
+                    f"{row['title'][:46]}"
+                )
         print(f"\n{acertos} de {len(produtos)} receberiam cupom.")
         sem_categoria = sum(1 for r in produtos if not r["category"])
         if sem_categoria:
@@ -551,7 +553,12 @@ def cmd_amazon_add(args: argparse.Namespace) -> int:
     O post sai `verified=False`: o "de" e o que a loja anuncia, nao a nossa
     mediana. Mesma marcacao do repasse da vitrine do ML.
     """
-    from .manual import OfertaInvalida, enfileirar, escrever_texto, preparar_oferta_amazon
+    from .manual import (
+        OfertaInvalida,
+        enfileirar,
+        escrever_texto,
+        preparar_oferta_amazon,
+    )
 
     try:
         scored = preparar_oferta_amazon(
@@ -573,7 +580,9 @@ def cmd_amazon_add(args: argparse.Namespace) -> int:
     if args.dry_run:
         print(texto)
         print()
-        print(f"(dry-run: nada foi enfileirado. Imagem: {offer.image_url or 'nenhuma'})")
+        print(
+            f"(dry-run: nada foi enfileirado. Imagem: {offer.image_url or 'nenhuma'})"
+        )
         return 0
 
     post_id = enfileirar(scored, texto)
@@ -777,7 +786,9 @@ def main(argv: list[str] | None = None) -> int:
                 help="Preco anunciado antes do desconto, em reais",
             )
             sub.add_argument(
-                "--tag", default=None, help="Tag de associado (padrao: AMAZON_PARTNER_TAG)"
+                "--tag",
+                default=None,
+                help="Tag de associado (padrao: AMAZON_PARTNER_TAG)",
             )
             sub.add_argument(
                 "--imagem", default=None, help="URL da imagem (padrao: a do ASIN)"

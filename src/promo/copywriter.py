@@ -97,6 +97,7 @@ def sem_divulgacao(source: str) -> bool:
     """
     return not disclosure_for(source).strip()
 
+
 SYSTEM = """Voce escreve posts de oferta para um grupo de WhatsApp brasileiro.
 
 O post tem que fazer a pessoa QUERER o produto antes de olhar o preco. Quem le
@@ -256,9 +257,7 @@ class Copywriter:
         avoid: list[str] | None,
         preco_com_cupom: float | None = None,
     ) -> str:
-        response = self._generate(
-            _facts(scored, link, coupon, avoid, preco_com_cupom)
-        )
+        response = self._generate(_facts(scored, link, coupon, avoid, preco_com_cupom))
 
         _reject_truncated(response)
 

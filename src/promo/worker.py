@@ -80,7 +80,11 @@ def start_fonte_rapida(stop: threading.Event) -> threading.Thread | None:
         fonte_rapida_intervalo_segundos,
     )
 
-    if not fonte_rapida() or not entrega_continua() or delivery_backend() != "evolution":
+    if (
+        not fonte_rapida()
+        or not entrega_continua()
+        or delivery_backend() != "evolution"
+    ):
         return None
 
     from . import pipeline

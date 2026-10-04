@@ -84,7 +84,9 @@ def preparar_oferta_amazon(
         price=preco,
         url=link_de_afiliado(asin, tag),
         original_price=de,
-        image_url=None if sem_imagem else ((imagem or "").strip() or imagem_do_asin(asin)),
+        image_url=None
+        if sem_imagem
+        else ((imagem or "").strip() or imagem_do_asin(asin)),
     )
     return ScoredOffer(
         offer=offer,

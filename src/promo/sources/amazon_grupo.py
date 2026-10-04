@@ -45,7 +45,6 @@ from dataclasses import dataclass
 import httpx
 
 from .amazon_link import (
-    PRODUTO as PRODUTO_CANONICO,
     extrair_asin,
     imagem_do_asin,
     link_de_afiliado,
@@ -55,8 +54,12 @@ log = logging.getLogger("promo")
 
 # Encurtadores que os grupos usam. `link.amazon` e o do SiteStripe; `amzn.to`
 # e o classico; `amzlinks.in` aparece no meio da cadeia do primeiro.
-ENCURTADOR = re.compile(r"https?://(?:link\.amazon|amzn\.to|amzlinks\.in|a\.co)/\S+", re.I)
-QUALQUER_AMAZON = re.compile(r"https?://\S*(?:amazon\.com|amzn\.to|amzlinks\.in|a\.co)/\S*", re.I)
+ENCURTADOR = re.compile(
+    r"https?://(?:link\.amazon|amzn\.to|amzlinks\.in|a\.co)/\S+", re.I
+)
+QUALQUER_AMAZON = re.compile(
+    r"https?://\S*(?:amazon\.com|amzn\.to|amzlinks\.in|a\.co)/\S*", re.I
+)
 
 # A propria Amazon, e nao um encurtador. Pedir uma pagina daqui esta fora de
 # questao: o ASIN mora na URL, e o resto da pagina nao e nosso para ler.

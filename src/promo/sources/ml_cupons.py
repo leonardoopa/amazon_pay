@@ -251,8 +251,25 @@ def buscar(cookie: str, timeout: float = 25.0) -> list[Cupom]:
 # Conectivos e palavras que nao identificam produto nenhum. Sem tirar isso,
 # "Bermudas e Shorts" viraria o tema "e", que casa com qualquer titulo.
 _VAZIAS_CATEGORIA = {
-    "e", "de", "da", "do", "das", "dos", "para", "com", "em", "a", "o", "as", "os",
-    "moda", "roupa", "roupas", "outros", "outras", "mais",
+    "e",
+    "de",
+    "da",
+    "do",
+    "das",
+    "dos",
+    "para",
+    "com",
+    "em",
+    "a",
+    "o",
+    "as",
+    "os",
+    "moda",
+    "roupa",
+    "roupas",
+    "outros",
+    "outras",
+    "mais",
 }
 
 CATEGORIAS_API = "https://api.mercadolibre.com/categories/{id}"
