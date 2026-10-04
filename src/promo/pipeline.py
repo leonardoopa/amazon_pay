@@ -1649,7 +1649,11 @@ def _amazon_do_grupo(config, fonte: dict) -> list[Offer]:
 
 def _offer_da_amazon(oferta) -> Offer:
     """A `OfertaAmazon` de um grupo-fonte como Offer, sem tag nenhuma na URL."""
-    from .sources.amazon_grupo import PRODUTO_CANONICO
+    # De onde ele e DEFINIDO, e nao de `amazon_grupo`, que so o importava para
+    # usar la dentro: o autoflake do pre-commit tira import "sem uso" e levou o
+    # `PRODUTO_CANONICO` embora (04/10/2026). Ia quebrar a rodada inteira; o CI
+    # pegou antes do deploy.
+    from .sources.amazon_link import PRODUTO as PRODUTO_CANONICO
     from .sources.amazon_link import imagem_do_asin
 
     return Offer(
