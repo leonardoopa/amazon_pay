@@ -56,7 +56,9 @@ def make_conn() -> sqlite3.Connection:
     return conn
 
 
-def postar(conn: sqlite3.Connection, external_id: str, title: str, minutos: int) -> None:
+def postar(
+    conn: sqlite3.Connection, external_id: str, title: str, minutos: int
+) -> None:
     """Grava um post ja enviado ha N minutos."""
     record_offer(
         conn,
@@ -136,7 +138,9 @@ def test_whey_recente_bloqueia_outro_whey():
 
     bloqueadas = categories_in_cooldown(conn, 120)
 
-    assert familia_do_titulo("Whey Protein 1kg Pro Max Titanium", CATEGORIA) in bloqueadas
+    assert (
+        familia_do_titulo("Whey Protein 1kg Pro Max Titanium", CATEGORIA) in bloqueadas
+    )
 
 
 def test_post_na_fila_tambem_bloqueia_a_categoria():

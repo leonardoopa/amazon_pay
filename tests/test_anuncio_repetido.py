@@ -56,7 +56,7 @@ def test_acento_e_caixa_nao_separam():
 
 
 def test_numero_nao_entra_na_assinatura():
-    """"UV 50+" e "UV50+" nao podem virar produtos diferentes."""
+    """ "UV 50+" e "UV50+" nao podem virar produtos diferentes."""
     assert familia_do_titulo("Camiseta Dry Fit 2 unidades") == familia_do_titulo(
         "Camiseta Dry Fit 3 unidades"
     )

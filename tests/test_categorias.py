@@ -201,7 +201,10 @@ def test_sem_teto_passa_tudo():
 def test_fonte_sem_highlights_e_ignorada():
     """Categoria e conceito do ML; a Amazon nao precisa fingir que tem."""
     # Fonte sem `highlights` nao chamou ninguem, entao nao respondeu nada.
-    assert collect_categories(FonteSemDestaques(), [Category(id="MLB1051")]) == ([], False)
+    assert collect_categories(FonteSemDestaques(), [Category(id="MLB1051")]) == (
+        [],
+        False,
+    )
 
 
 def test_sem_categorias_nao_consulta():
@@ -213,7 +216,9 @@ def test_sem_categorias_nao_consulta():
 def test_categoria_quebrada_nao_derruba_as_outras():
     """Uma categoria fora do ar nao pode custar a rodada inteira."""
     fonte = FonteComDestaques([], falha=True)
-    offers, _ = collect_categories(fonte, [Category(id="MLB1051"), Category(id="MLB1276")])
+    offers, _ = collect_categories(
+        fonte, [Category(id="MLB1051"), Category(id="MLB1276")]
+    )
 
     assert offers == []
     assert fonte.pedidas == ["MLB1051", "MLB1276"]  # seguiu depois da falha

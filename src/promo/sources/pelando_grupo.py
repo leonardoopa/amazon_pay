@@ -154,7 +154,9 @@ def _maior_foto(deal: dict) -> str:
     A `openGraphImageUrl` fica de fora de proposito: tem a marca do Pelando.
     """
     variantes = [
-        v for v in (deal.get("imageSrcset") or []) if isinstance(v, dict) and v.get("url")
+        v
+        for v in (deal.get("imageSrcset") or [])
+        if isinstance(v, dict) and v.get("url")
     ]
     if variantes:
         maior = max(variantes, key=lambda v: v.get("width") or 0)

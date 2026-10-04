@@ -52,11 +52,17 @@ def leitura(monkeypatch, banco_em_memoria):
 
     lidas: list[str] = []
     monkeypatch.setenv("AMAZON_PARTNER_TAG", "comunidaded0a-20")
-    monkeypatch.setattr("promo.pipeline.load_grupos_fonte", lambda *a, **k: list(FONTES))
     monkeypatch.setattr(
-        EvolutionConfig, "load",
-        classmethod(lambda cls, *a, **k: EvolutionConfig(
-            base_url="http://e", api_key="k", instance="i", group_jid="g@g.us")),
+        "promo.pipeline.load_grupos_fonte", lambda *a, **k: list(FONTES)
+    )
+    monkeypatch.setattr(
+        EvolutionConfig,
+        "load",
+        classmethod(
+            lambda cls, *a, **k: EvolutionConfig(
+                base_url="http://e", api_key="k", instance="i", group_jid="g@g.us"
+            )
+        ),
     )
 
     def pistas_do_xet(**k):
@@ -91,7 +97,9 @@ def test_o_ciclo_rapido_le_so_as_fontes_prioritarias(leitura):
     assert leitura == ["bva"]
 
 
-def test_o_ciclo_rapido_nao_gasta_o_intervalo_da_rodada_completa(leitura, banco_em_memoria):
+def test_o_ciclo_rapido_nao_gasta_o_intervalo_da_rodada_completa(
+    leitura, banco_em_memoria
+):
     from promo.db import get_meta
 
     pipeline.collect_de_outros_grupos(MLFalso(), so_prioritarias=True)
@@ -169,8 +177,11 @@ class RedatorFalso:
 @pytest.fixture
 def rodada_rapida(monkeypatch, banco_em_memoria):
     chamadas = {"flush": 0, "completa": 0, "tematicos": 0}
-    monkeypatch.setattr(pipeline, "build_sources",
-                        lambda: [FonteFalsa("mercadolivre"), FonteFalsa("amazon")])
+    monkeypatch.setattr(
+        pipeline,
+        "build_sources",
+        lambda: [FonteFalsa("mercadolivre"), FonteFalsa("amazon")],
+    )
     monkeypatch.setattr(pipeline, "Copywriter", RedatorFalso)
     monkeypatch.setattr(pipeline, "cupons_vigentes", lambda *a, **k: [])
     monkeypatch.setattr(pipeline, "load_exclude", lambda *a, **k: ["smartphone"])
@@ -196,16 +207,23 @@ def rodada_rapida(monkeypatch, banco_em_memoria):
 
 def oferta_do_bva(external_id: str, titulo: str, source: str = "amazon") -> Offer:
     return Offer(
-        source=source, external_id=external_id, title=titulo, price=89.9,
-        url=f"https://exemplo.com/{external_id}", original_price=150.0,
+        source=source,
+        external_id=external_id,
+        title=titulo,
+        price=89.9,
+        url=f"https://exemplo.com/{external_id}",
+        original_price=150.0,
     )
 
 
-def test_run_rapido_enfileira_o_que_o_bva_postou_na_faixa_2(monkeypatch, rodada_rapida, banco_em_memoria):
+def test_run_rapido_enfileira_o_que_o_bva_postou_na_faixa_2(
+    monkeypatch, rodada_rapida, banco_em_memoria
+):
     pipeline._DA_FONTE_PRIORITARIA.update({"B0NOTEBOOK", "B0PHONE0001"})
     pipeline._VISTOS_EM_OUTRO_GRUPO.update({"B0NOTEBOOK", "B0PHONE0001"})
     monkeypatch.setattr(
-        pipeline, "collect_rapido",
+        pipeline,
+        "collect_rapido",
         lambda sources: [
             oferta_do_bva("B0NOTEBOOK", "Notebook Dell i5-1334U Windows 11"),
             # Na lista de exclusao do dono; o #BVA manda enviar por inteiro.
@@ -221,15 +239,23 @@ def test_run_rapido_enfileira_o_que_o_bva_postou_na_faixa_2(monkeypatch, rodada_
     ).fetchall()
     geral = {linha["external_id"]: linha for linha in posts if linha["grupo_jid"] == ""}
     assert set(geral) == {"B0NOTEBOOK", "B0PHONE0001"}
-    assert all(linha["prioridade"] == 2 and linha["status"] == "pending" for linha in geral.values())
+    assert all(
+        linha["prioridade"] == 2 and linha["status"] == "pending"
+        for linha in geral.values()
+    )
 
 
-def test_run_rapido_nao_drena_nem_coleta_nem_faz_a_busca_dos_tematicos(monkeypatch, rodada_rapida):
+def test_run_rapido_nao_drena_nem_coleta_nem_faz_a_busca_dos_tematicos(
+    monkeypatch, rodada_rapida
+):
     pipeline._DA_FONTE_PRIORITARIA.add("B0NOTEBOOK")
     pipeline._VISTOS_EM_OUTRO_GRUPO.add("B0NOTEBOOK")
     monkeypatch.setattr(
-        pipeline, "collect_rapido",
-        lambda sources: [oferta_do_bva("B0NOTEBOOK", "Notebook Dell i5-1334U Windows 11")],
+        pipeline,
+        "collect_rapido",
+        lambda sources: [
+            oferta_do_bva("B0NOTEBOOK", "Notebook Dell i5-1334U Windows 11")
+        ],
     )
 
     pipeline.run(rapido=True)
@@ -285,7 +311,9 @@ def test_a_thread_sobe_com_entrega_continua_evolution_e_fonte_prioritaria(monkey
     monkeypatch.delenv("FONTE_RAPIDA", raising=False)
     monkeypatch.delenv("ENTREGA_CONTINUA", raising=False)
     monkeypatch.setenv("FONTE_RAPIDA_INTERVALO_SEGUNDOS", "0.01")
-    monkeypatch.setattr("promo.pipeline.load_grupos_fonte", lambda *a, **k: list(FONTES))
+    monkeypatch.setattr(
+        "promo.pipeline.load_grupos_fonte", lambda *a, **k: list(FONTES)
+    )
     chamadas = {"n": 0}
     parar = threading.Event()
 
@@ -318,7 +346,9 @@ def test_a_thread_nao_sobe_sem_as_condicoes(monkeypatch, ambiente):
     from promo import worker
 
     monkeypatch.setenv("DELIVERY_BACKEND", "evolution")
-    monkeypatch.setattr("promo.pipeline.load_grupos_fonte", lambda *a, **k: list(FONTES))
+    monkeypatch.setattr(
+        "promo.pipeline.load_grupos_fonte", lambda *a, **k: list(FONTES)
+    )
     for chave, valor in ambiente.items():
         monkeypatch.setenv(chave, valor)
 
@@ -330,7 +360,8 @@ def test_a_thread_nao_sobe_sem_nenhuma_fonte_prioritaria(monkeypatch):
 
     monkeypatch.setenv("DELIVERY_BACKEND", "evolution")
     monkeypatch.setattr(
-        "promo.pipeline.load_grupos_fonte", lambda *a, **k: [{"jid": "xet@g.us", "nome": "xet"}]
+        "promo.pipeline.load_grupos_fonte",
+        lambda *a, **k: [{"jid": "xet@g.us", "nome": "xet"}],
     )
 
     assert worker.start_fonte_rapida(threading.Event()) is None
@@ -379,16 +410,26 @@ def test_duas_threads_nao_renovam_o_token_do_ml_ao_mesmo_tempo(monkeypatch, tmp_
 
     monkeypatch.setattr(mercadolivre, "connect", conectar)
     with conectar() as conn:
-        save_token(conn, "mercadolivre", "velho", "refresh1", now() - timedelta(hours=1))
+        save_token(
+            conn, "mercadolivre", "velho", "refresh1", now() - timedelta(hours=1)
+        )
 
-    fonte = MercadoLivre(MercadoLivreConfig(client_id="1", client_secret="2",
-                                            redirect_uri="https://exemplo.com/cb", site_id="MLB"))
+    fonte = MercadoLivre(
+        MercadoLivreConfig(
+            client_id="1",
+            client_secret="2",
+            redirect_uri="https://exemplo.com/cb",
+            site_id="MLB",
+        )
+    )
     renovacoes: list[str] = []
 
     def renova(refresh_token):
         renovacoes.append(refresh_token)
         with conectar() as conn:
-            save_token(conn, "mercadolivre", "novo", "refresh2", now() + timedelta(hours=6))
+            save_token(
+                conn, "mercadolivre", "novo", "refresh2", now() + timedelta(hours=6)
+            )
 
     monkeypatch.setattr(fonte, "_refresh", renova)
     resultados: list[str] = []

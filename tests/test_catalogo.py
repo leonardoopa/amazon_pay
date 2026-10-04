@@ -249,7 +249,9 @@ def test_falha_na_foto_nao_derruba_a_oferta():
 
     def recusa():
         raise httpx.HTTPStatusError(
-            "503", request=httpx.Request("GET", "http://x"), response=httpx.Response(503)
+            "503",
+            request=httpx.Request("GET", "http://x"),
+            response=httpx.Response(503),
         )
 
     source._client.rotas["/products/MLB1"].raise_for_status = recusa  # type: ignore[method-assign]
