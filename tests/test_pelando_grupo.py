@@ -84,7 +84,10 @@ def com_url(pagina: str, nova: str) -> str:
 
 def sem_cupom(pagina: str, descricao: str) -> str:
     """A pagina do ML sem cupom e com outra descricao."""
-    sem = pagina.replace("&quot;couponCode&quot;:[0,&quot;MIMODODIA&quot;]", "&quot;couponCode&quot;:[0,null]")
+    sem = pagina.replace(
+        "&quot;couponCode&quot;:[0,&quot;MIMODODIA&quot;]",
+        "&quot;couponCode&quot;:[0,null]",
+    )
     sem = sem.replace("Preço válido á vista + cupom!", descricao)
     assert sem != pagina
     return sem
@@ -101,7 +104,9 @@ def pelando_falso(paginas: dict[str, str], pedidos: list[str] | None = None):
         if pedidos is not None:
             pedidos.append(str(request.url))
         if request.url.host == "pelando.promo":
-            slug = {"ajCGV": SLUG_AMAZON, "Jq9FA": SLUG_ML}.get(request.url.path.strip("/"))
+            slug = {"ajCGV": SLUG_AMAZON, "Jq9FA": SLUG_ML}.get(
+                request.url.path.strip("/")
+            )
             if slug is None:
                 return httpx.Response(404)
             return httpx.Response(
@@ -119,11 +124,15 @@ def pelando_falso(paginas: dict[str, str], pedidos: list[str] | None = None):
     return httpx.MockTransport(handler)
 
 
-def instala(monkeypatch, paginas: dict[str, str], pedidos: list[str] | None = None) -> None:
+def instala(
+    monkeypatch, paginas: dict[str, str], pedidos: list[str] | None = None
+) -> None:
     """O `httpx.Client` do modulo passa a falar com o Pelando de mentira."""
     transporte = pelando_falso(paginas, pedidos)
     monkeypatch.setattr(
-        pelando_grupo.httpx, "Client", lambda **kw: CLIENTE_REAL(transport=transporte, **kw)
+        pelando_grupo.httpx,
+        "Client",
+        lambda **kw: CLIENTE_REAL(transport=transporte, **kw),
     )
     monkeypatch.setattr(pelando_grupo.time, "sleep", lambda _s: None)
 
@@ -168,7 +177,9 @@ def test_le_a_oferta_da_amazon_na_pagina_real():
     deal = deal_da_pagina(PAGINA_AMAZON)
 
     assert deal is not None
-    assert deal.titulo == "Calça Feminina Lã Cintura Média Confortável Pittsburgh Penguins"
+    assert (
+        deal.titulo == "Calça Feminina Lã Cintura Média Confortável Pittsburgh Penguins"
+    )
     assert deal.preco == 60.18
     assert deal.loja == "Amazon"
     assert deal.ativa is True
@@ -203,7 +214,8 @@ def test_pagina_sem_oferta_devolve_none():
 
 def test_oferta_encerrada_vem_inativa():
     encerrada = PAGINA_ML.replace(
-        "&quot;status&quot;:[0,&quot;active&quot;]", "&quot;status&quot;:[0,&quot;expired&quot;]"
+        "&quot;status&quot;:[0,&quot;active&quot;]",
+        "&quot;status&quot;:[0,&quot;expired&quot;]",
     )
 
     assert encerrada != PAGINA_ML
@@ -335,7 +347,9 @@ def test_destino_fora_do_pelando_nao_e_lido():
         pedidos.append(str(request.url))
         return httpx.Response(302, headers={"location": "https://exemplo.com/oferta"})
 
-    achado = deal_do_link("https://pelando.promo/ajCGV", cliente(httpx.MockTransport(handler)))
+    achado = deal_do_link(
+        "https://pelando.promo/ajCGV", cliente(httpx.MockTransport(handler))
+    )
 
     assert achado is None
     assert pedidos == ["https://pelando.promo/ajCGV"]
@@ -372,7 +386,9 @@ def test_o_grupo_vira_pista_do_ml_e_oferta_da_amazon(pelando):
     assert [(p.external_id, p.cupons, p.origem) for p in pistas] == [
         ("MLB75001430", ("MIMODODIA",), "Achadinhos Vip")
     ]
-    assert [(a.asin, a.preco, a.condicoes) for a in amazon] == [("B0F3391RMZ", 60.18, ())]
+    assert [(a.asin, a.preco, a.condicoes) for a in amazon] == [
+        ("B0F3391RMZ", 60.18, ())
+    ]
 
 
 def test_a_pista_do_ml_vai_sem_preco_para_a_api_medir(pelando):
@@ -389,7 +405,10 @@ def test_nenhum_pedido_toca_o_redirecionador_de_afiliado(pelando):
     ofertas_do_grupo([registro(MENSAGEM_ML), registro(MENSAGEM_AMAZON)])
 
     assert pelando, "nenhum pedido feito"
-    assert not any("dpl.pelando" in url or "amazon" in url or "mercadolivre" in url for url in pelando)
+    assert not any(
+        "dpl.pelando" in url or "amazon" in url or "mercadolivre" in url
+        for url in pelando
+    )
 
 
 def test_o_mesmo_produto_em_duas_mensagens_conta_uma_vez(pelando):
@@ -400,7 +419,8 @@ def test_o_mesmo_produto_em_duas_mensagens_conta_uma_vez(pelando):
 
 def test_oferta_encerrada_nao_e_repassada(monkeypatch):
     encerrada = PAGINA_ML.replace(
-        "&quot;status&quot;:[0,&quot;active&quot;]", "&quot;status&quot;:[0,&quot;expired&quot;]"
+        "&quot;status&quot;:[0,&quot;active&quot;]",
+        "&quot;status&quot;:[0,&quot;expired&quot;]",
     )
     instala(monkeypatch, {SLUG_ML: encerrada})
 
@@ -411,7 +431,8 @@ def test_oferta_encerrada_nao_e_repassada(monkeypatch):
 
 def test_amazon_com_cupom_sai_com_a_condicao(monkeypatch):
     com_cupom = PAGINA_AMAZON.replace(
-        "&quot;couponCode&quot;:[0,null]", "&quot;couponCode&quot;:[0,&quot;20DISNEY&quot;]"
+        "&quot;couponCode&quot;:[0,null]",
+        "&quot;couponCode&quot;:[0,&quot;20DISNEY&quot;]",
     )
     assert com_cupom != PAGINA_AMAZON
     instala(monkeypatch, {SLUG_AMAZON: com_cupom})
@@ -438,7 +459,9 @@ def test_mensagem_sem_link_do_pelando_nao_gera_pedido(pelando):
 
 # ---------- ML que nao e catalogo ----------
 
-URL_USUARIO = "https://www.mercadolivre.com.br/estante-aco-60cm/up/MLBU4332315912?matt_tool=1#"
+URL_USUARIO = (
+    "https://www.mercadolivre.com.br/estante-aco-60cm/up/MLBU4332315912?matt_tool=1#"
+)
 URL_ANUNCIO = "https://produto.mercadolivre.com.br/MLB-3456789012-cadeira-gamer-_JM"
 
 
@@ -446,7 +469,9 @@ def pelando_com(monkeypatch, pagina: str) -> None:
     instala(monkeypatch, {SLUG_ML: pagina})
 
 
-def test_produto_de_usuario_vai_para_a_api_com_o_endereco_e_a_foto_do_pelando(monkeypatch):
+def test_produto_de_usuario_vai_para_a_api_com_o_endereco_e_a_foto_do_pelando(
+    monkeypatch,
+):
     pelando_com(monkeypatch, com_url(PAGINA_ML, URL_USUARIO))
 
     pistas, _ = ofertas_do_grupo([registro(MENSAGEM_ML)], origem="Vip")
@@ -455,7 +480,10 @@ def test_produto_de_usuario_vai_para_a_api_com_o_endereco_e_a_foto_do_pelando(mo
     assert pista.external_id == "MLBU4332315912"
     # Sem preco: a API mede por nos. O que falta a ela e a foto e o nome no caminho.
     assert pista.preco == 0.0
-    assert pista.url == "https://www.mercadolivre.com.br/estante-aco-60cm/up/MLBU4332315912"
+    assert (
+        pista.url
+        == "https://www.mercadolivre.com.br/estante-aco-60cm/up/MLBU4332315912"
+    )
     assert "/0x480/" in pista.imagem
     assert pista.cupons == ("MIMODODIA",)
 
@@ -494,7 +522,9 @@ def test_anuncio_avulso_com_cupom_fica_de_fora(monkeypatch):
 
 
 def test_anuncio_avulso_que_cita_cupom_so_na_descricao_tambem_fica_de_fora(monkeypatch):
-    pagina = sem_cupom(com_url(PAGINA_ML, URL_ANUNCIO), "Aplique o cupom da loja de 10% OFF")
+    pagina = sem_cupom(
+        com_url(PAGINA_ML, URL_ANUNCIO), "Aplique o cupom da loja de 10% OFF"
+    )
     pelando_com(monkeypatch, pagina)
 
     pistas, _ = ofertas_do_grupo([registro(MENSAGEM_ML)])
@@ -527,7 +557,12 @@ def rodada(monkeypatch, banco_em_memoria):
     monkeypatch.setattr(
         "promo.pipeline.load_grupos_fonte",
         lambda *a, **k: [
-            {"jid": "pelando@g.us", "nome": "Achadinhos Vip", "tipo": "pelando", "limite": 5}
+            {
+                "jid": "pelando@g.us",
+                "nome": "Achadinhos Vip",
+                "tipo": "pelando",
+                "limite": 5,
+            }
         ],
     )
     monkeypatch.setattr(
@@ -540,7 +575,9 @@ def rodada(monkeypatch, banco_em_memoria):
         ),
     )
     monkeypatch.setattr(
-        grupo_wa, "ler_mensagens", lambda *a, **k: [registro(MENSAGEM_ML), registro(MENSAGEM_AMAZON)]
+        grupo_wa,
+        "ler_mensagens",
+        lambda *a, **k: [registro(MENSAGEM_ML), registro(MENSAGEM_AMAZON)],
     )
 
     def nao_deveria(**_kw):
@@ -611,7 +648,9 @@ def test_sem_a_tag_da_amazon_so_o_ml_passa(rodada, pelando, monkeypatch):
     assert {o.source for o in achados} == {"mercadolivre"}
 
 
-def test_na_rodada_o_produto_de_usuario_leva_o_endereco_e_a_foto_do_pelando(rodada, monkeypatch):
+def test_na_rodada_o_produto_de_usuario_leva_o_endereco_e_a_foto_do_pelando(
+    rodada, monkeypatch
+):
     from promo.sources import pelando_grupo
     from promo.sources.grupo_wa import Pista
 
@@ -621,7 +660,15 @@ def test_na_rodada_o_produto_de_usuario_leva_o_endereco_e_a_foto_do_pelando(roda
         pelando_grupo,
         "ofertas_do_grupo",
         lambda *a, **k: (
-            [Pista(external_id="MLBU4332315912", titulo="Estante", origem="Vip", url=url, imagem=foto)],
+            [
+                Pista(
+                    external_id="MLBU4332315912",
+                    titulo="Estante",
+                    origem="Vip",
+                    url=url,
+                    imagem=foto,
+                )
+            ],
             [],
         ),
     )
@@ -635,7 +682,9 @@ def test_na_rodada_o_produto_de_usuario_leva_o_endereco_e_a_foto_do_pelando(roda
     assert [o.url for o in achados] == [url]
 
 
-def test_na_rodada_o_anuncio_avulso_vira_oferta_com_a_condicao_do_preco(rodada, monkeypatch):
+def test_na_rodada_o_anuncio_avulso_vira_oferta_com_a_condicao_do_preco(
+    rodada, monkeypatch
+):
     from promo.sources import pelando_grupo
     from promo.sources.grupo_wa import Pista
 
@@ -646,8 +695,12 @@ def test_na_rodada_o_anuncio_avulso_vira_oferta_com_a_condicao_do_preco(rodada, 
         lambda *a, **k: (
             [
                 Pista(
-                    external_id="MLB3456789012", titulo="Cadeira", origem="Vip", url=url,
-                    imagem="https://media.pelando.com.br/x/0x480/c.jpg", preco=118.0,
+                    external_id="MLB3456789012",
+                    titulo="Cadeira",
+                    origem="Vip",
+                    url=url,
+                    imagem="https://media.pelando.com.br/x/0x480/c.jpg",
+                    preco=118.0,
                     condicao="no Pix",
                 )
             ],

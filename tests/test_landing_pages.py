@@ -15,7 +15,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -58,7 +57,7 @@ def test_nenhuma_pagina_de_lista_entrou():
 
 
 def test_as_duas_paginas_de_beleza_sao_prioritarias():
-    """"principalmente os perfumes e as coisas para mulheres"."""
+    """ "principalmente os perfumes e as coisas para mulheres"."""
     prioritarias = {p["path"] for p in load_landing_pages() if p["prioridade"]}
 
     assert prioritarias == {"/e/beleza-premium", "/c/beleza-e-cuidado-pessoal"}
@@ -122,7 +121,9 @@ def test_o_titulo_do_slug_casa_tema():
 def card(preco: float | None) -> dict:
     componentes = [{"type": "title", "title": {"text": "Produto"}}]
     if preco is not None:
-        componentes.append({"type": "price", "price": {"current_price": {"value": preco}}})
+        componentes.append(
+            {"type": "price", "price": {"current_price": {"value": preco}}}
+        )
     return {"metadata": {"id": "MLB9", "url": "x"}, "components": componentes}
 
 
@@ -198,7 +199,8 @@ def test_a_rota_a_carimba_a_pagina_de_origem(monkeypatch):
     from promo import pipeline
 
     monkeypatch.setattr(
-        pipeline, "load_landing_pages",
+        pipeline,
+        "load_landing_pages",
         lambda: [{"path": "/c/x", "rota": "A", "prioridade": False}],
     )
     vitrine = VitrineFalsa(ofertas=[oferta()])
@@ -212,7 +214,8 @@ def test_a_rota_b_precifica_pelo_catalogo(monkeypatch):
     from promo import pipeline
 
     monkeypatch.setattr(
-        pipeline, "load_landing_pages",
+        pipeline,
+        "load_landing_pages",
         lambda: [{"path": "/e/y", "rota": "B", "prioridade": True}],
     )
     vitrine = VitrineFalsa(ids=[("MLB7", "Perfume Tal")])
@@ -230,7 +233,8 @@ def test_a_rota_b_sem_catalogo_e_pulada(monkeypatch):
     from promo import pipeline
 
     monkeypatch.setattr(
-        pipeline, "load_landing_pages",
+        pipeline,
+        "load_landing_pages",
         lambda: [{"path": "/e/y", "rota": "B", "prioridade": True}],
     )
 
@@ -242,7 +246,8 @@ def test_uma_pagina_quebrada_nao_derruba_as_outras(monkeypatch):
     from promo import pipeline
 
     monkeypatch.setattr(
-        pipeline, "load_landing_pages",
+        pipeline,
+        "load_landing_pages",
         lambda: [
             {"path": "/c/quebrada", "rota": "A", "prioridade": False},
             {"path": "/c/boa", "rota": "A", "prioridade": False},
@@ -300,7 +305,7 @@ def de(origem: str, titulo: str = "Produto Qualquer 100ml") -> Offer:
 
 
 def test_a_maquiagem_da_vitrine_e_prioridade_em_mulheres():
-    """"principalmente a parte de maquiagem" / "maquiagem e no grupo das
+    """ "principalmente a parte de maquiagem" / "maquiagem e no grupo das
     mulheres" -- 18/09/2026.
 
     Medido no mesmo dia: das quatro categorias de beleza, so a de Maquiagem
@@ -323,7 +328,7 @@ def test_a_maquiagem_nao_e_prioridade_no_perfumes():
 
 
 def test_o_beleza_premium_e_prioridade_nos_dois_grupos():
-    """"esses produtos que nos pegamos de beleza premium, sejam prioridade nos
+    """ "esses produtos que nos pegamos de beleza premium, sejam prioridade nos
     grupos de mulher e perfume"."""
     from promo.pipeline import prioritaria_no_grupo
 
@@ -340,7 +345,7 @@ def test_a_origem_de_beleza_nao_prioriza_o_casa():
 
 
 def test_o_titulo_continua_valendo_junto_da_origem():
-    """"quero que o grupo mulheres e perfumes a prioridade seja pelo titulo E
+    """ "quero que o grupo mulheres e perfumes a prioridade seja pelo titulo E
     pelas melhores opcoes no Beleza Premium" -- as duas vias, nao uma."""
     from promo.pipeline import prioritaria_no_grupo
 
@@ -367,7 +372,7 @@ def test_as_origens_declaram_grupo_no_watchlist():
 
 
 def test_a_cota_maior_dos_dois_grupos():
-    """"nao tem problema em subir a quantidade de envios nos grupos, pode subir
+    """ "nao tem problema em subir a quantidade de envios nos grupos, pode subir
     caso seja necessario, mas preciso que esses produtos sejam enviados"."""
     from promo.config import max_por_grupo_tematico
 

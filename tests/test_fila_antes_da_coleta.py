@@ -45,7 +45,9 @@ def test_fila_vazia_gasta_zero(monkeypatch, banco_em_memoria):
     monkeypatch.setattr(pipeline, "build_delivery", lambda: object())
     relogio = Relogio()
 
-    gasto = pipeline.flush_pending(100.0, sleep=relogio.sleep, monotonic=relogio.monotonic)
+    gasto = pipeline.flush_pending(
+        100.0, sleep=relogio.sleep, monotonic=relogio.monotonic
+    )
 
     assert gasto == 0.0
 
@@ -98,7 +100,9 @@ def test_orcamento_estourado_tambem_devolve_o_gasto(monkeypatch, banco_em_memori
 def test_deliver_sem_oferta_nova_ainda_drena(monkeypatch):
     chamadas: list[float | None] = []
     monkeypatch.setattr(
-        pipeline, "flush_pending", lambda orcamento=None: chamadas.append(orcamento) or 0.0
+        pipeline,
+        "flush_pending",
+        lambda orcamento=None: chamadas.append(orcamento) or 0.0,
     )
 
     pipeline.deliver([], 300.0)
@@ -109,7 +113,9 @@ def test_deliver_sem_oferta_nova_ainda_drena(monkeypatch):
 def test_deliver_repassa_o_orcamento(monkeypatch, banco_em_memoria):
     chamadas: list[float | None] = []
     monkeypatch.setattr(
-        pipeline, "flush_pending", lambda orcamento=None: chamadas.append(orcamento) or 7.0
+        pipeline,
+        "flush_pending",
+        lambda orcamento=None: chamadas.append(orcamento) or 7.0,
     )
 
     assert pipeline.deliver([], 42.0) == 7.0
@@ -150,7 +156,9 @@ def test_a_fila_drena_antes_da_coleta(rodada_instrumentada):
 
     assert rodada_instrumentada[0] == "drena(720)"
     assert "coleta" in rodada_instrumentada
-    assert rodada_instrumentada.index("drena(720)") < rodada_instrumentada.index("coleta")
+    assert rodada_instrumentada.index("drena(720)") < rodada_instrumentada.index(
+        "coleta"
+    )
 
 
 def test_drena_de_novo_depois_da_coleta(rodada_instrumentada):
@@ -160,7 +168,9 @@ def test_drena_de_novo_depois_da_coleta(rodada_instrumentada):
     assert len([p for p in rodada_instrumentada if p.startswith("drena")]) == 2
 
 
-def test_o_orcamento_de_gotejamento_e_um_so_para_a_rodada(monkeypatch, banco_em_memoria):
+def test_o_orcamento_de_gotejamento_e_um_so_para_a_rodada(
+    monkeypatch, banco_em_memoria
+):
     """Duas drenagens nao podem dobrar o tempo de gotejamento: o que a primeira
     gastar sai do que a segunda tem para gastar."""
     orcamentos: list[float] = []
@@ -192,7 +202,9 @@ def test_dry_run_nao_envia_nada(monkeypatch, banco_em_memoria):
     monkeypatch.setattr(pipeline, "load_priority", lambda: [])
     monkeypatch.setattr(pipeline, "collect", lambda *a, **k: [])
     monkeypatch.setattr(
-        pipeline, "flush_pending", lambda orcamento=None: chamadas.append(orcamento) or 0.0
+        pipeline,
+        "flush_pending",
+        lambda orcamento=None: chamadas.append(orcamento) or 0.0,
     )
 
     pipeline.run(dry_run=True)
@@ -215,9 +227,7 @@ def test_falha_na_drenagem_nao_impede_a_coleta(monkeypatch, banco_em_memoria, ca
     monkeypatch.setattr(pipeline, "load_watchlist", lambda: [])
     monkeypatch.setattr(pipeline, "load_categories", lambda: [])
     monkeypatch.setattr(pipeline, "load_priority", lambda: [])
-    monkeypatch.setattr(
-        pipeline, "collect", lambda *a, **k: coletou.append(True) or []
-    )
+    monkeypatch.setattr(pipeline, "collect", lambda *a, **k: coletou.append(True) or [])
 
     chamadas = []
 

@@ -117,7 +117,9 @@ def test_a_cota_nao_usada_volta_para_o_geral():
     """Poucos prioritarios nao pode virar rodada menor: a vaga sobrando vai
     para o outro poco em vez de sumir."""
     watchlist = lista("shampoo wella") + GERAIS
-    termos, _, _ = fatiar_watchlist(watchlist, TEMAS, por_rodada=4, fatia_prioritaria=0.75)
+    termos, _, _ = fatiar_watchlist(
+        watchlist, TEMAS, por_rodada=4, fatia_prioritaria=0.75
+    )
 
     assert len(termos) == 4
 

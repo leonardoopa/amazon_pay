@@ -54,7 +54,9 @@ def rodada(monkeypatch, tmp_path):
 
     monkeypatch.setattr(pipeline, "run_interval_seconds", lambda: 900)
     monkeypatch.setattr(
-        pipeline, "deliver", lambda lote, orcamento=None: entregas.append(len(lote)) or 0.0
+        pipeline,
+        "deliver",
+        lambda lote, orcamento=None: entregas.append(len(lote)) or 0.0,
     )
     return entregas
 
@@ -78,7 +80,9 @@ def test_deliver_aceita_lote_parcial(monkeypatch, tmp_path):
         lambda orcamento=None: chamadas.append(("flush", orcamento)) or 5.0,
     )
     monkeypatch.setattr(pipeline, "_gravar_post", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "load_grupos", lambda: [pipeline.GrupoDestino("", "g")])
+    monkeypatch.setattr(
+        pipeline, "load_grupos", lambda: [pipeline.GrupoDestino("", "g")]
+    )
 
     gasto = pipeline.deliver([(scored(1), "texto")], 100.0)
 
@@ -100,7 +104,9 @@ def test_o_orcamento_e_um_so_para_a_rodada(monkeypatch):
         lambda orcamento=None: orcamentos.append(orcamento) or 30.0,
     )
     monkeypatch.setattr(pipeline, "_gravar_post", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "load_grupos", lambda: [pipeline.GrupoDestino("", "g")])
+    monkeypatch.setattr(
+        pipeline, "load_grupos", lambda: [pipeline.GrupoDestino("", "g")]
+    )
 
     orcamento = 100.0
     gasto = 0.0
@@ -116,6 +122,8 @@ def test_orcamento_estourado_nao_fica_negativo(monkeypatch):
     infinita na ultima entrega da rodada."""
     monkeypatch.setattr(pipeline, "flush_pending", lambda orcamento=None: orcamento)
     monkeypatch.setattr(pipeline, "_gravar_post", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "load_grupos", lambda: [pipeline.GrupoDestino("", "g")])
+    monkeypatch.setattr(
+        pipeline, "load_grupos", lambda: [pipeline.GrupoDestino("", "g")]
+    )
 
     assert pipeline.deliver([], max(0.0, 100.0 - 250.0)) == 0.0
