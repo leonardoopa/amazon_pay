@@ -100,6 +100,9 @@ services:
     logging: *logging
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      # Subdominio do placar do TSE. `:8099` nao e publicada: sem o .env, o
+      # bloco do Caddyfile existe mas ninguem de fora o alcanca.
+      VOTOS_ADDRESS: ${VOTOS_ADDRESS:-:8099}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # O certificado emitido vive aqui. Sem volume, cada restart pediria um
