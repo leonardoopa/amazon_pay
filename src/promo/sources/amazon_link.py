@@ -81,3 +81,42 @@ def imagem_do_asin(asin: str) -> str:
     garantia. O comando aceita `--imagem` para o caso de a automatica sair ruim.
     """
     return IMAGEM.format(asin=asin)
+
+
+# Abaixo disso nao e foto de produto. O pixel que a Amazon devolve no lugar da
+# foto ausente tem 43 bytes; a menor foto real medida tinha 14 KB.
+FOTO_MINIMA_BYTES = 1024
+
+# Uma consulta por ASIN enquanto o processo vive. A rodada rele os mesmos grupos
+# a cada 3 minutos, e a resposta da Amazon para um ASIN nao muda nesse prazo.
+_FOTO_EXISTE: dict[str, bool] = {}
+
+
+def foto_existe(asin: str) -> bool:
+    """A Amazon tem foto de verdade para este ASIN?
+
+    Medido em 17/10/2026: 142 de 505 posts da Amazon em 7 dias sairam com o GIF
+    transparente de 1x1 no lugar da foto. A Evolution aceita o pixel e devolve
+    201, entao nada acusava o erro -- o post chegava ao grupo sem imagem.
+
+    Falha de rede conta como "tem foto": a duvida nao pode custar a oferta, e o
+    envio ja tem as proprias tentativas.
+    """
+    if asin in _FOTO_EXISTE:
+        return _FOTO_EXISTE[asin]
+
+    import httpx
+
+    try:
+        resposta = httpx.get(imagem_do_asin(asin), timeout=10, follow_redirects=True)
+    except httpx.HTTPError:
+        return True
+
+    tipo = resposta.headers.get("content-type", "")
+    existe = (
+        resposta.status_code == 200
+        and "gif" not in tipo
+        and len(resposta.content) >= FOTO_MINIMA_BYTES
+    )
+    _FOTO_EXISTE[asin] = existe
+    return existe

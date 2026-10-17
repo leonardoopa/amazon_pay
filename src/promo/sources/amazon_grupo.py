@@ -95,6 +95,9 @@ class OfertaAmazon:
     # O que precisa estar na linha do preco para ele ser verdadeiro. Vazio
     # significa preco a vista, sem condicao nenhuma.
     condicoes: tuple[str, ...] = ()
+    # Foto que a fonte ja trouxe (a do Pelando). Vazio usa a da Amazon por ASIN,
+    # que nem todo produto tem.
+    imagem: str = ""
 
     @property
     def condicao(self) -> str:

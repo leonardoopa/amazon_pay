@@ -139,7 +139,7 @@ def test_baixar_a_foto_por_conta_propria_diz_quem_somos(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         vistos.append(request.headers["user-agent"])
-        return httpx.Response(200, content=b"RIFF....WEBP")
+        return httpx.Response(200, content=b"RIFF....WEBP" + b"\x00" * 2048)
 
     monkeypatch.setattr(
         modulo.httpx,

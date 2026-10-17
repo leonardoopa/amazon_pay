@@ -323,23 +323,24 @@ def tematico_gap_seconds() -> float:
 
 
 def quiet_window() -> tuple[time, time] | None:
-    """Faixa do dia em que o grupo recebe muito menos post.
+    """Faixa do dia em que o bot nao envia promocao nenhuma.
 
-    De madrugada o post nao e lido: ele so acorda gente e fica no topo da tela
-    ate de manha, quando ja envelheceu. Continuar postando nesse horario gasta
-    cota do Gemini e queima a paciencia do grupo pelo mesmo alcance.
+    Pedido do dono: nada entre 23:00 e 07:00. De madrugada o post nao e lido:
+    ele so acorda gente e fica no topo da tela ate de manha, quando o preco ja
+    envelheceu. Desacelerar nao bastava -- um post por rodada ainda acordava o
+    grupo a noite inteira.
 
     Formato `HH:MM`, hora local do servidor (o Dockerfile fixa
     TZ=America/Sao_Paulo). A faixa pode cruzar a meia-noite, que e o caso
-    normal: 23:30 as 07:30.
+    normal: 23:00 as 07:00, e as 07:00 em ponto o bot ja volta.
 
     Vazio em qualquer um dos dois desliga a janela.
     """
     # `os.getenv` direto, e nao `_optional`: aquele trata vazio como ausente e
     # devolveria o padrao, deixando a janela ligada justamente para quem a
     # escreveu vazia para desliga-la. Aqui ausente usa o padrao e vazio desliga.
-    inicio = os.getenv("QUIET_START", "23:30")
-    fim = os.getenv("QUIET_END", "07:30")
+    inicio = os.getenv("QUIET_START", "23:00")
+    fim = os.getenv("QUIET_END", "07:00")
     if not inicio or not fim:
         return None
     try:
@@ -353,25 +354,6 @@ def quiet_window() -> tuple[time, time] | None:
             fim,
         )
         return None
-
-
-def quiet_drip_multiplier() -> float:
-    """Quanto o intervalo entre posts estica dentro da janela.
-
-    6 x 150s = 900s, acima do orcamento de drenagem de uma rodada -- na pratica
-    um post por rodada, contra os cinco de fora da janela.
-    """
-    return float(_optional("QUIET_DRIP_MULTIPLIER", "6"))
-
-
-def quiet_max_offers_per_run() -> int:
-    """Teto de ofertas novas por rodada dentro da janela.
-
-    Sem ele a coleta seguiria produzindo no ritmo normal enquanto a entrega
-    anda devagar, e a diferenca inteira morreria como `expired` de manha --
-    chamada de Gemini e link de afiliado gastos para nada.
-    """
-    return _int("QUIET_MAX_OFFERS_PER_RUN", 1)
 
 
 def post_max_age_minutes() -> int:

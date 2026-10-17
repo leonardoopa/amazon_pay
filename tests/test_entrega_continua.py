@@ -267,14 +267,27 @@ def test_grupo_que_nunca_enviou_tem_a_vez(banco):
     assert status(banco, novo) == "sent"
 
 
-def test_na_janela_de_silencio_o_intervalo_estica(banco, monkeypatch):
-    """Madrugada: o piso global e o do gotejamento multiplicado, e domina."""
+def test_na_janela_de_silencio_nada_sai(banco, monkeypatch):
+    """Madrugada: nenhum post sai, nem o do grupo que esta ha horas sem post.
+    O post fica pendente; quem decide se ele ainda vale e a expiracao."""
     monkeypatch.setattr(pipeline, "em_horario_silencioso", lambda *a, **k: True)
-    monkeypatch.setenv("QUIET_DRIP_MULTIPLIER", "6")
-    ja_enviado(banco, "ANTES", GERAL, ha_segundos=300)  # 100 x 6 x 0,6 = 360 s
-    enfileirar(banco, "G", grupo=GERAL)
+    ja_enviado(banco, "ANTES", GERAL, ha_segundos=7200)
+    post = enfileirar(banco, "G", grupo=GERAL)
+    entrega = EntregaFalsa()
 
-    assert pipeline.drip_once(EntregaFalsa()) == pipeline.NADA
+    assert pipeline.drip_once(entrega) == pipeline.NADA
+    assert entrega.enviados == []
+    assert status(banco, post) == "pending"
+
+
+def test_variaveis_antigas_da_janela_nao_quebram_nada(banco, monkeypatch):
+    """O .env da VPS ainda pode ter as duas; elas so deixaram de ser lidas."""
+    monkeypatch.setenv("QUIET_DRIP_MULTIPLIER", "6")
+    monkeypatch.setenv("QUIET_MAX_OFFERS_PER_RUN", "1")
+    post = enfileirar(banco, "G", grupo=GERAL)
+
+    assert pipeline.drip_once(EntregaFalsa()) == pipeline.ENVIOU
+    assert status(banco, post) == "sent"
 
 
 # ---------- o que envelheceu e o que falha ----------
@@ -359,6 +372,39 @@ def test_sem_a_thread_a_drenagem_antiga_continua_igual(banco, monkeypatch):
     pipeline.flush_pending(budget_seconds=60, sleep=lambda _s: None)
 
     assert status(banco, post) == "sent"
+
+
+def test_na_janela_de_silencio_a_drenagem_antiga_nao_envia(banco, monkeypatch):
+    enfileirar(banco, "A")
+    entrega = EntregaFalsa()
+    monkeypatch.setattr(pipeline, "build_delivery", lambda: entrega)
+    monkeypatch.setattr(pipeline, "em_horario_silencioso", lambda *a, **k: True)
+
+    assert pipeline.flush_pending(budget_seconds=600) == 0.0
+    assert entrega.enviados == []
+
+
+def test_drenagem_que_atravessa_o_inicio_da_janela_para(banco, monkeypatch):
+    """Comecou as 22:58 com dois posts: o primeiro sai, o segundo, que viria
+    depois das 23:00, fica pendente."""
+    primeiro = enfileirar(banco, "A", idade_min=2)
+    segundo = enfileirar(banco, "B", idade_min=1)
+    entrega = EntregaFalsa()
+    monkeypatch.setattr(pipeline, "build_delivery", lambda: entrega)
+    monkeypatch.setenv("QUIET_START", "23:00")
+    monkeypatch.setenv("QUIET_END", "07:00")
+    respostas = iter([False, True])
+    monkeypatch.setattr(
+        pipeline, "em_horario_silencioso", lambda *a, **k: next(respostas)
+    )
+
+    pipeline.flush_pending(budget_seconds=6000, sleep=lambda _s: None)
+
+    assert len(entrega.enviados) == 1
+    assert sorted([status(banco, primeiro), status(banco, segundo)]) == [
+        "pending",
+        "sent",
+    ]
 
 
 def test_a_rodada_so_enfileira_quando_a_thread_esta_ligada(banco, monkeypatch):
