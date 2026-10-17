@@ -220,6 +220,11 @@ class Evolution:
             resposta.raise_for_status()
             bruto = resposta.content
 
+        # O pixel transparente que a Amazon devolve no lugar da foto ausente.
+        # Mandado como imagem, sai um post "sem foto" com status de sucesso.
+        if len(bruto) < 1024 or "gif" in resposta.headers.get("content-type", ""):
+            raise ValueError(f"Nao e foto de produto ({len(bruto)} bytes): {image_url}")
+
         return self._send(
             "/message/sendMedia",
             {

@@ -52,17 +52,28 @@ def banco_em_memoria(monkeypatch) -> sqlite3.Connection:
 def sem_janela_de_silencio(monkeypatch):
     """Desliga a janela de silencio em toda a suite, por padrao.
 
-    `_drip_gap()` multiplica o intervalo por `QUIET_DRIP_MULTIPLIER` entre
-    23:30 e 07:30. Sem esta fixture, qualquer teste que meca ritmo de entrega
-    passa de dia e falha de madrugada -- ele estaria medindo a hora do relogio
-    em vez do codigo.
+    Entre 23:00 e 07:00 `run()`, `drip_once()` e `flush_pending()` nao fazem
+    nada. Sem esta fixture, qualquer teste de coleta ou de entrega passa de dia
+    e falha de madrugada -- ele estaria medindo a hora do relogio em vez do
+    codigo.
 
-    Nao e hipotese: o runner do GitHub roda em UTC, entrou na janela, e dois
-    testes de gotejamento vieram com intervalos 6x maiores (500s a 780s para
-    100s configurados), barrando o deploy.
+    Nao e hipotese: o runner do GitHub roda em UTC, entrou na janela (quando ela
+    so esticava o intervalo), e dois testes de gotejamento vieram com intervalos
+    6x maiores, barrando o deploy.
 
     Quem testa a janela em si sobrescreve com `monkeypatch.setenv`, que vale
     por ser aplicado depois desta fixture.
     """
     monkeypatch.setenv("QUIET_START", "")
     monkeypatch.setenv("QUIET_END", "")
+
+
+@pytest.fixture(autouse=True)
+def amazon_sempre_tem_foto(monkeypatch):
+    """A suite nao consulta a Amazon pela rede para saber se a foto existe.
+
+    Quem testa a checagem em si sobrescreve com `monkeypatch.setattr`.
+    """
+    from promo.sources import amazon_link
+
+    monkeypatch.setattr(amazon_link, "foto_existe", lambda asin: True)

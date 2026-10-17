@@ -376,6 +376,7 @@ def ofertas_do_grupo(
                             titulo=deal.titulo,
                             preco=deal.preco,
                             condicoes=_condicoes_do_deal(deal),
+                            imagem=deal.imagem,
                         )
                     )
                     continue

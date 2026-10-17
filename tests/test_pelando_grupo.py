@@ -624,7 +624,9 @@ def test_na_rodada_o_ml_vai_pela_api_e_a_amazon_leva_o_nosso_link(rodada, peland
     amazon = por_fonte["amazon"]
     assert amazon.external_id == "B0F3391RMZ"
     assert amazon.url == "https://www.amazon.com.br/dp/B0F3391RMZ"  # canonica, sem tag
-    assert amazon.image_url.startswith("https://m.media-amazon.com/images/P/B0F3391RMZ")
+    # A foto que o Pelando ja trouxe, e nao a da Amazon por ASIN, que nem todo
+    # produto tem.
+    assert amazon.image_url.startswith("https://media.pelando.com.br/")
     assert amazon.price == 60.18
 
 
