@@ -47,8 +47,6 @@ from .config import (
     priority_ignores_price_focus,
     priority_min_discount_pct,
     priority_reserve,
-    quiet_drip_multiplier,
-    quiet_max_offers_per_run,
     quiet_window,
     reserva_de_prioridade_do_grupo,
     run_interval_seconds,
@@ -1644,7 +1642,25 @@ def _amazon_do_grupo(config, fonte: dict) -> list[Offer]:
         log.warning("Nao consegui ler a Amazon do grupo %s: %s", fonte.get("nome"), exc)
         return []
 
-    return [_offer_da_amazon(o) for o in ofertas]
+    return _com_foto(ofertas)
+
+
+def _com_foto(ofertas) -> list[Offer]:
+    """As ofertas da Amazon que tem foto, ja como Offer.
+
+    Sem foto a oferta fica de fora: o post sem imagem passa despercebido na
+    rolagem e deixa o grupo com cara de desleixo. A Amazon nao tem foto publica
+    de todo ASIN, e a pagina do produto devolve captcha para servidor.
+    """
+    from .sources.amazon_link import foto_existe
+
+    saida = []
+    for oferta in ofertas:
+        if not oferta.imagem and not foto_existe(oferta.asin):
+            log.info("Amazon %s fica de fora: sem foto.", oferta.asin)
+            continue
+        saida.append(_offer_da_amazon(oferta))
+    return saida
 
 
 def _offer_da_amazon(oferta) -> Offer:
@@ -1663,7 +1679,7 @@ def _offer_da_amazon(oferta) -> Offer:
         price=oferta.preco,
         url=PRODUTO_CANONICO.format(asin=oferta.asin),
         original_price=oferta.preco_antes or None,
-        image_url=imagem_do_asin(oferta.asin),
+        image_url=oferta.imagem or imagem_do_asin(oferta.asin),
         condicao=oferta.condicao,
     )
 
@@ -1696,7 +1712,7 @@ def _pelando_do_grupo(config, fonte: dict) -> tuple[list, list[Offer]]:
 
     if not amazon_partner_tag():
         return pistas_ml, []
-    return pistas_ml, [_offer_da_amazon(o) for o in ofertas]
+    return pistas_ml, _com_foto(ofertas)
 
 
 def _due(chave: str, intervalo_horas: float) -> bool:
@@ -2114,7 +2130,16 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
     drena a fila (quem goteja e a thread de entrega continua) e nao faz a busca
     propria dos grupos tematicos. Tudo o mais -- pontuacao, cooldown, link de
     afiliado, texto -- e o mesmo caminho da rodada completa.
+
+    Na janela de silencio a rodada nao faz nada e devolve lista vazia.
     """
+    if em_horario_silencioso():
+        # Nada sai ate as 07:00, e o post na fila expira em
+        # `POST_MAX_AGE_MINUTES`: coletar agora so gastaria Gemini e link de
+        # afiliado em post que morre como `expired` antes de amanhecer.
+        log.info("Horario silencioso: rodada pulada, nada e coletado nem enviado.")
+        return []
+
     rules = Rules.load()
     sources = build_sources()
     by_name = {source.name: source for source in sources}
@@ -2407,12 +2432,7 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
                 family_cooldown_minutes(),
             )
 
-    # Na janela de silencio a entrega anda devagar; produzir no ritmo normal so
-    # encheria a fila de post que morre como `expired` antes de amanhecer.
     teto = rules.max_offers_per_run
-    if em_horario_silencioso():
-        teto = min(teto, quiet_max_offers_per_run())
-        log.info("Horario silencioso: aceitando no maximo %d oferta(s).", teto)
 
     # A fonte prioritaria sai ANTES de qualquer corte por cota ou por fila.
     prioritarias, (picked, repasses, pistas_agora) = _separar_da_fonte_prioritaria(
@@ -2838,7 +2858,8 @@ def _escolhe_para_o_grupo(
 def em_horario_silencioso(agora: datetime | None = None) -> bool:
     """A hora atual cai na janela de silencio?
 
-    A janela normal cruza a meia-noite (23:30 as 07:30), entao a comparacao
+    Dentro dela o bot nao envia nem coleta nada. A janela normal cruza a
+    meia-noite (23:00 as 07:00), entao a comparacao
     inverte quando o inicio e maior que o fim: dentro dela e "depois do inicio
     OU antes do fim", nao "entre os dois".
 
@@ -2863,14 +2884,8 @@ def _drip_gap() -> float:
     O jitter importa: intervalo exato de 150s em 150s e assinatura de robo, e
     o numero que assina os posts e um chip pareado por cliente nao oficial.
     Os grupos reais mandam a cada 2-3 minutos, sem regularidade nenhuma.
-
-    Dentro da janela de silencio o intervalo estica pelo multiplicador. Com o
-    padrao (6) ele passa do orcamento de drenagem de uma rodada, entao sai um
-    post por rodada em vez de cinco.
     """
     base = drip_interval_seconds()
-    if em_horario_silencioso():
-        base *= quiet_drip_multiplier()
     return base * random.uniform(1 - DRIP_JITTER, 1 + DRIP_JITTER)
 
 
@@ -3045,10 +3060,7 @@ def _gap_minimo_global() -> float:
     espera o `_drip_gap` inteiro depois de cada envio; este piso so existe para
     o reinicio nao soltar um post logo atras do outro.
     """
-    base = drip_interval_seconds()
-    if em_horario_silencioso():
-        base *= quiet_drip_multiplier()
-    return base * (1 - DRIP_JITTER)
+    return drip_interval_seconds() * (1 - DRIP_JITTER)
 
 
 def _gap_minimo_do_grupo(grupo_jid: str) -> float:
@@ -3056,11 +3068,8 @@ def _gap_minimo_do_grupo(grupo_jid: str) -> float:
 
     O Geral reparte o teto por hora em intervalos iguais (com 20% de folga), em
     vez de gastar tudo numa rajada e esperar a janela correr. Os tematicos tem o
-    piso de `TEMATICO_GAP_SEGUNDOS`. Na janela de silencio o intervalo global ja
-    esta multiplicado e domina.
+    piso de `TEMATICO_GAP_SEGUNDOS`.
     """
-    if em_horario_silencioso():
-        return 0.0
     if grupo_jid == "":
         teto = max_do_geral_por_hora()
         return 0.8 * 3600 / teto if teto > 0 else 0.0
@@ -3076,7 +3085,14 @@ def drip_once(delivery=None) -> str:
 
     Estado so no banco -- ultimo envio de cada grupo e a contagem da janela --,
     de proposito: com o container reiniciando, o ritmo continua de onde parou.
+
+    Na janela de silencio devolve NADA sem tocar na fila; a thread so volta a
+    perguntar depois de `ESPERA_SEM_NADA`.
     """
+    if em_horario_silencioso():
+        # Antes do lock e do banco: de madrugada nao sai post nenhum, e o que
+        # estiver na fila expira sozinho na primeira chamada depois das 07:00.
+        return NADA
     if not _ENVIO.acquire(blocking=False):
         return NADA
     try:
@@ -3199,7 +3215,11 @@ def flush_pending(
     rodada precisa disso para dividir um orcamento so entre as duas: sem a
     conta, drenar antes E depois da coleta dobraria o tempo de gotejamento e a
     rodada invadiria a seguinte.
+
+    Na janela de silencio nao envia nada e devolve 0.0.
     """
+    if em_horario_silencioso():
+        return 0.0
     if _DRENAGEM_CONTINUA.is_set():
         # Quem goteja agora e a thread de `drenar_continuamente`. Drenar aqui
         # tambem seria a rajada de volta, e a rajada e o que deixava o grupo
@@ -3255,6 +3275,15 @@ def flush_pending(
                 return monotonic() - inicio
             log.info("Aguardando %.0fs antes do proximo post.", espera)
             sleep(espera)
+            # A drenagem que comecou as 22:58 ainda goteja depois das 23:00;
+            # sem esta checagem ela furaria a janela pelo resto do orcamento.
+            if em_horario_silencioso():
+                log.info(
+                    "Horario silencioso: %d post(s) ficam para depois das %s.",
+                    len(queue) - index,
+                    quiet_window()[1].strftime("%H:%M"),
+                )
+                return monotonic() - inicio
 
         try:
             # `or None` porque post antigo tem JID vazio, e vazio quer dizer
