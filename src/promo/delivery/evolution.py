@@ -225,6 +225,9 @@ class Evolution:
         if len(bruto) < 1024 or "gif" in resposta.headers.get("content-type", ""):
             raise ValueError(f"Nao e foto de produto ({len(bruto)} bytes): {image_url}")
 
+        return self._enviar_bytes(bruto, caption, to)
+
+    def _enviar_bytes(self, bruto: bytes, caption: str, to: str | None) -> dict:
         return self._send(
             "/message/sendMedia",
             {
@@ -248,6 +251,19 @@ class Evolution:
         ver WindowClosed neste backend, e a fila so acumula por erro de rede ou
         instancia caida.
         """
+        if image_url and not image_url.startswith(("http://", "https://")):
+            # Arquivo local: a foto que o grupo-fonte anexou ao post. A
+            # Evolution nao enxerga o nosso disco, entao vai direto em bytes.
+            if len(text) <= CAPTION_LIMIT:
+                try:
+                    with open(image_url, "rb") as arquivo:
+                        return self._enviar_bytes(arquivo.read(), text, to)
+                except NotConnected:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - sem a foto, sai texto
+                    log.warning("Envio da foto local falhou: %s", exc)
+            return self.send_text(text, to)
+
         if image_url and len(text) <= CAPTION_LIMIT:
             # Tres tentativas, com espera crescente entre elas.
             #

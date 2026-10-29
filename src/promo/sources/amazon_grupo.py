@@ -40,7 +40,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import httpx
 
@@ -95,8 +95,9 @@ class OfertaAmazon:
     # O que precisa estar na linha do preco para ele ser verdadeiro. Vazio
     # significa preco a vista, sem condicao nenhuma.
     condicoes: tuple[str, ...] = ()
-    # Foto que a fonte ja trouxe (a do Pelando). Vazio usa a da Amazon por ASIN,
-    # que nem todo produto tem.
+    # Foto que a fonte ja trouxe: a do Pelando, ou o arquivo local da imagem que
+    # o grupo anexou ao post. Vazio usa a da Amazon por ASIN, que nem todo
+    # produto tem e as vezes e outra variacao.
     imagem: str = ""
 
     @property
@@ -255,6 +256,7 @@ def ofertas_do_grupo(
     origem: str = "",
     limite_links: int = 10,
     pausa: float = 0.5,
+    foto_de=None,
 ) -> list[OfertaAmazon]:
     """As ofertas da Amazon que este grupo postou, na ordem em que apareceram.
 
@@ -286,6 +288,8 @@ def ofertas_do_grupo(
             if oferta is None or oferta.asin in vistos:
                 continue
             vistos.add(oferta.asin)
+            if foto_de is not None:
+                oferta = replace(oferta, imagem=foto_de(registro) or oferta.imagem)
             achadas.append(oferta)
 
     if achadas:
