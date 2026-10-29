@@ -117,3 +117,6 @@ data/
 # maquina: no VPS de 2 GB ela aponta para docker-compose.vps-2gb.yml, e na
 # maquina de quem desenvolve normalmente nem existe.
 docker-compose.override.yml
+
+# Graphify
+graphify-out/cache/

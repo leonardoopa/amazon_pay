@@ -154,3 +154,26 @@ def test_baixar_a_foto_por_conta_propria_diz_quem_somos(monkeypatch):
     assert "promo-bot" in vistos[0]
     path, payload = evo.enviados[0]
     assert path == "/message/sendMedia" and payload["mediatype"] == "image"
+
+
+def test_foto_local_do_grupo_vai_em_bytes_sem_tentar_url(tmp_path):
+    import base64
+
+    arquivo = tmp_path / "M1.jpg"
+    arquivo.write_bytes(b"\xff\xd8\xff" + b"x" * 2000)
+    ev = FakeEvolution()
+
+    ev.send_post("oferta", str(arquivo))
+
+    assert len(ev.enviados) == 1
+    path, payload = ev.enviados[0]
+    assert path.endswith("sendMedia")
+    assert payload["media"] == base64.b64encode(arquivo.read_bytes()).decode()
+
+
+def test_foto_local_sumida_cai_para_texto(tmp_path):
+    ev = FakeEvolution()
+
+    ev.send_post("oferta", str(tmp_path / "nao-existe.jpg"))
+
+    assert [p for p, _ in ev.enviados] == ["/message/sendText"]

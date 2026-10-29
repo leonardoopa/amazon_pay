@@ -27,6 +27,8 @@ mensagens, e o `item_id` apareceu em todos os que resolveram.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import html as _html
 import json
 import logging
@@ -146,6 +148,10 @@ class Pista:
     # So existe quando o preco da pista nao e o do anuncio medido: vem de um
     # texto que alguem escreveu, e o texto diz sob que condicao ele vale.
     condicao: str = ""
+    # Caminho local da foto que o proprio grupo anexou ao post. Vazio quando a
+    # mensagem era so texto ou o download falhou. Tem prioridade sobre
+    # `imagem`: e a foto que o membro deles viu, e a da pagina pode ser outra.
+    foto: str = ""
 
 
 def _texto_da_mensagem(registro: dict) -> str:
@@ -163,6 +169,67 @@ def _texto_da_mensagem(registro: dict) -> str:
         or (msg.get("videoMessage") or {}).get("caption")
         or ""
     )
+
+
+# Abaixo disso nao e foto: o menor JPEG de produto medido tinha 14 KB.
+FOTO_MINIMA_BYTES = 1024
+
+
+def tem_foto(registro: dict) -> bool:
+    return bool((registro.get("message") or {}).get("imageMessage"))
+
+
+def baixar_foto(
+    base_url: str,
+    instancia: str,
+    chave: str,
+    registro: dict,
+    timeout: float = 30.0,
+) -> str:
+    """Caminho local da foto que o grupo anexou a esta mensagem, ou "".
+
+    Pedido em 28/10/2026: o post saia com a foto do catalogo (og:image do ML,
+    imagem por ASIN da Amazon), que muitas vezes e outra variacao do produto.
+    A foto certa e a que o grupo mandou, e a Evolution a entrega em base64 por
+    `getBase64FromMediaMessage`.
+
+    O arquivo leva o ID da mensagem no nome, entao a rodada seguinte, que le as
+    mesmas 50 mensagens, nao baixa de novo. Falha nao-fatal: devolve "" e o
+    post segue com a foto de sempre.
+    """
+    from .. import config
+
+    if not tem_foto(registro):
+        return ""
+    id_msg = (registro.get("key") or {}).get("id")
+    if not id_msg:
+        return ""
+    destino = config.fotos_dir() / f"{re.sub(r'[^A-Za-z0-9_-]', '_', id_msg)}.jpg"
+    if destino.exists():
+        return str(destino)
+
+    try:
+        with httpx.Client(timeout=timeout) as cliente:
+            resposta = cliente.post(
+                f"{base_url.rstrip('/')}/chat/getBase64FromMediaMessage/{instancia}",
+                headers={"apikey": chave, "Content-Type": "application/json"},
+                content=json.dumps({"message": {"key": {"id": id_msg}}}),
+            )
+            resposta.raise_for_status()
+            bruto = (resposta.json() or {}).get("base64") or ""
+        # Algumas versoes devolvem "data:image/jpeg;base64,...".
+        dados = base64.b64decode(bruto.split(",", 1)[-1], validate=False)
+    except (httpx.HTTPError, ValueError, binascii.Error) as exc:
+        log.warning("Nao consegui baixar a foto da mensagem %s: %s", id_msg, exc)
+        return ""
+
+    if len(dados) < FOTO_MINIMA_BYTES:
+        log.warning("Foto da mensagem %s pequena demais (%d bytes).", id_msg, len(dados))
+        return ""
+    parcial = destino.with_suffix(".tmp")
+    parcial.write_bytes(dados)
+    parcial.replace(destino)
+    return str(destino)
 
 
 def cupons_da_mensagem(texto: str) -> tuple[str, ...]:
@@ -216,6 +283,15 @@ def links_e_cupons(registros: list[dict]) -> list[tuple[str, tuple[str, ...]]]:
             ja.add(url)
             vistos.append((url, cupons))
     return vistos
+
+
+def registros_por_link(registros: list[dict]) -> dict[str, dict]:
+    """Link do ML -> a primeira mensagem que o citou. Mesma regra de `links_e_cupons`."""
+    achados: dict[str, dict] = {}
+    for registro in registros:
+        for bruto in LINK.findall(_texto_da_mensagem(registro)):
+            achados.setdefault(bruto.rstrip(".,);:!?\"'"), registro)
+    return achados
 
 
 def links_das_mensagens(registros: list[dict]) -> list[str]:
@@ -370,6 +446,7 @@ def pistas(
         return []
 
     pares = links_e_cupons(registros)
+    mensagem_do_link = registros_por_link(registros)
     log.info(
         "Grupo %s: %d mensagens, %d link(s) do ML; resolvendo os %d mais recentes.",
         nome or jid,
@@ -386,7 +463,8 @@ def pistas(
         if pista is None or pista.external_id in vistos:
             continue
         vistos.add(pista.external_id)
-        achadas.append(replace(pista, origem=nome or jid, cupons=cupons))
+        foto = baixar_foto(base_url, instancia, chave, mensagem_do_link.get(url, {}))
+        achadas.append(replace(pista, origem=nome or jid, cupons=cupons, foto=foto))
 
     com_preco = sum(1 for p in achadas if p.preco > 0)
     com_cupom = sum(1 for p in achadas if p.cupons)
