@@ -195,6 +195,17 @@ def db_path() -> Path:
     return path
 
 
+def fotos_dir() -> Path:
+    """Onde ficam as fotos baixadas dos grupos-fonte, ao lado do banco.
+
+    Mora junto do banco de proposito: o `data/` ja e volume persistente, e o
+    post que espera na fila precisa da foto ainda ali quando chegar a vez dele.
+    """
+    path = db_path().parent / "fotos"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def gemini_min_interval_seconds() -> float:
     """Intervalo minimo entre duas chamadas ao Gemini.
 

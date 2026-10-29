@@ -1453,7 +1453,7 @@ def _offer_da_pista(pista) -> Offer | None:
         price=pista.preco,
         url=pista.url,
         original_price=pista.preco_antes or None,
-        image_url=pista.imagem or None,
+        image_url=pista.foto or pista.imagem or None,
         condicao=pista.condicao,
     )
 
@@ -1577,7 +1577,7 @@ def collect_de_outros_grupos(source, so_prioritarias: bool = False) -> list[Offe
     # campo, e cada GET virou `/products/mercadolivre:MLB.../items`. Todos 404,
     # nenhum erro, 15 pistas viraram zero produtos por duas rodadas.
     alvos = [
-        (p.external_id, p.titulo, p.imagem or None)
+        (p.external_id, p.titulo, p.foto or p.imagem or None)
         for p in achadas
         if p.external_id not in resolvidos
     ]
@@ -1625,7 +1625,7 @@ def _amazon_do_grupo(config, fonte: dict) -> list[Offer]:
     numero e falso.
     """
     from .sources.amazon_grupo import ofertas_do_grupo
-    from .sources.grupo_wa import ler_mensagens
+    from .sources.grupo_wa import baixar_foto, ler_mensagens
 
     if not amazon_partner_tag():
         return []
@@ -1637,7 +1637,13 @@ def _amazon_do_grupo(config, fonte: dict) -> list[Offer]:
             fonte["jid"],
             50,
         )
-        ofertas = ofertas_do_grupo(registros, origem=fonte.get("nome", ""))
+        ofertas = ofertas_do_grupo(
+            registros,
+            origem=fonte.get("nome", ""),
+            foto_de=lambda r: baixar_foto(
+                config.base_url, config.instance, config.api_key, r
+            ),
+        )
     except Exception as exc:  # noqa: BLE001 - fonte extra nunca derruba a rodada
         log.warning("Nao consegui ler a Amazon do grupo %s: %s", fonte.get("nome"), exc)
         return []
