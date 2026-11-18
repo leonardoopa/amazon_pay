@@ -137,15 +137,17 @@ def test_envia_um_post_e_marca_como_enviado(banco):
 
 
 def test_dentro_do_grupo_vale_a_prioridade_da_fila(banco):
-    """Comida e bebida de outro grupo (faixa 2) sai antes do resto do Geral."""
-    enfileirar(banco, "COMUM", prioridade=1)
-    vodka = enfileirar(banco, "VODKA", prioridade=2)
+    """O repasse (faixa 1) sai antes da comida de outro grupo (-1), mesmo
+    chegando depois. Ate 18/11/2026 era o contrario."""
+    vodka = enfileirar(banco, "VODKA", prioridade=-1, idade_min=5.0)
+    repasse = enfileirar(banco, "REPASSE", prioridade=1)
     entrega = EntregaFalsa()
 
     pipeline.drip_once(entrega)
 
-    assert status(banco, vodka) == "sent"
-    assert entrega.enviados[0][0] == "texto VODKA"
+    assert status(banco, repasse) == "sent"
+    assert status(banco, vodka) == "pending"
+    assert entrega.enviados[0][0] == "texto REPASSE"
 
 
 def test_fila_vazia_nao_envia_nada(banco):

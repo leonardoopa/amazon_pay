@@ -1767,7 +1767,9 @@ def _time_to_discover() -> bool:
 _LOTE_DE_ENTREGA = 3
 
 
-def _quantas_pistas_cabem(na_fila: int, ja_escolhidas: int) -> int:
+def _quantas_pistas_cabem(
+    na_fila: int, ja_escolhidas: int, folga: int | None = None
+) -> int:
     """Quantas ofertas dos grupos-fonte entram na frente da fila agora.
 
     Dois tetos, e vale o menor. O da fila (`MAX_PENDING_QUEUE`) impede que uma
@@ -1776,9 +1778,83 @@ def _quantas_pistas_cabem(na_fila: int, ja_escolhidas: int) -> int:
     pode ser repasse, porque tirar a pista da cota sem freio multiplicaria o
     volume do grupo por sete de uma vez -- 50 pistas coletadas por rodada
     contra as 6 vagas da cota, medido em 14/09/2026.
+
+    Com `folga` (o Geral tem teto por hora), ela substitui a conta da fila
+    inteira, e nao desconta `ja_escolhidas`: a pista sai antes da nossa medicao
+    e da comida, entao quem vem depois dela nao tira vaga dela. Ver
+    `_folga_na_fila`.
     """
+    if folga is not None:
+        return max(0, min(max_pistas_por_run(), folga))
     espaco_na_fila = max_pending_queue() - na_fila - ja_escolhidas
     return max(0, min(max_pistas_por_run(), espaco_na_fila))
+
+
+# Quanto da capacidade da fila pode ficar ocupado. A sobra de 20% absorve o post
+# que chega depois e passa na frente por ser de faixa maior: com a fila no
+# limite exato, o ultimo da fila espera o prazo inteiro e expira por segundos.
+# Simulado em 18/11/2026 com o teto de 11 por hora, a vazao fica a mesma (11/h)
+# e a parte dos posts criados que expira cai de 31% para 22%.
+_OCUPACAO_DA_FILA = 0.8
+
+
+def _capacidade_da_fila(grupo_jid: str) -> int | None:
+    """Quantos posts deste grupo cabem na fila sem expirar, ou None sem limite.
+
+    E o que o grupo consegue ENVIAR dentro de `POST_MAX_AGE_MINUTES`: o Geral
+    pelo teto por hora, o tematico pelo intervalo minimo entre dois posts dele.
+    Passar disso nao faz sair mais -- quem decide quanto sai e a entrega --, so
+    paga uma chamada do Gemini por um post que expira na fila. Medido em
+    18/11/2026: em 24h o Geral criou cerca de 1.000 posts, enviou 219 e perdeu
+    781 por preco velho.
+
+    None quando nao ha o que calcular: post que nunca expira, Geral sem teto por
+    hora ou tematico sem intervalo. Ai so vale a contrapressao de
+    `MAX_PENDING_QUEUE`, como antes.
+    """
+    prazo = post_max_age_minutes() * 60
+    if prazo <= 0:
+        return None
+    if grupo_jid == "":
+        teto = max_do_geral_por_hora()
+        if teto <= 0:
+            return None
+        cabem = teto * prazo / 3600
+    else:
+        intervalo = tematico_gap_seconds()
+        if intervalo <= 0:
+            return None
+        cabem = prazo / intervalo
+    return max(1, int(cabem * _OCUPACAO_DA_FILA))
+
+
+def _folga_na_fila(pendentes: list, grupo_jid: str) -> int | None:
+    """Quantos posts novos o grupo ainda comporta, ou None quando nao ha limite.
+
+    `pendentes` sao as linhas de `pending_posts`, lidas depois de expirar o que
+    envelheceu -- post que vai ser descartado nao ocupa vaga.
+    """
+    capacidade = _capacidade_da_fila(grupo_jid)
+    if capacidade is None:
+        return None
+    na_fila = sum(1 for linha in pendentes if (linha["grupo_jid"] or "") == grupo_jid)
+    return max(0, capacidade - na_fila)
+
+
+def _na_ordem_da_fila(
+    selecionadas: list[ScoredOffer], folga: int | None
+) -> list[ScoredOffer]:
+    """A selecao na ordem em que a fila vai envia-la, cortada no que cabe.
+
+    A ordem de entrada passa a ser a de saida: faixa maior primeiro e, dentro da
+    faixa, a ordem que a selecao ja deu (cupom, tema, desconto). Assim o corte
+    por `folga` deixa de fora quem sairia por ultimo -- e o que fica de fora nao
+    vira texto do Gemini.
+    """
+    ordem = sorted(
+        selecionadas, key=lambda s: _prioridade_do_post(s.offer), reverse=True
+    )
+    return ordem if folga is None else ordem[:folga]
 
 
 def _um_por_produto(escolhidas: list[ScoredOffer]) -> list[ScoredOffer]:
@@ -1877,26 +1953,34 @@ def e_comida_ou_bebida(
 def _prioridade_do_post(offer: Offer) -> int:
     """Qual faixa da fila de entrega o post ocupa. Maior sai antes.
 
-    2 -- comida e bebida de outro grupo (pedido do dono em 02/10/2026: tem que
-         aparecer) e tudo que vem de uma fonte `prioridade: true` (03/10/2026).
-         Sai na frente de tudo, inclusive do resto do repasse.
-    1 -- o resto do repasse: a pista sai na frente do que nos medimos.
-    0 -- o que nos escolhemos.
+     1 -- o repasse: a pista de outro grupo sai na frente do que nos medimos.
+     0 -- o que nos escolhemos.
+    -1 -- comida e bebida de outro grupo (pedido do dono em 02/10/2026) e tudo
+          que vem de uma fonte `prioridade: true` (03/10/2026). Sai por ultimo,
+          com a vaga que sobrar.
 
-    Sem a faixa 2, a vodka entrava em disputa com cinquenta ofertas de
-    prioridade 1 por seis vagas do Geral por hora, e metade delas morria na
-    fila: medido em 72h, 71 ofertas da Amazon repassadas expiraram contra 71
-    enviadas.
+    Ate 18/11/2026 esta ultima era a faixa 2, a primeira da fila. Ela tinha
+    nascido porque a vodka disputava com cinquenta ofertas de prioridade 1 por
+    seis vagas do Geral por hora. O dono inverteu a ordem depois da medicao de
+    24h no Geral: a faixa 2 enviou 96 de 96, a 1 enviou 101 e perdeu 240 na
+    fila, e a 0 enviou 22 e perdeu 541. O repasse e a nossa medicao passam na
+    frente; a comida e o #BVA saem quando sobra vaga.
+
+    Valor negativo, e nao uma renumeracao, porque 0 e o DEFAULT da coluna: post
+    gravado sem faixa continua sendo "o que nos escolhemos".
     """
     if not _veio_de_outro_grupo(offer):
         return 0
     if _de_fonte_prioritaria(offer) or e_comida_ou_bebida(offer):
-        return 2
+        return -1
     return 1
 
 
 def _admitir_pistas(
-    novas: list[ScoredOffer], na_fila: int, ja_escolhidas: int
+    novas: list[ScoredOffer],
+    na_fila: int,
+    ja_escolhidas: int,
+    folga: int | None = None,
 ) -> list[ScoredOffer]:
     """Quais ofertas dos grupos-fonte entram nesta rodada, na ordem de entrada.
 
@@ -1904,12 +1988,19 @@ def _admitir_pistas(
     `MAX_PENDING_QUEUE` e contrapressao, e ela barrava a vodka. Elas ocupam a
     folga antes do resto, e o freio delas e `MAX_COMIDA_E_BEBIDA_POR_RODADA`.
     O resto continua cabendo so no que sobrar.
+
+    Com `folga` (o Geral tem teto por hora) a ordem acompanha a da fila desde
+    18/11/2026: o resto do repasse entra primeiro e a comida por ultimo, sem
+    tirar vaga dele. Quem corta o excedente e `_na_ordem_da_fila`, no fim da
+    selecao, contra o que o Geral ainda envia antes de o post expirar.
     """
     termos, nao_e = load_comida_e_bebida()
     comida = [s for s in novas if e_comida_ou_bebida(s.offer, termos, nao_e)]
     comida = comida[: max_comida_e_bebida_por_run()]
     ids = {s.offer.product_id for s in comida}
     resto = [s for s in novas if s.offer.product_id not in ids]
+    if folga is not None:
+        return resto[: _quantas_pistas_cabem(na_fila, ja_escolhidas, folga)] + comida
     cabem = _quantas_pistas_cabem(na_fila, ja_escolhidas + len(comida))
     return comida + resto[:cabem]
 
@@ -2354,7 +2445,11 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
         # mesma rodada, e deixa-lo no numero faria a fila parecer cheia e
         # recusar oferta nova que tinha lugar.
         expire_stale_posts(conn)
-        na_fila = len(pending_posts(conn))
+        pendentes = pending_posts(conn)
+        na_fila = len(pendentes)
+        # Quanto o Geral ainda envia antes de o post expirar. None quando ele nao
+        # tem teto por hora: ai vale so a contrapressao da fila inteira.
+        folga = _folga_na_fila(pendentes, "")
         bloqueados = products_in_cooldown(conn)
         categorias_bloqueadas = categories_in_cooldown(conn)
         # Titulos inteiros, e nao assinaturas: a comparacao acontece em
@@ -2451,11 +2546,24 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
         pistas_agora = prioritarias[teto_prioritarias:] + pistas_agora
         prioritarias = prioritarias[:teto_prioritarias]
 
-    espaco = max(0, min(teto, max_pending_queue() - na_fila))
-    if espaco < teto:
+    if folga is not None:
+        # Com teto por hora, a conta deixa de ser a fila de todos os grupos: e o
+        # que o Geral consegue enviar antes de o post expirar. Selecionar alem
+        # disso nao faz sair mais, so paga Gemini por post que vira `expired`.
+        espaco = min(teto, folga)
         log.info(
-            "Fila com %d post(s); aceitando so mais %d nesta rodada.", na_fila, espaco
+            "Geral: cabem mais %d post(s) antes de expirar (teto de %d por hora).",
+            folga,
+            max_do_geral_por_hora(),
         )
+    else:
+        espaco = max(0, min(teto, max_pending_queue() - na_fila))
+        if espaco < teto:
+            log.info(
+                "Fila com %d post(s); aceitando so mais %d nesta rodada.",
+                na_fila,
+                espaco,
+            )
 
     # Repasse preenche o que sobrou da cota, nunca desloca uma verificada. A
     # ordem entre as duas listas continua sendo essa; o que muda dentro de cada
@@ -2493,8 +2601,10 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
         # montes e que o leitor le como repeticao.
         novas = _um_por_produto(novas)
 
-        admitidas = _admitir_pistas(novas, na_fila, len(picked) + len(prioritarias))
-        if len(novas) > len(admitidas):
+        admitidas = _admitir_pistas(
+            novas, na_fila, len(picked) + len(prioritarias), folga
+        )
+        if len(novas) > len(admitidas) and folga is None:
             log.info(
                 "%d pista(s) do outro grupo ficaram de fora: entram %d nesta "
                 "rodada (fila com %d, teto %d).",
@@ -2506,21 +2616,33 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
         picked = admitidas + picked
         if admitidas:
             termos, nao_e = load_comida_e_bebida()
-            na_frente = sum(
+            comida = sum(
                 1 for s in admitidas if e_comida_ou_bebida(s.offer, termos, nao_e)
             )
             log.info(
-                "%d oferta(s) do outro grupo na frente da fila, fora da cota "
-                "(%d de comida ou bebida).",
+                "%d oferta(s) do outro grupo fora da cota (%d de comida ou "
+                "bebida, que sai por ultimo).",
                 len(admitidas),
-                na_frente,
+                comida,
             )
 
     if prioritarias:
         picked = prioritarias + picked
         log.info(
-            "%d oferta(s) de fonte prioritaria na frente da fila, fora de toda cota.",
+            "%d oferta(s) de fonte prioritaria fora da cota, no fim da fila.",
             len(prioritarias),
+        )
+
+    # A entrada na ordem de saida, e o que o Geral nao envia antes de expirar
+    # fica de fora AQUI, antes do Gemini, que e o que custa.
+    selecionadas = len(picked)
+    picked = _na_ordem_da_fila(picked, folga)
+    if len(picked) < selecionadas:
+        log.info(
+            "%d oferta(s) ficaram de fora: o Geral so envia mais %d antes de o "
+            "post expirar.",
+            selecionadas - len(picked),
+            folga,
         )
 
     verificadas = sum(1 for s in picked if s.verified)
@@ -2602,7 +2724,17 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
             log.warning("  %s  %s", scored.offer.external_id, scored.offer.url)
 
     exclusivos = (
-        [] if rapido else _rodada_dos_grupos(unique, rules, temas, copywriter, by_name)
+        []
+        if rapido
+        else _rodada_dos_grupos(
+            unique,
+            rules,
+            temas,
+            copywriter,
+            by_name,
+            # O que sobrou da folga do Geral depois desta selecao.
+            None if folga is None else max(0, folga - len(drafts)),
+        )
     )
 
     if dry_run:
@@ -2630,6 +2762,7 @@ def _rodada_dos_grupos(
     temas: list[str],
     copywriter,
     by_name: dict,
+    vagas_no_geral: int | None = None,
 ) -> list[tuple[GrupoDestino, ScoredOffer, str]]:
     """A busca propria de cada grupo tematico, que NAO passa pelo Geral.
 
@@ -2664,10 +2797,24 @@ def _rodada_dos_grupos(
     geral = next((g for g in todos if g.e_geral), None)
     saida: list[tuple[GrupoDestino, ScoredOffer, str]] = []
     para_o_geral = 0
+    with connect() as conn:
+        pendentes = pending_posts(conn)
 
     for grupo in grupos:
         # Cota do proprio grupo quando ele tem uma; senao a de todo mundo.
         cota = grupo.max_por_rodada or limite
+        # E nunca mais do que o grupo envia antes de o post expirar: o que
+        # passasse disso seria texto do Gemini para virar `expired`.
+        folga = _folga_na_fila(pendentes, grupo.jid)
+        if folga is not None:
+            if folga <= 0:
+                log.info(
+                    "%s: a fila ja tem o que o grupo envia antes de expirar; "
+                    "busca propria pulada.",
+                    grupo.nome,
+                )
+                continue
+            cota = min(cota, folga)
         escolhidas = _escolhe_para_o_grupo(unique, grupo, rules, temas, cota)
         if not escolhidas:
             continue
@@ -2696,7 +2843,11 @@ def _rodada_dos_grupos(
             # Mesmo texto, sem segunda chamada do Gemini: e o mesmo produto
             # pelo mesmo preco, e reescrever pagaria duas vezes para dizer a
             # mesma coisa.
-            if geral is not None and _cabe_no_geral(scored, temas):
+            #
+            # So enquanto houver vaga no Geral: a selecao dele ja ocupou a folga
+            # na ordem da fila, e o que passasse disso expiraria la.
+            sem_vaga = vagas_no_geral is not None and para_o_geral >= vagas_no_geral
+            if geral is not None and not sem_vaga and _cabe_no_geral(scored, temas):
                 saida.append((geral, scored, text))
                 para_o_geral += 1
 
@@ -3087,7 +3238,8 @@ def drip_once(delivery=None) -> str:
 
     A vez e de quem esta ha mais tempo sem sair, entre os grupos que podem
     receber agora. Dentro de cada grupo vale a ordem da fila: prioridade e
-    depois chegada, entao comida e bebida de outro grupo saem na frente.
+    depois chegada, entao o repasse de outro grupo sai na frente, e a comida e
+    a fonte prioritaria por ultimo (ver `_prioridade_do_post`).
 
     Estado so no banco -- ultimo envio de cada grupo e a contagem da janela --,
     de proposito: com o container reiniciando, o ritmo continua de onde parou.
