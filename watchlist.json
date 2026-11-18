@@ -7,11 +7,11 @@
     },
     {
       "term": "smartwatch",
-      "max_price": 1500
+      "max_price": null
     },
     {
       "term": "monitor gamer",
-      "max_price": 3000
+      "max_price": null
     },
     {
       "term": "monitor 27 polegadas",
@@ -35,11 +35,11 @@
     },
     {
       "term": "notebook",
-      "max_price": 5000
+      "max_price": null
     },
     {
       "term": "tablet",
-      "max_price": 2500
+      "max_price": null
     },
     {
       "term": "soundbar",
@@ -51,7 +51,7 @@
     },
     {
       "term": "air fryer",
-      "max_price": 1000
+      "max_price": null
     },
     {
       "term": "cafeteira",
@@ -103,23 +103,23 @@
     },
     {
       "term": "kit skincare",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "camiseta masculina",
-      "max_price": 150
+      "max_price": null
     },
     {
       "term": "moletom",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "jaqueta",
-      "max_price": 350
+      "max_price": null
     },
     {
       "term": "calca jeans",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "legging fitness",
@@ -127,19 +127,19 @@
     },
     {
       "term": "tenis casual",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "chinelo",
-      "max_price": 120
+      "max_price": null
     },
     {
       "term": "bone",
-      "max_price": 120
+      "max_price": null
     },
     {
       "term": "garrafa termica",
-      "max_price": 150
+      "max_price": null
     },
     {
       "term": "jogo de lencol",
@@ -151,7 +151,7 @@
     },
     {
       "term": "ventilador",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "luminaria led",
@@ -175,11 +175,7 @@
     },
     {
       "term": "calca feminina",
-      "max_price": 250
-    },
-    {
-      "term": "conjunto feminino",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "cropped",
@@ -191,11 +187,11 @@
     },
     {
       "term": "relogio feminino",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "chinelo feminino",
-      "max_price": 150
+      "max_price": null
     },
     {
       "term": "legging academia",
@@ -215,7 +211,7 @@
     },
     {
       "term": "batom",
-      "max_price": 100
+      "max_price": null
     },
     {
       "term": "shampoo",
@@ -223,7 +219,7 @@
     },
     {
       "term": "progressiva",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "oleo capilar",
@@ -231,11 +227,11 @@
     },
     {
       "term": "chapinha",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "escova secadora",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "ampola capilar",
@@ -795,7 +791,7 @@
     },
     {
       "term": "lattafa",
-      "max_price": 500
+      "max_price": null
     },
     {
       "term": "al haramain",
@@ -995,6 +991,22 @@
     },
     {
       "term": "copag pokemon",
+      "max_price": null
+    },
+    {
+      "term": "console ps5",
+      "max_price": null
+    },
+    {
+      "term": "controle dualsense",
+      "max_price": null
+    },
+    {
+      "term": "grand theft auto vi",
+      "max_price": null
+    },
+    {
+      "term": "gta vi",
       "max_price": null
     }
   ],
@@ -1651,7 +1663,7 @@
       "limite": 15
     }
   ],
-  "_comment_comida_e_bebida": "Comida e bebida que os grupos-fonte postam: pedido do dono em 02/10/2026, depois de uma vodka do xet nao chegar ao grupo. O repasse que casa aqui vai para a faixa 2 da fila (sai antes de todo o resto do repasse) e entra na rodada mesmo com a fila cheia, ate MAX_COMIDA_E_BEBIDA_POR_RODADA. Sao PALAVRAS INTEIRAS do titulo, sem acento e em minusculo, com plural: 'gin' nao pega 'ginastica' e 'mel' nao pega 'melhor'. Termo que cita a bebida sem ser ela (maquina de cafe, taca de vinho, perfume Vodka) fica em nao_e_comida, que vence.",
+  "_comment_comida_e_bebida": "Comida e bebida que os grupos-fonte postam: pedido do dono em 02/10/2026, depois de uma vodka do xet nao chegar ao grupo. Desde 18/11/2026, por decisao do dono, o repasse que casa aqui vai para o FIM da fila (faixa -1; ate entao era a faixa 2, a primeira): sai com a vaga que sobrar depois do resto do repasse e da nossa medicao. O freio por rodada continua sendo MAX_COMIDA_E_BEBIDA_POR_RODADA. Sao PALAVRAS INTEIRAS do titulo, sem acento e em minusculo, com plural: 'gin' nao pega 'ginastica' e 'mel' nao pega 'melhor'. Termo que cita a bebida sem ser ela (maquina de cafe, taca de vinho, perfume Vodka) fica em nao_e_comida, que vence.",
   "comida_e_bebida": [
     "vodka", "vodca", "whisky", "whiskey", "uisque", "gin",
     "cerveja", "chopp", "vinho", "espumante", "champagne", "prosecco",
@@ -1698,7 +1710,7 @@
     "pneu", "remendo", "blusa", "regata", "vestido", "calca", "saia", "bermuda", "short",
     "jaqueta", "tenis", "sandalia", "bolsa", "mochila", "meia"
   ],
-  "_comment_priority": "Temas com vaga garantida por rodada (PRIORITY_RESERVE no .env diz quantas). Sao pedacos de TITULO, nao termos de busca: a mesma oferta chega pela busca por termo, pelos mais vendidos da categoria e pela vitrine, e nao carrega qual das tres a trouxe -- o titulo carrega. Comparacao sem acento e em minusculo. Cuidado com pedaco curto demais: 'oleo' pegaria oleo de motor. Pokemon entrou em 28/09/2026 pelos termos que qualificam a CARTA, nao pela marca: 'pokemon' sozinho traria pelucia, chinelo e mochila, e pior, faria a mochila furar o `exclude` -- titulo que casa em priority passa pela barra. Tres armadilhas de substring evitadas de proposito: 'booster' sozinho esta em 'booster capilar' e 'booster de som', 'deck' em 'deck de madeira', e 'copag' vale tambem para baralho comum. Por isso 'booster box', 'deck pokemon' e 'estampas ilustradas' -- este ultimo e o nome oficial do TCG em portugues, e o mais preciso dos oito. 'pokemon tcg' foi cortado para caber no teto de 160: titulo brasileiro escreve 'Estampas Ilustradas', nao 'TCG', entao era o termo que menos pagava a vaga que ocupava. Os termos de busca correspondentes ficaram SEM max_price de proposito -- teto de preco corre na coleta, antes da pontuacao, e cortaria justamente o booster box caro que a prioridade existe para resgatar. `pokemon tcg` voltou em 29/09/2026, depois de ter sido cortado em 28/09 para caber no teto de 160 temas. O corte partiu da suposicao de que titulo brasileiro escreve \"Estampas Ilustradas\" e nao \"TCG\", e o catalogo de producao desmente: `pokemon tcg` casa 5 titulos, todos produto legitimo de carta, e 4 deles nao sao alcancados por nenhum outro tema -- entre eles os dois maiores descontos Pokemon do dia, o box de R$399,99 (-59,2%) e o de R$179,00 (-55,2%). O proprio commit de 28/09 pediu que a proxima inclusao remedisse a fatia em vez de subir o teto no olho, e e o que foi feito: contra os 41.424 titulos do catalogo, a prioridade vai de 9.631 (23,2%) para 9.635 (23,3%). O que o teste guarda e a fatia ficar longe de metade, e ela nao se moveu.",
+  "_comment_priority": "Temas com vaga garantida por rodada (PRIORITY_RESERVE no .env diz quantas). Sao pedacos de TITULO, nao termos de busca: a mesma oferta chega pela busca por termo, pelos mais vendidos da categoria e pela vitrine, e nao carrega qual das tres a trouxe -- o titulo carrega. Comparacao sem acento e em minusculo. Cuidado com pedaco curto demais: 'oleo' pegaria oleo de motor. Pokemon entrou em 28/09/2026 pelos termos que qualificam a CARTA, nao pela marca: 'pokemon' sozinho traria pelucia, chinelo e mochila, e pior, faria a mochila furar o `exclude` -- titulo que casa em priority passa pela barra. Tres armadilhas de substring evitadas de proposito: 'booster' sozinho esta em 'booster capilar' e 'booster de som', 'deck' em 'deck de madeira', e 'copag' vale tambem para baralho comum. Por isso 'booster box', 'deck pokemon' e 'estampas ilustradas' -- este ultimo e o nome oficial do TCG em portugues, e o mais preciso dos oito. 'pokemon tcg' foi cortado para caber no teto de 160: titulo brasileiro escreve 'Estampas Ilustradas', nao 'TCG', entao era o termo que menos pagava a vaga que ocupava. Os termos de busca correspondentes ficaram SEM max_price de proposito -- teto de preco corre na coleta, antes da pontuacao, e cortaria justamente o booster box caro que a prioridade existe para resgatar. `pokemon tcg` voltou em 29/09/2026, depois de ter sido cortado em 28/09 para caber no teto de 160 temas. O corte partiu da suposicao de que titulo brasileiro escreve \"Estampas Ilustradas\" e nao \"TCG\", e o catalogo de producao desmente: `pokemon tcg` casa 5 titulos, todos produto legitimo de carta, e 4 deles nao sao alcancados por nenhum outro tema -- entre eles os dois maiores descontos Pokemon do dia, o box de R$399,99 (-59,2%) e o de R$179,00 (-55,2%). O proprio commit de 28/09 pediu que a proxima inclusao remedisse a fatia em vez de subir o teto no olho, e e o que foi feito: contra os 41.424 titulos do catalogo, a prioridade vai de 9.631 (23,2%) para 9.635 (23,3%). O que o teste guarda e a fatia ficar longe de metade,  PlayStation 5 e GTA VI entraram em 18/11/2026, a pedido do dono, na vespera do lancamento do GTA VI (19/11/2026). Sao sete temas de TITULO: playstation 5, playstation®, ps5, dualsense, grand theft auto vi, gta vi e gta 6. O tema playstation® existe porque a loja oficial da Sony escreve PlayStation® 5 no ML, e a grafia oficial da marca, PlayStation®5 sem espaco, tambem nao casa playstation 5: no banco local o titulo Console PlayStation® 5 Slim Edicao Digital 825 GB ficava de fora. A grafia sem espaco nao foi vista em titulo real, so deduzida da marca. A comparacao e por pedaco, nao por palavra, e tres armadilhas ficaram aceitas de proposito: \"ps5\" casa tambem capinha, grip e cooler do console, nao so console e jogo; \"gta vi\" e \"grand theft auto vi\" casam tambem \"gta vice city\" e \"grand theft auto vice city\"; \"gta 6\" casa tambem poster e caneca. O pedido foi o tema inteiro, e o piso de desconto e o preco riscado continuam barrando o que nao cai de verdade. Os termos de busca correspondentes (console ps5, controle dualsense, grand theft auto vi, gta vi) ficaram SEM max_price: console passa de R$ 3.000 e o teto corre na coleta, antes da pontuacao. Medidos contra `/products/search` em 18/11/2026: os quatro devolvem 20 produtos, e o primeiro de cada e o item certo. \"ps5\" e \"gta 6\" ficaram so como tema, nao como busca: devolvem capinha, grip e poster. A fatia foi conferida so no banco local (792 titulos), nao no catalogo de producao.",
   "priority": [
     "wella",
     "kerastase",
@@ -1860,7 +1872,14 @@
     "blister pokemon",
     "deck pokemon",
     "lata pokemon",
-    "pokemon tcg"
+    "pokemon tcg",
+    "playstation 5",
+    "playstation®",
+    "ps5",
+    "dualsense",
+    "grand theft auto vi",
+    "gta vi",
+    "gta 6"
   ],
   "_comment_exclude": "O oposto de priority: titulo que casa aqui NAO vira post. Para o produto que sai bem no ranking e ainda assim nao serve ao grupo -- mochila e barata e tem desconto alto, entao ganhava vaga toda rodada (10 dos ultimos 80 posts). A barra nao e absoluta: titulo que tambem casa em priority passa, e e assim que 'Mochila adidas' fica e 'Mochila de Viagem 50L' sai. Comparacao sem acento e em minusculo, igual a de priority.",
   "exclude": [
@@ -2028,7 +2047,7 @@
     {
       "id": "MLB1648",
       "name": "Informatica",
-      "max_price": 4000
+      "max_price": null
     },
     {
       "id": "MLB1000",
@@ -2053,12 +2072,12 @@
     {
       "id": "MLB1430",
       "name": "Calcados, Roupas e Bolsas",
-      "max_price": 400
+      "max_price": null
     },
     {
       "id": "MLB5726",
       "name": "Eletrodomesticos",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB1384",
@@ -2078,7 +2097,7 @@
     {
       "id": "MLB264586",
       "name": "Saude",
-      "max_price": 250
+      "max_price": null
     },
     {
       "id": "MLB5672",
@@ -2098,17 +2117,17 @@
     {
       "id": "MLB1196",
       "name": "Livros, Revistas e Comics",
-      "max_price": 150
+      "max_price": null
     },
     {
       "id": "MLB1431",
       "name": "Joias e Bijuterias",
-      "max_price": 250
+      "max_price": null
     },
     {
       "id": "MLB199407",
       "name": "Cuidados com a Pele",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB1263",
@@ -2118,27 +2137,27 @@
     {
       "id": "MLB264751",
       "name": "Artigos para Cabeleireiros",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB455174",
       "name": "Artefatos para Cabelo",
-      "max_price": 400
+      "max_price": null
     },
     {
       "id": "MLB278194",
       "name": "Tratamentos de Beleza",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB264201",
       "name": "Suplementos Alimentares",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB264192",
       "name": "Cuidado da Saude",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB198312",
@@ -2148,22 +2167,22 @@
     {
       "id": "MLB23262",
       "name": "Calcados",
-      "max_price": 600
+      "max_price": null
     },
     {
       "id": "MLB438178",
       "name": "Suplementos e Shakers",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB1338",
       "name": "Fitness e Musculacao",
-      "max_price": 400
+      "max_price": null
     },
     {
       "id": "MLB123103",
       "name": "Monitores Esportivos",
-      "max_price": 600
+      "max_price": null
     },
     {
       "id": "MLB1339",
@@ -2178,7 +2197,7 @@
     {
       "id": "MLB1434",
       "name": "Pulseiras e Braceletes",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB7017",
@@ -2188,7 +2207,7 @@
     {
       "id": "MLB1438",
       "name": "Aneis",
-      "max_price": 300
+      "max_price": null
     }
   ],
   "_comment_landing": "Landing pages do www que respondem a servidor. rota A = o card ja traz preco; rota B = so link de catalogo, e o preco vem da API. prioridade = o conteudo inteiro da pagina conta como prioritario. As URLs de lista.mercadolivre.com.br NAO entram aqui: redirecionam para /gz/account-verification quando quem pede e servidor.",

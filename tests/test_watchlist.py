@@ -247,8 +247,14 @@ def test_a_reserva_ainda_discrimina():
     cobrem 9.635 (23,3%). A fatia nao se moveu porque o termo casa 5 titulos, e
     e por isso que o teto pode subir: ele e proxy, e o proxy foi conferido
     contra a coisa que ele representa.
+
+    Sobe para 168 em 18/11/2026 com PlayStation 5 e GTA VI (sete temas). Esta
+    remedicao foi feita SO no banco local, com 792 titulos: os 161 temas
+    cobriam 123 (15,5%) e os 168 cobrem 128 (16,2%). O catalogo de producao
+    nao foi remedido -- quando for, o numero que importa continua sendo a
+    fatia ficar longe de metade, nao a contagem.
     """
-    assert len(load_priority()) <= 161
+    assert len(load_priority()) <= 168
 
 
 def test_o_dior_e_o_givenchy_ficam_na_busca():
@@ -281,3 +287,64 @@ def test_a_busca_nao_volta_a_estourar_o_limite_do_ml():
     from promo.pipeline import load_watchlist
 
     assert len(load_watchlist()) <= 260
+
+
+# ---------- PlayStation 5 e GTA VI ----------
+#
+# Pedido do dono em 18/11/2026, na vespera do lancamento do GTA VI. Os termos
+# de busca foram medidos contra `/products/search` no mesmo dia: os quatro
+# devolveram 20 produtos, e o primeiro de cada era o item certo.
+
+BUSCA_PS5_E_GTA = {
+    "console ps5",
+    "controle dualsense",
+    "grand theft auto vi",
+    "gta vi",
+}
+PRIORIDADE_PS5_E_GTA = {
+    "playstation 5",
+    "playstation®",
+    "ps5",
+    "dualsense",
+    "grand theft auto vi",
+    "gta vi",
+    "gta 6",
+}
+
+
+def test_ps5_e_gta_vi_estao_na_busca_e_na_prioridade():
+    assert BUSCA_PS5_E_GTA <= termos()
+    assert PRIORIDADE_PS5_E_GTA <= set(load_priority())
+
+
+def test_a_busca_de_ps5_e_gta_vi_nao_tem_teto_de_preco():
+    """Console passa de R$ 3.000, e o teto corre na COLETA, antes da pontuacao:
+    cortaria justamente o console em oferta que o tema existe para resgatar.
+    Mesmo defeito que o Pokemon ja ensinou."""
+    teto = {w.term: w.max_price for w in load_watchlist(ARQUIVO)}
+
+    com_teto = {t for t in BUSCA_PS5_E_GTA if teto[t] is not None}
+
+    assert com_teto == set()
+
+
+def test_os_titulos_de_ps5_e_gta_vi_casam_na_prioridade():
+    """O primeiro titulo e real, do banco local, e e o motivo do tema
+    `playstation®`: a loja oficial da Sony escreve "PlayStation® 5", e o ®
+    impede "playstation 5" de casar. O quarto e a grafia oficial sem espaco,
+    deduzida da marca e nao vista em anuncio."""
+    from promo.db import tem_tema
+
+    temas = load_priority()
+    titulos = [
+        "Console PlayStation® 5 Slim Edição Digital 825 GB Branco - Sony",
+        "Console Playstation 5 Slim Digital 825gb Branco",
+        "Grand Theft Auto VI - PlayStation 5",
+        "Console PlayStation®5 Edição Digital (slim)",
+        "Controle Dualsense Sony Ps5 - Personalizado Itachi Uchiha",
+        "Edição limitada física do ESRB Grand Theft Auto VI GTA VI",
+    ]
+
+    fora = [t for t in titulos if not tem_tema(t, temas)]
+
+    assert fora == []

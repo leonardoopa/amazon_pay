@@ -52,9 +52,9 @@ CREATE TABLE IF NOT EXISTS posts (
     -- JID do grupo de destino. Vazio = o destino padrao do .env, que era o
     -- unico ate 09/09/2026.
     grupo_jid    TEXT NOT NULL DEFAULT '',
-    -- Quem passa na frente na fila de entrega; maior sai antes. So a pista
-    -- vinda de outro grupo usa isso, e todo o resto fica em 0 -- entre si,
-    -- ordenados por `created_at`, como sempre foram.
+    -- Quem passa na frente na fila de entrega; maior sai antes. O repasse de
+    -- outro grupo fica em 1, a comida e a fonte prioritaria em -1, e todo o
+    -- resto em 0 -- entre si, ordenados por `created_at`, como sempre foram.
     prioridade   INTEGER NOT NULL DEFAULT 0,
     attempts     INTEGER NOT NULL DEFAULT 0,
     -- 1 = desconto medido contra a nossa mediana. 0 = repasse da vitrine do
@@ -506,8 +506,8 @@ def create_post(
     que apuramos, False quando e o preco riscado da loja (repasse da vitrine).
     O site le esta coluna para nao apresentar repasse como prova medida.
 
-    `prioridade` maior sai antes na fila de entrega, e so a pista vinda de
-    outro grupo usa isso hoje -- ver a migracao da coluna.
+    `prioridade` maior sai antes na fila de entrega. Quem decide a faixa de cada
+    post e `pipeline._prioridade_do_post`; o padrao 0 e o que nos escolhemos.
     """
     cursor = conn.execute(
         """
@@ -1005,8 +1005,9 @@ def pending_posts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Posts que ficaram na fila (janela de 24h fechada, erro de rede etc.).
 
     `prioridade DESC` antes de `created_at`: a pista de outro grupo entra com
-    prioridade e passa na frente do que ja estava esperando. Todo o resto tem
-    prioridade 0, entao entre si a ordem continua sendo a de chegada.
+    prioridade 1 e passa na frente do que ja estava esperando, a comida e a
+    fonte prioritaria entram com -1 e saem por ultimo. Todo o resto tem
+    prioridade 0, e dentro de cada faixa a ordem continua sendo a de chegada.
     """
     return conn.execute(
         "SELECT id, copy, image_url, grupo_jid FROM posts "

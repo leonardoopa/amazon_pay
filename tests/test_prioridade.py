@@ -306,8 +306,16 @@ def test_capsula_pega_suplemento_e_esta_certo_assim():
 
 
 def test_os_temas_ja_vem_normalizados():
-    """`e_prioritaria` normaliza so o titulo; o tema tem que chegar pronto."""
-    assert all(t == t.lower() and t.isascii() for t in load_priority())
+    """`e_prioritaria` normaliza so o titulo; o tema tem que chegar pronto.
+
+    O criterio e `sem_acento` nao mexer no tema, e nao "ser ASCII": o tema
+    `playstation®` precisa do simbolo, porque a loja oficial da Sony escreve
+    "PlayStation® 5" e o ® impede `playstation 5` de casar. `sem_acento` deixa
+    o ® como esta nos dois lados, entao a comparacao funciona.
+    """
+    from promo.db import sem_acento
+
+    assert all(t == sem_acento(t) for t in load_priority())
 
 
 def test_tema_curto_demais_nao_entra():
@@ -317,8 +325,14 @@ def test_tema_curto_demais_nao_entra():
     o grupo pediu pelo nome. Nao ha palavra comum de produto em portugues que
     as contenha, entao o falso positivo que o piso de cinco evitava nao existe
     para essas duas.
+
+    "ps5" e a unica excecao, com tres caracteres, e vale o mesmo argumento:
+    nao ha palavra portuguesa que contenha "ps5". Titulo de jogo de PlayStation
+    5 quase sempre so cita "PS5" ("Jogo Hades Ps5 Fisico"), entao sem ele o
+    tema perderia os jogos. Qualquer outro tema abaixo de quatro continua
+    barrado.
     """
-    assert all(len(t) >= 4 for t in load_priority())
+    assert all(len(t) >= 4 for t in load_priority() if t != "ps5")
 
 
 def test_tema_vazio_e_ignorado(tmp_path):
@@ -505,15 +519,18 @@ def test_os_termos_do_tema_nao_tem_teto_de_preco():
     assert com_teto == []
 
 
-def test_os_termos_fora_do_tema_mantem_teto():
-    """Soltar o teto e para o tema, nao para a watchlist inteira: sem teto,
-    'notebook' traz servidor de R$ 40 mil."""
+def test_o_dono_soltou_o_teto_de_notebook_e_monitor_gamer():
+    """Em 18/11/2026 o dono tirou o teto de preco de quase toda a watchlist
+    (`max_price: null`), inclusive destes dois, que este teste travava em
+    R$ 5.000 e R$ 3.000 para que "notebook" nao trouxesse servidor de R$ 40
+    mil. A decisao e dele; o risco que o teto cobria passa a depender so do
+    filtro de desconto real."""
     from promo.pipeline import load_watchlist
 
     tetos = {w.term: w.max_price for w in load_watchlist()}
 
-    assert tetos["notebook"] == 5000
-    assert tetos["monitor gamer"] == 3000
+    assert tetos["notebook"] is None
+    assert tetos["monitor gamer"] is None
 
 
 # ---------- os temas que o grupo pediu ----------
@@ -550,9 +567,10 @@ def test_stanley_e_tema_e_os_termos_dele_existem():
 
 
 def test_o_tema_stanley_pega_a_garrafa_cara():
-    """O ponto de por Stanley no tema: a Aerolight de R$ 275 passa do teto de
-    R$ 150 que `garrafa termica` carrega, e so escapa dele por termo proprio
-    sem teto."""
+    """O ponto de por Stanley no tema: a Aerolight de R$ 275 passava do teto de
+    R$ 150 que `garrafa termica` carregava, e so escapava dele por termo
+    proprio sem teto. Em 18/11/2026 o dono soltou tambem o teto do termo
+    generico; o termo proprio e o tema continuam valendo."""
     from promo.pipeline import e_prioritaria, load_priority, load_watchlist
 
     tetos = {w.term: w.max_price for w in load_watchlist()}
@@ -560,7 +578,7 @@ def test_o_tema_stanley_pega_a_garrafa_cara():
         "Garrafa Termica Stanley Aerolight Fast Flow Polar 710ml", 275.74, 309.90
     )
 
-    assert tetos["garrafa termica"] == 150  # o termo generico segue com teto
+    assert tetos["garrafa termica"] is None
     assert tetos["stanley aerolight"] is None
     assert e_prioritaria(garrafa, load_priority())
 

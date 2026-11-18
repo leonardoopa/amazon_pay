@@ -216,7 +216,7 @@ def oferta_do_bva(external_id: str, titulo: str, source: str = "amazon") -> Offe
     )
 
 
-def test_run_rapido_enfileira_o_que_o_bva_postou_na_faixa_2(
+def test_run_rapido_enfileira_o_que_o_bva_postou_na_faixa_da_comida(
     monkeypatch, rodada_rapida, banco_em_memoria
 ):
     pipeline._DA_FONTE_PRIORITARIA.update({"B0NOTEBOOK", "B0PHONE0001"})
@@ -240,7 +240,7 @@ def test_run_rapido_enfileira_o_que_o_bva_postou_na_faixa_2(
     geral = {linha["external_id"]: linha for linha in posts if linha["grupo_jid"] == ""}
     assert set(geral) == {"B0NOTEBOOK", "B0PHONE0001"}
     assert all(
-        linha["prioridade"] == 2 and linha["status"] == "pending"
+        linha["prioridade"] == -1 and linha["status"] == "pending"
         for linha in geral.values()
     )
 
