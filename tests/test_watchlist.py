@@ -247,8 +247,14 @@ def test_a_reserva_ainda_discrimina():
     cobrem 9.635 (23,3%). A fatia nao se moveu porque o termo casa 5 titulos, e
     e por isso que o teto pode subir: ele e proxy, e o proxy foi conferido
     contra a coisa que ele representa.
+
+    Sobe para 168 em 18/11/2026 com PlayStation 5 e GTA VI (sete temas). Esta
+    remedicao foi feita SO no banco local, com 792 titulos: os 161 temas
+    cobriam 123 (15,5%) e os 168 cobrem 128 (16,2%). O catalogo de producao
+    nao foi remedido -- quando for, o numero que importa continua sendo a
+    fatia ficar longe de metade, nao a contagem.
     """
-    assert len(load_priority()) <= 161
+    assert len(load_priority()) <= 168
 
 
 def test_o_dior_e_o_givenchy_ficam_na_busca():
