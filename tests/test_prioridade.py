@@ -306,8 +306,16 @@ def test_capsula_pega_suplemento_e_esta_certo_assim():
 
 
 def test_os_temas_ja_vem_normalizados():
-    """`e_prioritaria` normaliza so o titulo; o tema tem que chegar pronto."""
-    assert all(t == t.lower() and t.isascii() for t in load_priority())
+    """`e_prioritaria` normaliza so o titulo; o tema tem que chegar pronto.
+
+    O criterio e `sem_acento` nao mexer no tema, e nao "ser ASCII": o tema
+    `playstation®` precisa do simbolo, porque a loja oficial da Sony escreve
+    "PlayStation® 5" e o ® impede `playstation 5` de casar. `sem_acento` deixa
+    o ® como esta nos dois lados, entao a comparacao funciona.
+    """
+    from promo.db import sem_acento
+
+    assert all(t == sem_acento(t) for t in load_priority())
 
 
 def test_tema_curto_demais_nao_entra():
@@ -317,8 +325,14 @@ def test_tema_curto_demais_nao_entra():
     o grupo pediu pelo nome. Nao ha palavra comum de produto em portugues que
     as contenha, entao o falso positivo que o piso de cinco evitava nao existe
     para essas duas.
+
+    "ps5" e a unica excecao, com tres caracteres, e vale o mesmo argumento:
+    nao ha palavra portuguesa que contenha "ps5". Titulo de jogo de PlayStation
+    5 quase sempre so cita "PS5" ("Jogo Hades Ps5 Fisico"), entao sem ele o
+    tema perderia os jogos. Qualquer outro tema abaixo de quatro continua
+    barrado.
     """
-    assert all(len(t) >= 4 for t in load_priority())
+    assert all(len(t) >= 4 for t in load_priority() if t != "ps5")
 
 
 def test_tema_vazio_e_ignorado(tmp_path):
