@@ -1,7 +1,7 @@
 {
   ".claude/launch.json": {
-    "mtime": 1787282392.4760814,
-    "seen": 1792264009.796333,
+    "mtime": 1792960312.0792649,
+    "seen": 1795013779.896565,
     "ast_hash": "8fd0c9f1f0d29cdd1100258c7230b254",
     "semantic_hash": "8fd0c9f1f0d29cdd1100258c7230b254"
   },
@@ -48,10 +48,10 @@
     "semantic_hash": "6f3a42e77d70e7d6e1c66145194cb689"
   },
   "src/promo/config.py": {
-    "mtime": 1792254443.9302049,
-    "seen": 1792264009.796339,
-    "ast_hash": "5b98242b3d5b9d33000aa3b4cba6b714",
-    "semantic_hash": "5b98242b3d5b9d33000aa3b4cba6b714"
+    "mtime": 1793232647.5238125,
+    "seen": 1795013779.896574,
+    "ast_hash": "ff529371df667dc81e8284e6c414ceb7",
+    "semantic_hash": ""
   },
   "src/promo/copywriter.py": {
     "mtime": 1791143978.7933173,
@@ -72,10 +72,10 @@
     "semantic_hash": "d21c281db0759c2f86184639845ca30f"
   },
   "src/promo/delivery/evolution.py": {
-    "mtime": 1792254443.9303722,
-    "seen": 1792264009.7963421,
-    "ast_hash": "8273b23db6aee1cf4c5fbcc6c5f81d31",
-    "semantic_hash": "8273b23db6aee1cf4c5fbcc6c5f81d31"
+    "mtime": 1793232647.5240607,
+    "seen": 1795013779.8965771,
+    "ast_hash": "5c9573c7c53d9dc98efc6ab06184e58e",
+    "semantic_hash": ""
   },
   "src/promo/delivery/whatsapp.py": {
     "mtime": 1788966144.2441278,
@@ -102,10 +102,10 @@
     "semantic_hash": "12a74be9d43e57ebc17be53e9edf297b"
   },
   "src/promo/pipeline.py": {
-    "mtime": 1792254443.9306824,
-    "seen": 1792264009.796344,
-    "ast_hash": "e3c077a2006aee4f7dfe0960e1a869ab",
-    "semantic_hash": "e3c077a2006aee4f7dfe0960e1a869ab"
+    "mtime": 1793232647.5243988,
+    "seen": 1795013779.89658,
+    "ast_hash": "3e9b271280a6e6105c02676948919907",
+    "semantic_hash": ""
   },
   "src/promo/scoring.py": {
     "mtime": 1789430782.6822197,
@@ -132,10 +132,10 @@
     "semantic_hash": "4c7fad97dd53da2ff487cfb09d499266"
   },
   "src/promo/sources/amazon_grupo.py": {
-    "mtime": 1792254443.930903,
-    "seen": 1792264009.7963462,
-    "ast_hash": "90e474fb37c0c6f6c1076bc662966641",
-    "semantic_hash": "90e474fb37c0c6f6c1076bc662966641"
+    "mtime": 1793232647.5246217,
+    "seen": 1795013779.8965828,
+    "ast_hash": "c76b0cbfd399ac05074c4a7bd818a3c7",
+    "semantic_hash": ""
   },
   "src/promo/sources/amazon_link.py": {
     "mtime": 1792254443.9310303,
@@ -150,10 +150,10 @@
     "semantic_hash": "967afaea3555f79f700ce16f9e59b894"
   },
   "src/promo/sources/grupo_wa.py": {
-    "mtime": 1791143978.6933572,
-    "seen": 1792264009.796347,
-    "ast_hash": "3f947ec1bb548d64c914fbbf5e0c2461",
-    "semantic_hash": "3f947ec1bb548d64c914fbbf5e0c2461"
+    "mtime": 1793232647.5247607,
+    "seen": 1795013779.896585,
+    "ast_hash": "b539885697394aadb229e6ede570c6dd",
+    "semantic_hash": ""
   },
   "src/promo/sources/mercadolivre.py": {
     "mtime": 1791143978.837844,
@@ -342,10 +342,10 @@
     "semantic_hash": "712c6ad18cff944cc3220ed30ee4b41d"
   },
   "tests/test_evolution.py": {
-    "mtime": 1792254451.2081592,
-    "seen": 1792264009.796361,
-    "ast_hash": "50521e779be320236995b49a4dcd9875",
-    "semantic_hash": "50521e779be320236995b49a4dcd9875"
+    "mtime": 1793232647.524931,
+    "seen": 1795013779.8966038,
+    "ast_hash": "611c8fd9734986de5c257afac7a91645",
+    "semantic_hash": ""
   },
   "tests/test_exclusao.py": {
     "mtime": 1791143979.0344503,
@@ -390,10 +390,10 @@
     "semantic_hash": "42f9c4ccefe182a2bfebe5411a9bc473"
   },
   "tests/test_grupo_fonte.py": {
-    "mtime": 1791143979.202119,
-    "seen": 1792264009.796365,
-    "ast_hash": "4cf693328223117097be590bd49892b7",
-    "semantic_hash": "4cf693328223117097be590bd49892b7"
+    "mtime": 1793232647.5250719,
+    "seen": 1795013779.89661,
+    "ast_hash": "452322fb0a307f368ac06e840c4e669e",
+    "semantic_hash": ""
   },
   "tests/test_grupos.py": {
     "mtime": 1791143979.1943681,
@@ -790,5 +790,119 @@
     "seen": 1792264009.7963939,
     "ast_hash": "d0249eb5a88d0e23418c1b42d3f46011",
     "semantic_hash": "d0249eb5a88d0e23418c1b42d3f46011"
+  },
+  "tests/test_foto_do_grupo.py": {
+    "mtime": 1793232647.5334268,
+    "seen": 1795013779.896608,
+    "ast_hash": "315e0a55ce3d221be24684570b489e6e",
+    "semantic_hash": ""
+  },
+  ".github/workflows/deploy.yml": {
+    "mtime": 1788306232.7383776,
+    "seen": 1795013779.8966458,
+    "ast_hash": "b2dd34183c19de3ae4b6062469b9b06c",
+    "semantic_hash": ""
+  },
+  ".github/workflows/testes.yml": {
+    "mtime": 1788312864.3143141,
+    "seen": 1795013779.896647,
+    "ast_hash": "8aa3620e875f57828ddcc3efed4d7bcf",
+    "semantic_hash": ""
+  },
+  ".pre-commit-config.yaml": {
+    "mtime": 1791143835.1844018,
+    "seen": 1795013779.896647,
+    "ast_hash": "acf6be09acea0e6de78caf46f2041ce7",
+    "semantic_hash": ""
+  },
+  "DEPLOY.md": {
+    "mtime": 1792251545.133385,
+    "seen": 1795013779.896648,
+    "ast_hash": "8707bf2128c45345224e2198c605ce37",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1789703024.484632,
+    "seen": 1795013779.896648,
+    "ast_hash": "1aaaba679ebc012edbddce4484af77af",
+    "semantic_hash": ""
+  },
+  "docker-compose.vps-2gb.yml": {
+    "mtime": 1788306232.7441843,
+    "seen": 1795013779.896649,
+    "ast_hash": "2fbc9269b4ccde353a1e2d662d739d73",
+    "semantic_hash": ""
+  },
+  "docker-compose.yml": {
+    "mtime": 1792251545.1340451,
+    "seen": 1795013779.896649,
+    "ast_hash": "51ac06d321c2b7417915e4f56fe2dcbf",
+    "semantic_hash": ""
+  },
+  "requirements.txt": {
+    "mtime": 1787282392.4767797,
+    "seen": 1795013779.89665,
+    "ast_hash": "36f7e846b915a8c47438531e5a4ebb3d",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/pelando_oferta_amazon.html": {
+    "mtime": 1791143847.4042037,
+    "seen": 1795013779.89665,
+    "ast_hash": "f4d6ce409e26e5e6423847495b2c44d9",
+    "semantic_hash": ""
+  },
+  "tests/fixtures/pelando_oferta_ml_catalogo.html": {
+    "mtime": 1791143847.4043937,
+    "seen": 1795013779.896651,
+    "ast_hash": "5b65e80319db93d3b2e210867522caf4",
+    "semantic_hash": ""
+  },
+  "web/vitrine/static/vitrine/video/LEIAME.md": {
+    "mtime": 1787281665.5028837,
+    "seen": 1795013779.896651,
+    "ast_hash": "6efc00917045bc0097bfe5de043196ff",
+    "semantic_hash": ""
+  },
+  "web/vitrine/templates/vitrine/_grafico.html": {
+    "mtime": 1787281665.5875292,
+    "seen": 1795013779.896652,
+    "ast_hash": "87138e76cc59af7d2dcc3fea9f99940f",
+    "semantic_hash": ""
+  },
+  "web/vitrine/templates/vitrine/_scroll_cinema.html": {
+    "mtime": 1787794422.3118815,
+    "seen": 1795013779.896652,
+    "ast_hash": "6513913d00390e59a8885c6212e64943",
+    "semantic_hash": ""
+  },
+  "web/vitrine/templates/vitrine/amazon_add.html": {
+    "mtime": 1788917930.2240314,
+    "seen": 1795013779.896653,
+    "ast_hash": "dbdd182be09186a89a8f4d77c19d6904",
+    "semantic_hash": ""
+  },
+  "web/vitrine/templates/vitrine/base.html": {
+    "mtime": 1787514344.9134214,
+    "seen": 1795013779.896653,
+    "ast_hash": "2e521d2c8f10c306ab2c77bb50454468",
+    "semantic_hash": ""
+  },
+  "web/vitrine/templates/vitrine/home.html": {
+    "mtime": 1787514651.8654668,
+    "seen": 1795013779.8966541,
+    "ast_hash": "f0a18a1ce5c666da325fb70c6d3a4606",
+    "semantic_hash": ""
+  },
+  "web/vitrine/templates/vitrine/oferta.html": {
+    "mtime": 1787514344.9142313,
+    "seen": 1795013779.8966541,
+    "ast_hash": "961d57c443565b530b5a9d95efcc23f5",
+    "semantic_hash": ""
+  },
+  "web/vitrine/static/vitrine/video/poster.jpg": {
+    "mtime": 1787281665.5375056,
+    "seen": 1795013779.896655,
+    "ast_hash": "3c9d7c515e8a052d83e8c942d817d0f3",
+    "semantic_hash": ""
   }
 }
