@@ -1663,7 +1663,7 @@
       "limite": 15
     }
   ],
-  "_comment_comida_e_bebida": "Comida e bebida que os grupos-fonte postam: pedido do dono em 02/10/2026, depois de uma vodka do xet nao chegar ao grupo. O repasse que casa aqui vai para a faixa 2 da fila (sai antes de todo o resto do repasse) e entra na rodada mesmo com a fila cheia, ate MAX_COMIDA_E_BEBIDA_POR_RODADA. Sao PALAVRAS INTEIRAS do titulo, sem acento e em minusculo, com plural: 'gin' nao pega 'ginastica' e 'mel' nao pega 'melhor'. Termo que cita a bebida sem ser ela (maquina de cafe, taca de vinho, perfume Vodka) fica em nao_e_comida, que vence.",
+  "_comment_comida_e_bebida": "Comida e bebida que os grupos-fonte postam: pedido do dono em 02/10/2026, depois de uma vodka do xet nao chegar ao grupo. Desde 18/11/2026, por decisao do dono, o repasse que casa aqui vai para o FIM da fila (faixa -1; ate entao era a faixa 2, a primeira): sai com a vaga que sobrar depois do resto do repasse e da nossa medicao. O freio por rodada continua sendo MAX_COMIDA_E_BEBIDA_POR_RODADA. Sao PALAVRAS INTEIRAS do titulo, sem acento e em minusculo, com plural: 'gin' nao pega 'ginastica' e 'mel' nao pega 'melhor'. Termo que cita a bebida sem ser ela (maquina de cafe, taca de vinho, perfume Vodka) fica em nao_e_comida, que vence.",
   "comida_e_bebida": [
     "vodka", "vodca", "whisky", "whiskey", "uisque", "gin",
     "cerveja", "chopp", "vinho", "espumante", "champagne", "prosecco",

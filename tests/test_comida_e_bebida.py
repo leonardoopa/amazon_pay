@@ -153,11 +153,13 @@ def test_lista_vazia_nao_marca_nada():
 # ---------- a faixa da fila ----------
 
 
-def test_comida_de_outro_grupo_ganha_a_faixa_2():
+def test_comida_de_outro_grupo_vai_para_o_fim_da_fila():
+    """Era a faixa 2, a primeira, ate 18/11/2026. O dono pos o repasse e a
+    nossa medicao na frente; a comida sai com a vaga que sobrar."""
     o = oferta("Vodka Grey Goose Original 750ml")
     _VISTOS_EM_OUTRO_GRUPO.add(o.external_id)
 
-    assert _prioridade_do_post(o) == 2
+    assert _prioridade_do_post(o) == -1
 
 
 def test_o_resto_do_repasse_continua_na_faixa_1():
@@ -181,7 +183,7 @@ def banco() -> sqlite3.Connection:
     return conn
 
 
-def test_o_post_da_vodka_nasce_com_a_faixa_2():
+def test_o_post_da_vodka_nasce_no_fim_da_fila():
     from promo.db import record_offer
 
     conn = banco()
@@ -191,15 +193,15 @@ def test_o_post_da_vodka_nasce_com_a_faixa_2():
 
     _gravar_post(conn, scored, "texto", "")
 
-    assert conn.execute("SELECT prioridade FROM posts").fetchone()[0] == 2
+    assert conn.execute("SELECT prioridade FROM posts").fetchone()[0] == -1
 
 
-def test_a_faixa_2_sai_antes_da_1_que_sai_antes_da_0():
+def test_o_repasse_sai_antes_da_medicao_que_sai_antes_da_comida():
     from promo.db import create_post, pending_posts, record_offer
 
     conn = banco()
     ids = {}
-    for nome, prioridade in (("zero", 0), ("um", 1), ("dois", 2)):
+    for nome, prioridade in (("comida", -1), ("zero", 0), ("um", 1)):
         o = oferta(f"Produto {nome}", f"X{nome}")
         record_offer(conn, o)
         ids[nome] = create_post(
@@ -208,7 +210,7 @@ def test_a_faixa_2_sai_antes_da_1_que_sai_antes_da_0():
 
     ordem = [linha["id"] for linha in pending_posts(conn)]
 
-    assert ordem == [ids["dois"], ids["um"], ids["zero"]]
+    assert ordem == [ids["um"], ids["zero"], ids["comida"]]
 
 
 # ---------- a admissao na rodada ----------

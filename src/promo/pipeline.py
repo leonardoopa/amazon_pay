@@ -1877,21 +1877,26 @@ def e_comida_ou_bebida(
 def _prioridade_do_post(offer: Offer) -> int:
     """Qual faixa da fila de entrega o post ocupa. Maior sai antes.
 
-    2 -- comida e bebida de outro grupo (pedido do dono em 02/10/2026: tem que
-         aparecer) e tudo que vem de uma fonte `prioridade: true` (03/10/2026).
-         Sai na frente de tudo, inclusive do resto do repasse.
-    1 -- o resto do repasse: a pista sai na frente do que nos medimos.
-    0 -- o que nos escolhemos.
+     1 -- o repasse: a pista de outro grupo sai na frente do que nos medimos.
+     0 -- o que nos escolhemos.
+    -1 -- comida e bebida de outro grupo (pedido do dono em 02/10/2026) e tudo
+          que vem de uma fonte `prioridade: true` (03/10/2026). Sai por ultimo,
+          com a vaga que sobrar.
 
-    Sem a faixa 2, a vodka entrava em disputa com cinquenta ofertas de
-    prioridade 1 por seis vagas do Geral por hora, e metade delas morria na
-    fila: medido em 72h, 71 ofertas da Amazon repassadas expiraram contra 71
-    enviadas.
+    Ate 18/11/2026 esta ultima era a faixa 2, a primeira da fila. Ela tinha
+    nascido porque a vodka disputava com cinquenta ofertas de prioridade 1 por
+    seis vagas do Geral por hora. O dono inverteu a ordem depois da medicao de
+    24h no Geral: a faixa 2 enviou 96 de 96, a 1 enviou 101 e perdeu 240 na
+    fila, e a 0 enviou 22 e perdeu 541. O repasse e a nossa medicao passam na
+    frente; a comida e o #BVA saem quando sobra vaga.
+
+    Valor negativo, e nao uma renumeracao, porque 0 e o DEFAULT da coluna: post
+    gravado sem faixa continua sendo "o que nos escolhemos".
     """
     if not _veio_de_outro_grupo(offer):
         return 0
     if _de_fonte_prioritaria(offer) or e_comida_ou_bebida(offer):
-        return 2
+        return -1
     return 1
 
 
@@ -2506,20 +2511,20 @@ def run(dry_run: bool = False, rapido: bool = False) -> list[ScoredOffer]:
         picked = admitidas + picked
         if admitidas:
             termos, nao_e = load_comida_e_bebida()
-            na_frente = sum(
+            comida = sum(
                 1 for s in admitidas if e_comida_ou_bebida(s.offer, termos, nao_e)
             )
             log.info(
-                "%d oferta(s) do outro grupo na frente da fila, fora da cota "
-                "(%d de comida ou bebida).",
+                "%d oferta(s) do outro grupo fora da cota (%d de comida ou "
+                "bebida, que sai por ultimo).",
                 len(admitidas),
-                na_frente,
+                comida,
             )
 
     if prioritarias:
         picked = prioritarias + picked
         log.info(
-            "%d oferta(s) de fonte prioritaria na frente da fila, fora de toda cota.",
+            "%d oferta(s) de fonte prioritaria fora da cota, no fim da fila.",
             len(prioritarias),
         )
 
@@ -3087,7 +3092,8 @@ def drip_once(delivery=None) -> str:
 
     A vez e de quem esta ha mais tempo sem sair, entre os grupos que podem
     receber agora. Dentro de cada grupo vale a ordem da fila: prioridade e
-    depois chegada, entao comida e bebida de outro grupo saem na frente.
+    depois chegada, entao o repasse de outro grupo sai na frente, e a comida e
+    a fonte prioritaria por ultimo (ver `_prioridade_do_post`).
 
     Estado so no banco -- ultimo envio de cada grupo e a contagem da janela --,
     de proposito: com o container reiniciando, o ritmo continua de onde parou.

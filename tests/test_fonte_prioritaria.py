@@ -63,12 +63,13 @@ def prioritaria(*ids: str) -> None:
 # ---------- faixa da entrega ----------
 
 
-def test_tudo_da_fonte_prioritaria_ganha_a_faixa_2_mesmo_sem_ser_comida():
+def test_tudo_da_fonte_prioritaria_vai_com_a_comida_mesmo_sem_ser_comida():
+    """A faixa da comida, que desde 18/11/2026 e a ultima da fila (-1)."""
     prioritaria("B0NOTEBOOK")
 
     assert (
         pipeline._prioridade_do_post(oferta("Notebook Dell i5-1334U", "B0NOTEBOOK"))
-        == 2
+        == -1
     )
 
 
