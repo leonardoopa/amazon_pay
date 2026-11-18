@@ -519,15 +519,18 @@ def test_os_termos_do_tema_nao_tem_teto_de_preco():
     assert com_teto == []
 
 
-def test_os_termos_fora_do_tema_mantem_teto():
-    """Soltar o teto e para o tema, nao para a watchlist inteira: sem teto,
-    'notebook' traz servidor de R$ 40 mil."""
+def test_o_dono_soltou_o_teto_de_notebook_e_monitor_gamer():
+    """Em 18/11/2026 o dono tirou o teto de preco de quase toda a watchlist
+    (`max_price: null`), inclusive destes dois, que este teste travava em
+    R$ 5.000 e R$ 3.000 para que "notebook" nao trouxesse servidor de R$ 40
+    mil. A decisao e dele; o risco que o teto cobria passa a depender so do
+    filtro de desconto real."""
     from promo.pipeline import load_watchlist
 
     tetos = {w.term: w.max_price for w in load_watchlist()}
 
-    assert tetos["notebook"] == 5000
-    assert tetos["monitor gamer"] == 3000
+    assert tetos["notebook"] is None
+    assert tetos["monitor gamer"] is None
 
 
 # ---------- os temas que o grupo pediu ----------
@@ -564,9 +567,10 @@ def test_stanley_e_tema_e_os_termos_dele_existem():
 
 
 def test_o_tema_stanley_pega_a_garrafa_cara():
-    """O ponto de por Stanley no tema: a Aerolight de R$ 275 passa do teto de
-    R$ 150 que `garrafa termica` carrega, e so escapa dele por termo proprio
-    sem teto."""
+    """O ponto de por Stanley no tema: a Aerolight de R$ 275 passava do teto de
+    R$ 150 que `garrafa termica` carregava, e so escapava dele por termo
+    proprio sem teto. Em 18/11/2026 o dono soltou tambem o teto do termo
+    generico; o termo proprio e o tema continuam valendo."""
     from promo.pipeline import e_prioritaria, load_priority, load_watchlist
 
     tetos = {w.term: w.max_price for w in load_watchlist()}
@@ -574,7 +578,7 @@ def test_o_tema_stanley_pega_a_garrafa_cara():
         "Garrafa Termica Stanley Aerolight Fast Flow Polar 710ml", 275.74, 309.90
     )
 
-    assert tetos["garrafa termica"] == 150  # o termo generico segue com teto
+    assert tetos["garrafa termica"] is None
     assert tetos["stanley aerolight"] is None
     assert e_prioritaria(garrafa, load_priority())
 

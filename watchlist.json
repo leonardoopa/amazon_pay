@@ -7,11 +7,11 @@
     },
     {
       "term": "smartwatch",
-      "max_price": 1500
+      "max_price": null
     },
     {
       "term": "monitor gamer",
-      "max_price": 3000
+      "max_price": null
     },
     {
       "term": "monitor 27 polegadas",
@@ -35,11 +35,11 @@
     },
     {
       "term": "notebook",
-      "max_price": 5000
+      "max_price": null
     },
     {
       "term": "tablet",
-      "max_price": 2500
+      "max_price": null
     },
     {
       "term": "soundbar",
@@ -51,7 +51,7 @@
     },
     {
       "term": "air fryer",
-      "max_price": 1000
+      "max_price": null
     },
     {
       "term": "cafeteira",
@@ -103,23 +103,23 @@
     },
     {
       "term": "kit skincare",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "camiseta masculina",
-      "max_price": 150
+      "max_price": null
     },
     {
       "term": "moletom",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "jaqueta",
-      "max_price": 350
+      "max_price": null
     },
     {
       "term": "calca jeans",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "legging fitness",
@@ -127,19 +127,19 @@
     },
     {
       "term": "tenis casual",
-      "max_price": 400
+      "max_price": null
     },
     {
       "term": "chinelo",
-      "max_price": 120
+      "max_price": null
     },
     {
       "term": "bone",
-      "max_price": 120
+      "max_price": null
     },
     {
       "term": "garrafa termica",
-      "max_price": 150
+      "max_price": null
     },
     {
       "term": "jogo de lencol",
@@ -151,7 +151,7 @@
     },
     {
       "term": "ventilador",
-      "max_price": 250
+      "max_price": null
     },
     {
       "term": "luminaria led",
@@ -175,11 +175,7 @@
     },
     {
       "term": "calca feminina",
-      "max_price": 250
-    },
-    {
-      "term": "conjunto feminino",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "cropped",
@@ -191,11 +187,11 @@
     },
     {
       "term": "relogio feminino",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "chinelo feminino",
-      "max_price": 150
+      "max_price": null
     },
     {
       "term": "legging academia",
@@ -215,7 +211,7 @@
     },
     {
       "term": "batom",
-      "max_price": 100
+      "max_price": null
     },
     {
       "term": "shampoo",
@@ -223,7 +219,7 @@
     },
     {
       "term": "progressiva",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "oleo capilar",
@@ -231,11 +227,11 @@
     },
     {
       "term": "chapinha",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "escova secadora",
-      "max_price": 300
+      "max_price": null
     },
     {
       "term": "ampola capilar",
@@ -795,7 +791,7 @@
     },
     {
       "term": "lattafa",
-      "max_price": 500
+      "max_price": null
     },
     {
       "term": "al haramain",
@@ -2051,7 +2047,7 @@
     {
       "id": "MLB1648",
       "name": "Informatica",
-      "max_price": 4000
+      "max_price": null
     },
     {
       "id": "MLB1000",
@@ -2076,12 +2072,12 @@
     {
       "id": "MLB1430",
       "name": "Calcados, Roupas e Bolsas",
-      "max_price": 400
+      "max_price": null
     },
     {
       "id": "MLB5726",
       "name": "Eletrodomesticos",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB1384",
@@ -2101,7 +2097,7 @@
     {
       "id": "MLB264586",
       "name": "Saude",
-      "max_price": 250
+      "max_price": null
     },
     {
       "id": "MLB5672",
@@ -2121,17 +2117,17 @@
     {
       "id": "MLB1196",
       "name": "Livros, Revistas e Comics",
-      "max_price": 150
+      "max_price": null
     },
     {
       "id": "MLB1431",
       "name": "Joias e Bijuterias",
-      "max_price": 250
+      "max_price": null
     },
     {
       "id": "MLB199407",
       "name": "Cuidados com a Pele",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB1263",
@@ -2141,27 +2137,27 @@
     {
       "id": "MLB264751",
       "name": "Artigos para Cabeleireiros",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB455174",
       "name": "Artefatos para Cabelo",
-      "max_price": 400
+      "max_price": null
     },
     {
       "id": "MLB278194",
       "name": "Tratamentos de Beleza",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB264201",
       "name": "Suplementos Alimentares",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB264192",
       "name": "Cuidado da Saude",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB198312",
@@ -2171,22 +2167,22 @@
     {
       "id": "MLB23262",
       "name": "Calcados",
-      "max_price": 600
+      "max_price": null
     },
     {
       "id": "MLB438178",
       "name": "Suplementos e Shakers",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB1338",
       "name": "Fitness e Musculacao",
-      "max_price": 400
+      "max_price": null
     },
     {
       "id": "MLB123103",
       "name": "Monitores Esportivos",
-      "max_price": 600
+      "max_price": null
     },
     {
       "id": "MLB1339",
@@ -2201,7 +2197,7 @@
     {
       "id": "MLB1434",
       "name": "Pulseiras e Braceletes",
-      "max_price": 300
+      "max_price": null
     },
     {
       "id": "MLB7017",
@@ -2211,7 +2207,7 @@
     {
       "id": "MLB1438",
       "name": "Aneis",
-      "max_price": 300
+      "max_price": null
     }
   ],
   "_comment_landing": "Landing pages do www que respondem a servidor. rota A = o card ja traz preco; rota B = so link de catalogo, e o preco vem da API. prioridade = o conteudo inteiro da pagina conta como prioritario. As URLs de lista.mercadolivre.com.br NAO entram aqui: redirecionam para /gz/account-verification quando quem pede e servidor.",
