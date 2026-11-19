@@ -1013,3 +1013,35 @@ def test_o_modelo_fixo_nao_imprime_o_titulo_de_seo_inteiro(bancos):
 
     assert "*Relógio Garmin Forerunner 55" in resposta.texto
     assert "Cronômetro" not in resposta.texto
+
+
+def test_o_mesmo_modelo_com_titulos_diferentes_vira_um_so(bancos):
+    """Dois anuncios do 265 Music 46mm saiam como opcoes diferentes."""
+    produto(
+        "Relógio Garmin Forerunner 265 Music Preto com Cinza 46mm com Monitor "
+        "Cardíaco de Pulso e GPS (+ cores)",
+        2877.99,
+        "MLB1",
+    )
+    produto("Relógio Garmin Forerunner 265 Music 46mm GPS (3 cores)", 2877.0, "MLB2")
+
+    achados = indexado().buscar("garmin forerunner 265")
+
+    assert [(r.external_id, r.preco) for r in achados] == [("MLB2", 2877.0)]
+
+
+def test_a_capa_nao_vira_o_proprio_iphone(bancos):
+    produto("Apple iPhone 15 128GB Preto", 3779.0, "MLB1")
+    produto("Capa Apple iPhone 15 Preto Silicone MagSafe", 47.66, "MLB2")
+
+    achados = indexado().buscar("iphone 15")
+
+    assert sorted(r.external_id for r in achados) == ["MLB1", "MLB2"]
+
+
+def test_quantidade_de_cores_nao_e_numero_de_modelo():
+    from promo.assistente.busca import codigos_de_modelo
+
+    assert codigos_de_modelo(
+        "Relógio Garmin Forerunner 265 Music 46mm GPS (3 cores)"
+    ) == {"265"}
