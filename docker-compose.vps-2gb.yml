@@ -26,6 +26,14 @@ services:
     mem_limit: 256m
     memswap_limit: 512m
 
+  assistente:
+    # Python, FastAPI, o cliente do Gemini e numpy partem de ~100 MB; a matriz
+    # de 12 mil vetores de 256 dimensoes soma ~12 MB. Com ele ligado a soma dos
+    # tetos vai a 1696 MB -- e teto, nao reserva: em 18/11/2026 os cinco
+    # containers somavam ~710 MB em uso.
+    mem_limit: 160m
+    memswap_limit: 256m
+
   web:
     # Tres workers do gunicorn sao ~360 MB so de Django. Dois atendem a
     # landing com sobra: o trafego dela e um punhado de visitas por post no

@@ -585,6 +585,87 @@ def group_invite_url() -> str:
     return _optional("GROUP_INVITE_URL", "").strip()
 
 
+# ---------- Assistente no WhatsApp ----------
+
+
+def assistente_numeros() -> list[str]:
+    """Telefones que o assistente responde, so digitos. Vazio = ninguem.
+
+    Beta fechado de proposito: responder conversa privada pelo Baileys e o que
+    mais expoe o chip a banimento, e hoje o chip e o mesmo que posta no grupo.
+    Abrir para todo mundo e decisao do dono, depois de medir o beta.
+    """
+    bruto = _optional("ASSISTENTE_NUMEROS")
+    numeros = ("".join(c for c in parte if c.isdigit()) for parte in bruto.split(","))
+    return [n for n in numeros if n]
+
+
+def assistente_max_por_hora() -> int:
+    """Respostas por numero por hora. Passou disso, o assistente fica quieto."""
+    return _int("ASSISTENTE_MAX_POR_HORA", 10)
+
+
+def assistente_webhook_token() -> str:
+    """Segredo no caminho do webhook. Vazio recusa tudo: falha fechada."""
+    return _optional("ASSISTENTE_WEBHOOK_TOKEN")
+
+
+def assistente_db_path() -> Path:
+    """Banco proprio do assistente: o indice de busca e as conversas.
+
+    Separado do `promos.db` porque o indice se reconstroi a qualquer hora e as
+    conversas tem prazo de guarda; nenhum dos dois pode travar a coleta.
+    """
+    raw = _optional("ASSISTENTE_DB_PATH", "data/assistente.db")
+    path = Path(raw)
+    if not path.is_absolute():
+        path = ROOT / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def assistente_port() -> int:
+    """8002: a 8000 e a API do bot e a 8001 e o gunicorn do site."""
+    return _int("ASSISTENTE_PORT", 8002)
+
+
+def assistente_instancia() -> str:
+    """Instancia da Evolution que responde. Vazio = a mesma que posta no grupo.
+
+    Existe para o chip separado: se o numero do assistente for banido, o do
+    grupo continua postando.
+    """
+    return _optional("ASSISTENTE_EVOLUTION_INSTANCE")
+
+
+def assistente_janela_dias() -> int:
+    """So entra na busca o produto visto nos ultimos N dias.
+
+    Medido em 18/11/2026: 63.359 produtos no banco, 12.040 vistos em 30 dias e
+    6.061 em 7. Responder com o preco de dois meses atras engana mais do que
+    ajuda.
+    """
+    return _int("ASSISTENTE_JANELA_DIAS", 30)
+
+
+def embedding_model() -> str:
+    return _optional("EMBEDDING_MODEL", "gemini-embedding-001")
+
+
+def embedding_dim() -> int:
+    """Dimensao do vetor. 256 com 12 mil produtos ativos sao ~12 MB em memoria.
+
+    O `gemini-embedding-001` aceita dimensao menor que a nativa (3.072) e o
+    vetor cortado precisa ser normalizado -- `indice.normalizar` faz isso.
+    """
+    return _int("EMBEDDING_DIM", 256)
+
+
+def ml_affiliate() -> tuple[str, str]:
+    """(cookie, tag) do painel de afiliados do ML, sem exigir o OAuth inteiro."""
+    return _optional("ML_AFFILIATE_COOKIE"), _optional("ML_AFFILIATE_TAG")
+
+
 def prefer_official_store() -> bool:
     """Nos temas do `priority`, a oferta sai da loja oficial do ML?
 
