@@ -271,6 +271,71 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_assistente(args: argparse.Namespace) -> int:
+    """Sobe o assistente de busca: webhook da Evolution, fila e indexador.
+
+    Servico proprio, e nao dentro do `serve`: o bot usava 220 de 256 MiB em
+    18/11/2026, e o indice vetorial ali arriscaria derrubar o envio do grupo.
+    """
+    import uvicorn
+
+    from .assistente.servico import montar
+    from .config import assistente_numeros, assistente_port, assistente_webhook_token
+
+    if not assistente_webhook_token():
+        print(
+            "Aviso: ASSISTENTE_WEBHOOK_TOKEN vazio -- o webhook recusa tudo.",
+            file=sys.stderr,
+        )
+    if not assistente_numeros():
+        print(
+            "Aviso: ASSISTENTE_NUMEROS vazio -- ninguem recebe resposta (beta).",
+            file=sys.stderr,
+        )
+    init_db()
+    # Sem access log: o caminho do webhook carrega o token, e cada mensagem do
+    # chip (inclusive de grupo) viraria uma linha com ele no log do container.
+    uvicorn.run(
+        montar(), host=args.host or "0.0.0.0", port=args.port or assistente_port(),
+        log_config=None, access_log=False,
+    )  # fmt: skip
+    return 0
+
+
+def cmd_assistente_indexar(_: argparse.Namespace) -> int:
+    """Atualiza o indice de busca do assistente uma vez e mostra o resumo."""
+    from .assistente.busca import Busca
+    from .assistente.indice import Embeddings
+    from .assistente.servico import indexar, pausa_fixa
+
+    init_db()
+    embeddings = Embeddings()
+    # No ritmo do plano gratuito do Gemini: a primeira carga leva horas.
+    resumo = indexar(Busca(embeddings=embeddings), embeddings, esperar=pausa_fixa())
+    for chave, valor in resumo.items():
+        print(f"{chave}: {valor}")
+    return 0
+
+
+def cmd_wa_webhook(args: argparse.Namespace) -> int:
+    """Mostra, liga ou desliga o webhook da Evolution que alimenta o assistente."""
+    import json
+
+    from .config import EvolutionConfig
+    from .delivery.evolution import Evolution
+
+    evolution = Evolution(EvolutionConfig.load())
+    if args.url:
+        resposta = evolution.configurar_webhook(args.url, ligado=not args.desligar)
+        print(json.dumps(resposta, ensure_ascii=False, indent=2))
+        return 0
+    if args.desligar:
+        print("Para desligar, passe tambem a --url atual.", file=sys.stderr)
+        return 2
+    print(json.dumps(evolution.webhook_atual(), ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_flush(_: argparse.Namespace) -> int:
     init_db()
     flush_pending()
@@ -716,6 +781,18 @@ COMMANDS = {
         "Manda uma mensagem de teste pelo backend ativo",
     ),
     "stats": (cmd_stats, "Mostra o estado do banco"),
+    "assistente": (
+        cmd_assistente,
+        "Sobe o assistente de busca no WhatsApp (webhook, fila e indice)",
+    ),
+    "assistente-indexar": (
+        cmd_assistente_indexar,
+        "Atualiza o indice de busca do assistente uma vez",
+    ),
+    "wa-webhook": (
+        cmd_wa_webhook,
+        "Mostra ou configura o webhook da Evolution para o assistente",
+    ),
 }
 
 
@@ -841,6 +918,20 @@ def main(argv: list[str] | None = None) -> int:
             )
             sub.add_argument(
                 "--port", type=int, default=None, help="Porta (padrao: API_PORT)"
+            )
+        if name == "assistente":
+            sub.add_argument("--host", default=None, help="Interface (padrao: 0.0.0.0)")
+            sub.add_argument(
+                "--port", type=int, default=None, help="Porta (padrao: ASSISTENTE_PORT)"
+            )
+        if name == "wa-webhook":
+            sub.add_argument(
+                "--url",
+                default=None,
+                help="Endereco do assistente, ex.: http://assistente:8002/webhook/<token>",
+            )
+            sub.add_argument(
+                "--desligar", action="store_true", help="Desliga o webhook (com --url)"
             )
 
     args = parser.parse_args(argv)
