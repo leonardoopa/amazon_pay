@@ -11,6 +11,8 @@ api = ["fastapi>=0.115", "uvicorn[standard]>=0.30"]
 # O site em web/ nao e importado pelo pacote promo, mas compartilha o mesmo
 # ambiente e a mesma imagem Docker -- por isso as deps dele moram aqui.
 web = ["django>=5.2,<6", "whitenoise>=6.6", "gunicorn>=22.0"]
+# O assistente de busca no WhatsApp (`promo assistente`).
+assistente = ["numpy>=1.26"]
 
 [project.scripts]
 amazon_pay = "promo.cli:main"

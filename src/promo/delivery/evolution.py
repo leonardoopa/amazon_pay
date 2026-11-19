@@ -110,6 +110,39 @@ class Evolution:
         response.raise_for_status()
         return response.json()
 
+    # ---------- Webhook (assistente) ----------
+
+    def webhook_atual(self) -> dict | None:
+        """O webhook configurado na instancia, ou None. Em 18/11/2026: None."""
+        response = self._client.get(f"/webhook/find/{self.config.instance}")
+        response.raise_for_status()
+        return response.json()
+
+    def configurar_webhook(self, url: str, ligado: bool = True) -> dict:
+        """Aponta o `messages.upsert` da instancia para o assistente.
+
+        So esse evento: o assistente nao precisa de presenca, contato nem grupo,
+        e cada evento a mais e uma requisicao a mais por mensagem no chip.
+        """
+        response = self._client.post(
+            f"/webhook/set/{self.config.instance}",
+            json={
+                "webhook": {
+                    "enabled": ligado,
+                    "url": url,
+                    "byEvents": False,
+                    "base64": False,
+                    "events": ["MESSAGES_UPSERT"],
+                }
+            },
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Evolution recusou o webhook ({response.status_code}): "
+                f"{response.text[:300]}"
+            )
+        return response.json()
+
     def state(self) -> str:
         """'open' = pareado e pronto. 'close'/'connecting' = precisa do QR."""
         response = self._client.get(f"/instance/connectionState/{self.config.instance}")
