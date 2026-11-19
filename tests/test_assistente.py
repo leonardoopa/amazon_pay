@@ -888,3 +888,66 @@ def test_sem_gemini_a_pergunta_de_ajuda_recebe_as_boas_vindas(bancos):
 
     assert resposta.texto.startswith("Oi! Eu procuro preço")
     assert "Shampoo" not in resposta.texto
+
+
+# ---------- 19/11/2026: "relogio garmin" voltava com um relogio so ----------
+
+
+def test_modelos_diferentes_da_mesma_linha_sao_opcoes_diferentes(bancos):
+    """Forerunner 55, 70 e 265S viravam um produto so pelo `mesmo_produto` do
+    grupo, e a pessoa recebia o mais barato e mais nada."""
+    produto("Relógio Garmin Forerunner 55 GPS Preto", 1179.90, "MLB1")
+    produto("Relógio Garmin Forerunner 265s Music", 2799.0, "MLB2")
+    produto("Relógio Garmin  Forerunner 70 Citron 42mm", 1899.99, "MLB3")
+
+    achados = indexado().buscar("relogio garmin")
+
+    assert sorted(r.external_id for r in achados) == ["MLB1", "MLB2", "MLB3"]
+
+
+def test_o_mesmo_modelo_em_dois_anuncios_continua_um_so(bancos):
+    produto("Relógio Garmin Forerunner 55 GPS Preto", 1179.90, "MLB1")
+    produto(
+        "Relógio Garmin Forerunner 55 Monitor Cardíaco Gps 42mm Preto", 1099.45, "MLB2"
+    )
+
+    achados = indexado().buscar("relogio garmin")
+
+    assert [(r.external_id, r.preco) for r in achados] == [("MLB2", 1099.45)]
+
+
+def test_a_marca_do_grupo_nao_passa_para_outro_modelo(bancos):
+    """O Forerunner 55 saiu com "Saiu no grupo em 16/11", que era de outro modelo."""
+    produto("Relógio Garmin Forerunner 55 GPS Preto", 1023.0, "MLB1")
+    setenta = produto("Relógio Garmin Forerunner 70 Citron 42mm", 1899.99, "MLB2")
+    saiu_no_grupo(setenta, 1899.99)
+
+    achados = {r.external_id: r for r in indexado().buscar("relogio garmin")}
+
+    assert achados["MLB2"].no_grupo is not None
+    assert achados["MLB1"].no_grupo is None
+
+
+def test_entre_anuncios_do_mesmo_modelo_o_recente_vence_o_velho_e_barato(bancos):
+    produto("Relógio Garmin Forerunner 55 GPS Preto", 1023.0, "MLB1", dias_sem_ver=15)
+    produto("Relógio Garmin Forerunner 55 GPS Preto", 1179.90, "MLB2")
+
+    achados = indexado().buscar("relogio garmin")
+
+    assert [r.external_id for r in achados] == ["MLB2"]
+
+
+@pytest.mark.parametrize(
+    "titulo, codigos",
+    [
+        ("Relógio Garmin Forerunner 265s Music", {"265s"}),
+        ("Relógio Garmin Forerunner 55 Monitor Cardíaco Gps 42mm Preto", {"55"}),
+        ("Console PlayStation 5 Slim Edição Digital 825 GB - R$ 4.650", {"5"}),
+        ("PlayStation 5 Slim Digital 825GB", {"5"}),
+        ("Air Fryer Mondial 4L Preta", set()),
+    ],
+)
+def test_numero_de_modelo_ignora_medida_e_preco(titulo, codigos):
+    from promo.assistente.busca import codigos_de_modelo
+
+    assert codigos_de_modelo(titulo) == codigos

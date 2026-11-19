@@ -11,7 +11,7 @@ import logging
 import re
 import sqlite3
 from dataclasses import dataclass, replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from statistics import median
 
@@ -35,6 +35,16 @@ JANELA_DO_GRUPO = 7
 FOLGA_DO_PRECO_DO_GRUPO = 1.05
 # Abaixo de 30% da propria mediana, o preco e tratado como erro de leitura.
 PISO_DO_PRECO = 0.3
+# Entre dois anuncios do mesmo modelo, o visto ha mais que isso perde para o
+# recente, mesmo mais barato: o preco de duas semanas atras pode nao existir mais.
+DIAS_PARA_PRECO_VELHO = 3
+
+# Medida colada no numero ("42mm", "825gb") ou logo depois dele ("825 gb"). Ela
+# varia entre anuncios do mesmo modelo, entao nao conta como numero de modelo.
+UNIDADES = {
+    "mm", "cm", "m", "gb", "tb", "mb", "l", "ml", "w", "v", "kg", "g", "mah",
+    "hz", "pol", "polegadas", "lb", "oz", "un", "pcs", "x", "k",
+}  # fmt: skip
 
 # Entre quantos dos mais relevantes a oferta do grupo e a abaixo da mediana
 # passam na frente. Com todos os termos da pergunta no titulo, a relevancia entre
@@ -149,6 +159,52 @@ def _expressao(grupo: tuple[str, ...]) -> str:
     virar operador; palavra solta leva `*` ("airfryer" acha "airfryers")."""
     partes = [f'"{f}"' if " " in f else f'"{f}"*' for f in grupo]
     return partes[0] if len(partes) == 1 else f"({' OR '.join(partes)})"
+
+
+def codigos_de_modelo(titulo: str) -> set[str]:
+    """Os numeros de modelo do titulo: {"265s"}, {"55"}, {"5"}.
+
+    Fica de fora o que e medida ("42mm", "825 gb") e o preco colado no titulo
+    ("- R$ 4.650"), que mudam entre anuncios do mesmo modelo.
+    """
+    limpo = re.sub(r"R\$\s*[\d.,]+", " ", titulo)
+    tokens = re.findall(r"[a-z0-9]+", sem_acento(limpo))
+    codigos: set[str] = set()
+    for n, token in enumerate(tokens):
+        if not any(c.isdigit() for c in token):
+            continue
+        medida = re.fullmatch(r"\d+([a-z]+)", token)
+        if medida and medida.group(1) in UNIDADES:
+            continue
+        if token.isdigit() and n + 1 < len(tokens) and tokens[n + 1] in UNIDADES:
+            continue
+        codigos.add(token)
+    return codigos
+
+
+def mesmo_modelo(titulo_a: str, titulo_b: str) -> bool:
+    """Dois anuncios do mesmo modelo: o `mesmo_produto` do grupo E o mesmo numero.
+
+    O `mesmo_produto` e largo de proposito -- o grupo nao manda duas ofertas da
+    mesma linha no mesmo dia. Aqui ele juntava Forerunner 55, 70, 265 e 265S num
+    produto so, e "relogio garmin" voltava com um relogio (19/11/2026). Para quem
+    pergunta, modelo diferente e opcao diferente.
+    """
+    return mesmo_produto(titulo_a, titulo_b) and (
+        codigos_de_modelo(titulo_a) == codigos_de_modelo(titulo_b)
+    )
+
+
+def _velho(r: Resultado) -> bool:
+    visto = datetime.fromisoformat(r.visto_em)
+    return now() - visto > timedelta(days=DIAS_PARA_PRECO_VELHO)
+
+
+def melhor_anuncio(a: Resultado, b: Resultado) -> Resultado:
+    """O anuncio que fica entre dois do mesmo modelo: o recente; empatou, o barato."""
+    if _velho(a) != _velho(b):
+        return b if _velho(a) else a
+    return b if b.preco < a.preco else a
 
 
 def implausivel(r: Resultado) -> bool:
@@ -365,21 +421,20 @@ class Busca:
                 (
                     n
                     for n, e in enumerate(escolhidos)
-                    if mesmo_produto(e.titulo, r.titulo)
+                    if mesmo_modelo(e.titulo, r.titulo)
                 ),
                 None,
             )
             if igual is None:
                 escolhidos.append(r)
             else:
-                # Fica o anuncio mais barato, mas a oferta que saiu no grupo
-                # continua valendo para o produto. Sem isso, em 18/11/2026 o
-                # console de PS5 do grupo (R$ 4.259) virou o anuncio de R$ 3.844
-                # sem a marca, e os acessorios passaram na frente dele.
+                # Fica um anuncio so do modelo, mas a oferta que saiu no grupo
+                # continua valendo para ele. Sem isso, em 18/11/2026 o console
+                # de PS5 do grupo (R$ 4.259) virou o anuncio de R$ 3.844 sem a
+                # marca, e os acessorios passaram na frente dele.
                 atual = escolhidos[igual]
-                barato = r if r.preco < atual.preco else atual
                 escolhidos[igual] = replace(
-                    barato, no_grupo=atual.no_grupo or r.no_grupo
+                    melhor_anuncio(atual, r), no_grupo=atual.no_grupo or r.no_grupo
                 )
             if len(escolhidos) >= max(fila, limite):
                 break
@@ -415,9 +470,9 @@ class Busca:
             r = achados.get(pid)
             if r is None or not (0.6 * base.preco <= r.preco <= 1.4 * base.preco):
                 continue
-            if mesmo_produto(base.titulo, r.titulo):
+            if mesmo_modelo(base.titulo, r.titulo):
                 continue
-            if any(mesmo_produto(s.titulo, r.titulo) for s in saida):
+            if any(mesmo_modelo(s.titulo, r.titulo) for s in saida):
                 continue
             saida.append(r)
             if len(saida) >= limite:
