@@ -39,12 +39,17 @@ PISO_DO_PRECO = 0.3
 # recente, mesmo mais barato: o preco de duas semanas atras pode nao existir mais.
 DIAS_PARA_PRECO_VELHO = 3
 
-# Medida colada no numero ("42mm", "825gb") ou logo depois dele ("825 gb"). Ela
-# varia entre anuncios do mesmo modelo, entao nao conta como numero de modelo.
+# Medida colada no numero ("42mm", "825gb") ou logo depois dele ("825 gb"), e
+# quantidade de variacao do anuncio ("(3 cores)", "2 unidades"). Mudam entre
+# anuncios do mesmo modelo, entao nao contam como numero de modelo.
 UNIDADES = {
     "mm", "cm", "m", "gb", "tb", "mb", "l", "ml", "w", "v", "kg", "g", "mah",
-    "hz", "pol", "polegadas", "lb", "oz", "un", "pcs", "x", "k",
+    "hz", "pol", "polegadas", "lb", "oz", "un", "pcs", "x", "k", "cores",
+    "unidades", "unid", "pecas", "itens", "ano", "anos", "meses",
 }  # fmt: skip
+# Quanto do titulo menor tem que estar no maior para dois anuncios com o mesmo
+# numero de modelo serem o mesmo produto (ver `_um_contem_o_outro`).
+CONTENCAO_MINIMA = 0.85
 
 # Entre quantos dos mais relevantes a oferta do grupo e a abaixo da mediana
 # passam na frente. Com todos os termos da pergunta no titulo, a relevancia entre
@@ -189,17 +194,49 @@ def codigos_de_modelo(titulo: str) -> set[str]:
     return codigos
 
 
-def mesmo_modelo(titulo_a: str, titulo_b: str) -> bool:
-    """Dois anuncios do mesmo modelo: o `mesmo_produto` do grupo E o mesmo numero.
+def _palavras(titulo: str) -> list[str]:
+    """As palavras do titulo que descrevem o produto, na ordem: sem preco,
+    numero solto e palavra vazia ("com", "de")."""
+    limpo = re.sub(r"R\$\s*[\d.,]+", " ", titulo)
+    return [
+        t
+        for t in re.findall(r"[a-z0-9]+", sem_acento(limpo))
+        if len(t) > 1 and not t.isdigit() and t not in PALAVRAS_VAZIAS
+    ]
 
-    O `mesmo_produto` e largo de proposito -- o grupo nao manda duas ofertas da
-    mesma linha no mesmo dia. Aqui ele juntava Forerunner 55, 70, 265 e 265S num
-    produto so, e "relogio garmin" voltava com um relogio (19/11/2026). Para quem
-    pergunta, modelo diferente e opcao diferente.
+
+def _um_contem_o_outro(titulo_a: str, titulo_b: str) -> bool:
+    """O titulo curto cabe quase inteiro no longo, e os dois abrem igual.
+
+    Caso de 19/11/2026: "Relogio Garmin Forerunner 265 Music 46mm GPS (3
+    cores)" e "Relogio Garmin Forerunner 265 Music Preto com Cinza 46mm com
+    Monitor Cardiaco..." sao o mesmo relogio, mas o resto do titulo longo derruba
+    a sobreposicao do `mesmo_produto`. A primeira palavra igual e o que impede
+    "Capa Apple iPhone 15" de virar o proprio "Apple iPhone 15".
     """
-    return mesmo_produto(titulo_a, titulo_b) and (
-        codigos_de_modelo(titulo_a) == codigos_de_modelo(titulo_b)
-    )
+    a, b = _palavras(titulo_a), _palavras(titulo_b)
+    if not a or not b or a[0] != b[0]:
+        return False
+    menor, maior = sorted((set(a), set(b)), key=len)
+    return len(menor) >= 3 and len(menor & maior) / len(menor) >= CONTENCAO_MINIMA
+
+
+def mesmo_modelo(titulo_a: str, titulo_b: str) -> bool:
+    """Dois anuncios do mesmo modelo: o mesmo numero de modelo E o mesmo produto.
+
+    O `mesmo_produto` do grupo e largo de proposito -- o grupo nao manda duas
+    ofertas da mesma linha no mesmo dia. Sozinho, ele juntava Forerunner 55, 70,
+    265 e 265S num produto so, e "relogio garmin" voltava com um relogio
+    (19/11/2026). Para quem pergunta, modelo diferente e opcao diferente. Com o
+    numero igual, vale tambem o titulo curto contido no longo
+    (`_um_contem_o_outro`), senao o mesmo 265 aparecia duas vezes.
+    """
+    codigos = codigos_de_modelo(titulo_a)
+    if codigos != codigos_de_modelo(titulo_b):
+        return False
+    if mesmo_produto(titulo_a, titulo_b):
+        return True
+    return bool(codigos) and _um_contem_o_outro(titulo_a, titulo_b)
 
 
 def _velho(r: Resultado) -> bool:

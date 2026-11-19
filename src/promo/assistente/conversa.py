@@ -50,6 +50,10 @@ DIVULGACAO = (
 
 # Teto de tamanho da resposta. Mensagem longa no WhatsApp ninguem le inteira.
 MAX_CARACTERES = 1500
+# Teto do nome do produto no modelo fixo, e as palavras que nao fecham um nome
+# cortado ("... Preto com" vira "... Preto…").
+TAMANHO_DO_NOME = 70
+PONTAS_SOLTAS = {"com", "de", "da", "do", "das", "dos", "e", "para", "em", ""}
 
 PRECO = re.compile(r"R\$\s?\d{1,3}(?:\.\d{3})*,\d{2}")
 LINK = re.compile(r"https?://\S+")
@@ -188,6 +192,21 @@ def veredito(r: Resultado) -> str:
     return f"Na média dos últimos 60 dias ({mediana})."
 
 
+def nome_curto(nome: str, limite: int = TAMANHO_DO_NOME) -> str:
+    """O nome cortado numa palavra inteira, com reticencias.
+
+    Titulo de anuncio do ML passa de 200 caracteres ("... Corrida Caminhada
+    Ciclismo Natacao Monitoramento Sono ..."), e o modelo fixo imprimia tudo.
+    O Gemini recebe o nome inteiro e encurta sozinho, sem mudar o modelo.
+    """
+    if len(nome) <= limite:
+        return nome
+    palavras = nome[:limite].rsplit(" ", 1)[0].split()
+    while palavras and palavras[-1].lower().strip("(-+|/,") in PONTAS_SOLTAS:
+        palavras.pop()
+    return " ".join(palavras).rstrip(" -+|/,(") + "…"
+
+
 def nome_de_vitrine(titulo: str) -> str:
     """O titulo sem o preco colado no fim ("... - R$ 4.650") e sem o (R).
 
@@ -267,7 +286,7 @@ def modelo_fixo(consulta: str, achados: list[dict], parecidos: list[dict]) -> st
     linhas = [f"Achei estas opções para *{consulta}*:", ""]
     for n, item in enumerate(achados, 1):
         linhas += [
-            f"{n}. *{item['nome']}*",
+            f"{n}. *{nome_curto(item['nome'])}*",
             f"{item['preco']} no {item['loja']}, {item['visto']}",
             *([item["grupo"]] if item.get("grupo") else []),
             item["veredito"],
@@ -278,7 +297,7 @@ def modelo_fixo(consulta: str, achados: list[dict], parecidos: list[dict]) -> st
         linhas.append("Parecidos:")
         for item in parecidos:
             linhas += [
-                f"- {item['nome']}: {item['preco']} no {item['loja']}",
+                f"- {nome_curto(item['nome'])}: {item['preco']} no {item['loja']}",
                 item["link"],
             ]
         linhas.append("")
