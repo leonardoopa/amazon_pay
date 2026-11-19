@@ -951,3 +951,23 @@ def test_numero_de_modelo_ignora_medida_e_preco(titulo, codigos):
     from promo.assistente.busca import codigos_de_modelo
 
     assert codigos_de_modelo(titulo) == codigos
+
+
+def test_o_preco_colado_no_titulo_nao_casa_com_o_numero_da_busca(bancos):
+    """O "15" de "R$ 90,15" trazia uma camera de seguranca para "iphone 15"."""
+    produto(
+        "Câmera de Segurança Wifi Compatível com Android e iPhone - R$ 90,15",
+        90.15,
+        "MLB1",
+    )
+    produto("Apple iPhone 15 128GB Preto", 3779.0, "MLB2")
+
+    assert [r.external_id for r in indexado().buscar("iphone 15")] == ["MLB2"]
+
+
+def test_numero_da_busca_casa_inteiro_e_nao_como_comeco(bancos):
+    produto("Apple iPhone 15 128GB Preto", 3779.0, "MLB1")
+    produto("Apple iPhone 16 128GB Preto", 4999.0, "MLB2")
+    produto("Película iPhone 150 Unidades", 30.0, "MLB3")
+
+    assert [r.external_id for r in indexado().buscar("iphone 15")] == ["MLB1"]

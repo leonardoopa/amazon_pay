@@ -52,6 +52,9 @@ UNIDADES = {
 # oferta que mal tem a ver nao passar na frente.
 CANDIDATOS_COM_TODOS_OS_TERMOS = 30
 CANDIDATOS_COM_PARTE_DOS_TERMOS = 5
+# Quantas posicoes de relevancia cada faixa adianta (`faixa_da_oferta`): a que
+# saiu no grupo passa na frente de quem esta ate 6 posicoes acima dela.
+AVANCO_DA_FAIXA = {0: 6, 1: 3, 2: 0}
 
 # Palavras que a pergunta tem e o titulo do produto nao. Sem tirar, "tem ps5
 # barato?" procuraria "barato" no catalogo e o AND do FTS nao acharia nada. O
@@ -156,8 +159,12 @@ def conceitos(consulta: str) -> list[tuple[str, ...]]:
 
 def _expressao(grupo: tuple[str, ...]) -> str:
     """Um termo em sintaxe FTS5. Tudo entre aspas, para o texto da pessoa nunca
-    virar operador; palavra solta leva `*` ("airfryer" acha "airfryers")."""
-    partes = [f'"{f}"' if " " in f else f'"{f}"*' for f in grupo]
+    virar operador; palavra solta leva `*` ("airfryer" acha "airfryers").
+
+    Numero puro casa inteiro: com `*`, o "15" de "iphone 15" casava tambem com
+    "150" e "1500" de qualquer titulo.
+    """
+    partes = [f'"{f}"' if " " in f or f.isdigit() else f'"{f}"*' for f in grupo]
     return partes[0] if len(partes) == 1 else f"({' OR '.join(partes)})"
 
 
@@ -438,8 +445,15 @@ class Busca:
                 )
             if len(escolhidos) >= max(fila, limite):
                 break
-        # `sorted` e estavel: dentro da mesma faixa, fica a ordem de relevancia.
-        return sorted(escolhidos, key=faixa_da_oferta)[:limite]
+        # A faixa da oferta adianta posicoes, mas nao pula a fila inteira: em
+        # 19/11/2026, com a faixa decidindo sozinha, uma camera de seguranca que
+        # saiu no grupo e cita "iPhone" no fim do titulo passou na frente do
+        # proprio iPhone 15. `sorted` e estavel: empate fica com a relevancia.
+        ordem = sorted(
+            enumerate(escolhidos),
+            key=lambda par: par[0] - AVANCO_DA_FAIXA[faixa_da_oferta(par[1])],
+        )
+        return [r for _, r in ordem][:limite]
 
     def parecidos(
         self, base: Resultado, limite: int = 2, excluir: set[str] | None = None
