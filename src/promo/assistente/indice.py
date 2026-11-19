@@ -14,6 +14,7 @@ Titulo de produto e curto e ja e uma unidade so; nao ha "chunk" a fazer aqui.
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from datetime import timedelta
 from typing import Callable, Iterable
@@ -56,6 +57,16 @@ MARGEM_SOBRE_A_MEDIANA = 0.06
 MINIMO_PARA_A_MARGEM = 20
 
 
+def texto_de_busca(titulo: str) -> str:
+    """O titulo como a busca por texto le: sem acento e sem preco colado.
+
+    Anuncio repassado de outro grupo traz o preco no titulo ("... - R$ 90,15"),
+    e o "15" desse preco casava com "iphone 15": uma camera de seguranca saia
+    na frente do iPhone (19/11/2026).
+    """
+    return sem_acento(re.sub(r"R\$\s*[\d.,]+", " ", titulo))
+
+
 def sincronizar(
     conn: sqlite3.Connection, janela_dias: int | None = None
 ) -> tuple[int, int]:
@@ -87,7 +98,7 @@ def sincronizar(
             (
                 p["id"],
                 p["title"],
-                sem_acento(p["title"]),
+                texto_de_busca(p["title"]),
                 p["source"],
                 p["last_seen_at"],
             )
