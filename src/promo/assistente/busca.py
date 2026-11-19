@@ -61,6 +61,20 @@ PALAVRAS_VAZIAS = {
     "mostra", "mostre", "mostrar", "passa", "passe", "indica", "indique",
     "recomenda", "recomende", "acha", "favor", "pf", "pfv", "hoje", "agora",
     "aqui", "ai",
+    # Pergunta sobre o proprio assistente. Sem o Gemini, "Em que voce pode me
+    # ajudar?" virou a busca "pode ajudar" e trouxe shampoo "Fragrancia
+    # Poderosa" (19/11/2026). Sem estas, a pergunta fica vazia e vira conversa.
+    "pode", "podes", "poderia", "consegue", "conseguiria", "ajuda", "ajudar",
+    "ajude", "ajudaria", "faz", "fazer", "faria", "funciona", "serve", "sabe",
+    "saber", "ver", "olhar", "procurar", "encontrar", "achar", "quem", "como",
+    "onde", "quando", "porque", "pq", "isso", "isto", "esse", "essa", "este",
+    "esta", "seu", "sua", "meu", "minha", "nao", "sim", "ok",
+    # Pergunta de preco e de compra: "quanto ta o ps5?", "vale a pena?".
+    "quanto", "quanta", "custa", "custando", "valor", "vale", "pena",
+    "compensa", "ta", "comprar", "compra", "comprando",
+    # Cumprimento junto do pedido: "bom dia, tem ps5?" busca so "ps5".
+    "oi", "ola", "opa", "eai", "eae", "salve", "dia", "tarde", "noite", "tudo",
+    "bem", "blz", "beleza", "obrigado", "obrigada", "valeu",
 }  # fmt: skip
 
 # O nome que a pessoa escreve e o que o anuncio escreve nem sempre batem: o

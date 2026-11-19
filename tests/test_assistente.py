@@ -843,3 +843,48 @@ def test_preco_com_cara_de_erro_de_leitura_fica_de_fora(bancos):
     produto("Geladeira Midea Frost Free 491L", 200.0, "MLB1", historico=[2258.86] * 9)
 
     assert indexado().buscar("geladeira") == []
+
+
+# ---------- 19/11/2026: "Em que voce pode me ajudar?" virou busca ----------
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "Em que você pode me ajudar?",
+        "o que você faz?",
+        "como funciona?",
+        "Olá, tudo bem?",
+        "bom dia!",
+        "obrigado!",
+    ],
+)
+def test_pergunta_sobre_o_assistente_e_conversa_sem_gemini(texto):
+    assert pedido_simples(texto).tipo == "conversa"
+
+
+@pytest.mark.parametrize(
+    "texto, consulta",
+    [
+        ("bom dia, tem ps5?", "ps5"),
+        ("quanto tá o ps5?", "ps5"),
+        ("vale a pena comprar o ps5 agora?", "ps5"),
+        ("você pode me mandar promoção de air fryer?", "air fryer"),
+        ("quero comprar uma tv 50 polegadas", "tv 50 polegadas"),
+    ],
+)
+def test_o_que_sobra_do_pedido_e_so_o_produto(texto, consulta):
+    pedido = pedido_simples(texto)
+
+    assert (pedido.tipo, pedido.consulta) == ("produto", consulta)
+
+
+def test_sem_gemini_a_pergunta_de_ajuda_recebe_as_boas_vindas(bancos):
+    produto("Shampoo Head & Shoulders Fragrância Poderosa 650ml", 26.0, "MLB1")
+
+    resposta = Assistente(indexado(), client=GeminiFalso(falhar=True)).responder(
+        "Em que você pode me ajudar?", AGORA
+    )
+
+    assert resposta.texto.startswith("Oi! Eu procuro preço")
+    assert "Shampoo" not in resposta.texto
