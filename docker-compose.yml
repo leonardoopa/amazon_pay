@@ -44,6 +44,44 @@ services:
       retries: 3
       start_period: 30s
 
+  # Assistente de busca no WhatsApp. Mesma imagem do bot, comando diferente, e
+  # container proprio: o bot usava 220 de 256 MiB em 18/11/2026, e o indice
+  # vetorial dentro dele arriscaria derrubar o envio do grupo.
+  #
+  # Fica num profile: `docker compose up -d` do deploy NAO o sobe. Liga com
+  # `COMPOSE_PROFILES=assistente` no .env do servidor -- e so entao ele comeca
+  # a gerar embedding, que custa chamada ao Gemini.
+  assistente:
+    image: amazon_pay:latest
+    container_name: amazon_pay_assistente
+    profiles: ["assistente"]
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env
+    environment:
+      DB_PATH: /app/data/promos.db
+      ASSISTENTE_DB_PATH: /app/data/assistente.db
+      ASSISTENTE_PORT: "8002"
+      EVOLUTION_BASE_URL: http://evolution:8080
+    volumes:
+      - ./data:/app/data
+    # Sem `ports`: quem chama e so a Evolution, pela rede do compose, em
+    # http://assistente:8002/webhook/<ASSISTENTE_WEBHOOK_TOKEN>.
+    command: ["assistente"]
+    depends_on:
+      - amazon_pay
+      - evolution
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8002/health", timeout=10)
+      interval: 1m
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+
   # Landing + vitrine. Mesma imagem do bot, comando diferente.
   web:
     build: .
