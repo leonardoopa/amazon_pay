@@ -971,3 +971,45 @@ def test_numero_da_busca_casa_inteiro_e_nao_como_comeco(bancos):
     produto("Película iPhone 150 Unidades", 30.0, "MLB3")
 
     assert [r.external_id for r in indexado().buscar("iphone 15")] == ["MLB1"]
+
+
+# ---------- 19/11/2026: nome de SEO inteiro e o mesmo 265 duas vezes ----------
+
+TITULO_DE_SEO = (
+    "Relógio Garmin Forerunner 55 Monitor Cardíaco Gps 42mm Preto Corrida "
+    "Caminhada Ciclismo Natação Monitoramento Sono Pace Calorias Distância "
+    "Cronômetro Resistente Leve Esportivo Unissex Com Gps Rápido"
+)
+
+
+def test_nome_longo_sai_cortado_numa_palavra_inteira():
+    from promo.assistente.conversa import TAMANHO_DO_NOME, nome_curto
+
+    curto = nome_curto(TITULO_DE_SEO)
+
+    assert curto.startswith("Relógio Garmin Forerunner 55 Monitor Cardíaco")
+    assert curto.endswith("…") and len(curto) <= TAMANHO_DO_NOME + 1
+    assert TITULO_DE_SEO.startswith(curto[:-1])
+    assert nome_curto("Air Fryer Mondial 4L") == "Air Fryer Mondial 4L"
+
+
+def test_o_nome_cortado_nao_termina_em_preposicao():
+    from promo.assistente.conversa import nome_curto
+
+    nome = "Relógio Garmin Forerunner 265 Music Preto Cinza 46mm Bonito com Monitor"
+
+    assert (
+        nome_curto(nome, limite=63)
+        == "Relógio Garmin Forerunner 265 Music Preto Cinza 46mm Bonito…"
+    )
+
+
+def test_o_modelo_fixo_nao_imprime_o_titulo_de_seo_inteiro(bancos):
+    produto(TITULO_DE_SEO, 1099.45, "MLB1")
+
+    resposta = Assistente(indexado(), client=GeminiFalso(falhar=True)).responder(
+        "relogio garmin", AGORA
+    )
+
+    assert "*Relógio Garmin Forerunner 55" in resposta.texto
+    assert "Cronômetro" not in resposta.texto
