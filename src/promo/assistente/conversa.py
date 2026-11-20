@@ -17,6 +17,7 @@ E o mesmo desenho do copywriter do grupo: o modelo escreve, o codigo confere.
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import re
@@ -118,6 +119,7 @@ Responda SO o JSON pedido:
 loja, o "visto", o "grupo" quando houver, o "veredito", e o link sozinho na \
 ultima linha.
 - Escreva em portugues do Brasil, com acentos.
+- Texto puro, sem entidades HTML (escreva "opções", nunca "op&ccedil;&otilde;es").
 - Negrito do WhatsApp com *asteriscos* so no nome do produto. Nada de markdown \
 de titulo, tabela ou emoji em excesso."""
 
@@ -333,9 +335,11 @@ def montar_cartoes(
 ) -> tuple[Cartao, ...]:
     """Um cartao por produto; a abertura vai no comeco da primeira legenda."""
     textos = list(legendas)
-    if abertura and textos:
+    # Abertura que empurraria a legenda alem do limite corta o fim, onde esta o
+    # link: nesse caso a abertura cai.
+    if abertura and textos and len(abertura) + 2 + len(textos[0]) <= CAPTION_LIMIT:
         textos[0] = f"{abertura}\n\n{textos[0]}"
-    return tuple(Cartao(t, i) for t, i in zip(textos, imagens))
+    return tuple(Cartao(t, i) for t, i in zip(textos, imagens, strict=True))
 
 
 def escrita_aprovada(escrita: Escrita, achados: list[dict]) -> bool:
@@ -411,8 +415,13 @@ class Assistente:
             )
             parsed = getattr(resposta, "parsed", None)
             if isinstance(parsed, Pedido):
-                return parsed
-            return Pedido.model_validate(json.loads(resposta.text))
+                pedido = parsed
+            else:
+                pedido = Pedido.model_validate(json.loads(resposta.text))
+            # O Gemini as vezes devolve entidades HTML; a busca quer texto puro.
+            return pedido.model_copy(
+                update={"consulta": html.unescape(pedido.consulta)}
+            )
         except Exception as exc:  # noqa: BLE001 - sem Gemini, a leitura simples cobre
             log.warning("Gemini nao leu o pedido; vai a leitura simples: %s", exc)
             return pedido_simples(texto)
@@ -451,6 +460,12 @@ class Assistente:
         except Exception as exc:  # noqa: BLE001 - sem Gemini, vao as legendas fixas
             log.warning("Gemini nao escreveu as legendas; vao as fixas: %s", exc)
             return None
+        # Entidades HTML ("op&ccedil;&otilde;es", "&amp;" no link) passariam na
+        # conferencia e sairiam como lixo: confere o texto que de fato vai.
+        escrita = Escrita(
+            abertura=html.unescape(escrita.abertura).strip(),
+            legendas=[html.unescape(l).strip() for l in escrita.legendas],
+        )
         if not escrita_aprovada(escrita, achados):
             log.info("Legendas do Gemini reprovaram na conferencia; vao as fixas.")
             return None

@@ -26,6 +26,7 @@ from promo.assistente.conversa import (  # noqa: E402
     Pedido,
     escrita_aprovada,
     fiel,
+    montar_cartoes,
     pedido_simples,
     quando,
     veredito,
@@ -1278,3 +1279,55 @@ def test_produto_sem_foto_vem_com_imagem_none(bancos, imagem):
     produto("Console PlayStation 5 Slim", 3816.0, "MLB1", imagem=imagem)
     [r] = indexado().buscar("playstation")
     assert r.imagem is None
+
+
+def test_entidades_html_do_gemini_viram_texto_puro_antes_da_conferencia(bancos):
+    link = "https://exemplo.com/p?a=1&b=2"
+    achados = [
+        {
+            "nome": "Relógio Garmin",
+            "loja": "Amazon",
+            "preco": "R$ 10,00",
+            "visto": "hoje",
+            "veredito": "",
+            "link": link,
+        }
+    ]
+
+    def escreve(dados):
+        return Escrita(
+            abertura="  Achei op&ccedil;&otilde;es:  ",
+            legendas=[
+                "*Rel&oacute;gio Garmin* R$ 10,00\nhttps://exemplo.com/p?a=1&amp;b=2 "
+            ],
+        )
+
+    gemini = GeminiFalso(Pedido(consulta="garmin"), escreve)
+    escrita = Assistente(indexado(), client=gemini)._escrever("garmin", achados)
+
+    assert escrita is not None
+    assert escrita.abertura == "Achei opções:"
+    assert escrita.legendas == [f"*Relógio Garmin* R$ 10,00\n{link}"]
+
+
+def test_consulta_escapada_do_gemini_e_desescapada(bancos):
+    gemini = GeminiFalso(Pedido(consulta="c&acirc;mera &amp; tripé"))
+    pedido = Assistente(indexado(), client=gemini).entender("camera")
+
+    assert pedido.consulta == "câmera & tripé"
+
+
+def test_abertura_fixa_longa_e_descartada_para_nao_cortar_o_link():
+    abertura = "Achei estas opções para *" + "x" * 300 + "*:"
+    legenda = "1. *A*\n" + "y" * 700 + "\nhttps://a"
+    assert len(abertura) + 2 + len(legenda) > 1024
+
+    cartoes = montar_cartoes(abertura, [legenda, "2. *B*"], [None, None])
+
+    assert cartoes[0].legenda == legenda
+    assert cartoes[1].legenda == "2. *B*"
+
+
+def test_montar_cartoes_exige_o_mesmo_numero_de_fotos():
+    with pytest.raises(ValueError):
+        montar_cartoes("", ["a", "b"], [None])
