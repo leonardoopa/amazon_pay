@@ -21,6 +21,7 @@ from promo.assistente.busca import Busca, rrf, termos  # noqa: E402
 from promo.assistente.conversa import (  # noqa: E402
     DIVULGACAO,
     Assistente,
+    Cartao,
     Escrita,
     Pedido,
     escrita_aprovada,
@@ -46,6 +47,7 @@ from promo.assistente.servico import (  # noqa: E402
     liberado,
 )
 from promo.assistente.webhook import ler_evento  # noqa: E402
+from promo.delivery.evolution import NotConnected  # noqa: E402
 from promo.models import Offer  # noqa: E402
 
 AGORA = datetime(2026, 11, 18, 18, 0, tzinfo=UTC)
@@ -612,9 +614,16 @@ def test_o_mesmo_modelo_em_dois_anuncios_traz_a_foto_do_escolhido(bancos):
 
 
 class EntregaFalsa:
-    def __init__(self, falhar=False):
+    def __init__(self, falhar=False, cai_no_cartao=None):
         self.enviados: list[tuple[str, str]] = []
+        self.cartoes: list[tuple[str | None, str, str | None]] = []
         self._falhar = falhar
+        self._cai_no_cartao = cai_no_cartao
+
+    def send_card(self, legenda, imagem, to=None):
+        if self._cai_no_cartao == len(self.cartoes) + 1:
+            raise NotConnected("instancia caida")
+        self.cartoes.append((to, legenda, imagem))
 
     def send_text(self, texto, to=None):
         if self._falhar:
@@ -629,9 +638,21 @@ class AssistenteFalso:
         return Resposta(f"resposta para {texto}", texto, 1)
 
 
-def atendente(entrega, liberados=("5581988887777",), max_por_hora=10):
+class AssistenteComCartoes:
+    def responder(self, texto, agora=None):
+        from promo.assistente.conversa import Resposta
+
+        return Resposta(
+            "fechamento",
+            "ps5",
+            2,
+            (Cartao("1. a", "https://f/1.jpg"), Cartao("2. b", None)),
+        )
+
+
+def atendente(entrega, liberados=("5581988887777",), max_por_hora=10, assistente=None):
     return Atendente(
-        AssistenteFalso(),
+        assistente or AssistenteFalso(),
         entrega,
         liberados=list(liberados),
         max_por_hora=max_por_hora,
@@ -715,6 +736,52 @@ def test_falha_no_envio_marca_erro_e_a_fila_segue(bancos):
     assert a.atender_uma() and a.atender_uma()
     assert status("M1")[0] == "erro" and status("M2")[0] == "erro"
     assert a.atender_uma() is False  # fila vazia
+
+
+JID = "5581988887777@s.whatsapp.net"
+
+
+def test_resposta_com_cartoes_manda_cada_foto_e_depois_o_fechamento(bancos):
+    entrega = EntregaFalsa()
+    chega("ps5", "M1")
+
+    atendente(entrega, assistente=AssistenteComCartoes()).atender_uma()
+
+    assert entrega.cartoes == [(JID, "1. a", "https://f/1.jpg"), (JID, "2. b", None)]
+    assert entrega.enviados == [(JID, f"fechamento\n\n{AVISO_PRIMEIRA_VEZ}")]
+    assert status("M1") == ("respondida", None)
+
+
+def test_o_aviso_de_privacidade_vai_no_fechamento_e_nao_na_legenda(bancos):
+    entrega = EntregaFalsa()
+    chega("ps5", "M1")
+
+    atendente(entrega, assistente=AssistenteComCartoes()).atender_uma()
+
+    assert all(AVISO_PRIMEIRA_VEZ not in legenda for _, legenda, _ in entrega.cartoes)
+
+
+def test_o_que_fica_gravado_e_tudo_que_foi_enviado(bancos):
+    chega("ps5", "M1")
+
+    atendente(EntregaFalsa(), assistente=AssistenteComCartoes()).atender_uma()
+
+    with banco.conectar() as conn:
+        gravado = conn.execute(
+            "SELECT resposta FROM mensagens WHERE id = 'M1'"
+        ).fetchone()[0]
+    assert gravado == "1. a\n\n2. b\n\nfechamento\n\n" + AVISO_PRIMEIRA_VEZ
+
+
+def test_instancia_caida_no_segundo_cartao_marca_erro(bancos):
+    entrega = EntregaFalsa(cai_no_cartao=2)
+    chega("ps5", "M1")
+
+    assert atendente(entrega, assistente=AssistenteComCartoes()).atender_uma() is True
+
+    assert status("M1")[0] == "erro"
+    assert entrega.cartoes == [(JID, "1. a", "https://f/1.jpg")]
+    assert entrega.enviados == []
 
 
 def test_a_mesma_mensagem_reenviada_nao_entra_duas_vezes(bancos):
