@@ -70,6 +70,7 @@ def produto(
     source: str = "mercadolivre",
     historico: list[float] | None = None,
     dias_sem_ver: int = 0,
+    imagem: str | None = None,
 ) -> Offer:
     """Um produto no banco do bot, com o preco de hoje e o historico pedido."""
     from promo.db import connect, record_offer
@@ -80,6 +81,7 @@ def produto(
         title=titulo,
         price=preco,
         url=f"https://exemplo.com/{external_id}",
+        image_url=imagem,
     )
     with connect() as conn:
         record_offer(conn, oferta)
@@ -1045,3 +1047,29 @@ def test_quantidade_de_cores_nao_e_numero_de_modelo():
     assert codigos_de_modelo(
         "Relógio Garmin Forerunner 265 Music 46mm GPS (3 cores)"
     ) == {"265"}
+
+
+def test_o_resultado_traz_a_foto_do_produto(bancos):
+    produto(
+        "Console PlayStation 5 Slim",
+        3816.0,
+        "MLB1",
+        imagem="https://http2.mlstatic.com/D_1.jpg",
+    )
+    [r] = indexado().buscar("playstation")
+    assert r.imagem == "https://http2.mlstatic.com/D_1.jpg"
+
+
+def test_foto_em_arquivo_local_vem_como_caminho(bancos):
+    produto(
+        "Console PlayStation 5 Slim", 3816.0, "MLB1", imagem="/app/data/fotos/3EB0.jpg"
+    )
+    [r] = indexado().buscar("playstation")
+    assert r.imagem == "/app/data/fotos/3EB0.jpg"
+
+
+@pytest.mark.parametrize("imagem", [None, ""])
+def test_produto_sem_foto_vem_com_imagem_none(bancos, imagem):
+    produto("Console PlayStation 5 Slim", 3816.0, "MLB1", imagem=imagem)
+    [r] = indexado().buscar("playstation")
+    assert r.imagem is None
