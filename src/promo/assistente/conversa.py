@@ -5,15 +5,19 @@ Duas chamadas, e nenhuma decide preco:
 1. `entender`: a mensagem vira um pedido estruturado (o que procurar, faixa de
    preco). Saida em JSON validado; se o Gemini falhar, uma leitura simples por
    palavras cobre.
-2. `_escrever`: o texto da resposta, a partir dos itens ja formatados. Ele e
-   conferido antes de sair -- todo "R$" tem que ser um dos nossos e todo link
-   tambem. Reprovou, sai o modelo fixo, que nunca erra numero.
+2. `_escrever`: uma abertura e uma legenda por produto, a partir dos itens ja
+   formatados. Cada legenda e conferida antes de sair -- todo "R$" tem que ser
+   um dos nossos e o link tem que ser o do proprio produto. Reprovou qualquer
+   uma, saem as legendas fixas, que nunca erram numero.
+
+A resposta de produto e um cartao por item (foto + legenda) e um fechamento.
 
 E o mesmo desenho do copywriter do grupo: o modelo escreve, o codigo confere.
 """
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import re
@@ -32,6 +36,7 @@ from ..config import (
 )
 from ..copywriter import brl
 from ..db import now
+from ..delivery.evolution import CAPTION_LIMIT
 from ..models import Offer
 from .busca import DIAS_MINIMOS, Busca, Resultado, termos
 
@@ -66,11 +71,25 @@ class Pedido(BaseModel):
     preco_max: float | None = None
 
 
+class Escrita(BaseModel):
+    abertura: str = ""
+    legendas: list[str] = []
+
+
+@dataclass(frozen=True)
+class Cartao:
+    """Um produto na resposta: a foto dele e a legenda que vai embaixo."""
+
+    legenda: str
+    imagem: str | None
+
+
 @dataclass(frozen=True)
 class Resposta:
     texto: str
     consulta: str | None
     resultados: int
+    cartoes: tuple[Cartao, ...] = ()
 
 
 ENTENDER = """Voce le mensagens de WhatsApp enviadas ao assistente de um grupo de \
@@ -93,14 +112,14 @@ assistente da Comunidade do Desconto, um grupo de ofertas.
 Use SO os itens do JSON. Nao invente produto, preco, loja, data nem link, e nao \
 prometa que o preco continua valendo.
 
-Formato:
-- Uma frase curta de abertura, sem exagero.
-- Para cada item de "achados", na ordem: o nome (encurtado se for longo, sem \
-mudar o modelo), o preco exatamente como esta, a loja, o "visto", o "grupo" \
-quando houver, o "veredito", e o link sozinho na ultima linha do item.
+Responda SO o JSON pedido:
+- abertura: uma frase curta, sem exagero, sem preco e sem link.
+- legendas: uma por item de "achados", na mesma ordem. Cada legenda tem o nome \
+(encurtado se for longo, sem mudar o modelo), o preco exatamente como esta, a \
+loja, o "visto", o "grupo" quando houver, o "veredito", e o link sozinho na \
+ultima linha.
 - Escreva em portugues do Brasil, com acentos.
-- Se houver "parecidos", uma linha "Parecidos:" e cada um com nome, preco, loja \
-e link.
+- Texto puro, sem entidades HTML (escreva "opções", nunca "op&ccedil;&otilde;es").
 - Negrito do WhatsApp com *asteriscos* so no nome do produto. Nada de markdown \
 de titulo, tabela ou emoji em excesso."""
 
@@ -281,27 +300,61 @@ def fiel(texto: str, itens: list[dict]) -> bool:
     return usados == links
 
 
-def modelo_fixo(consulta: str, achados: list[dict], parecidos: list[dict]) -> str:
-    """A resposta sem Gemini. Sai quando ele falha ou quando o texto dele reprova."""
-    linhas = [f"Achei estas opções para *{consulta}*:", ""]
-    for n, item in enumerate(achados, 1):
-        linhas += [
+def abertura_fixa(consulta: str) -> str:
+    return f"Achei estas opções para *{consulta}*:"
+
+
+def legenda_fixa(n: int, item: dict) -> str:
+    """A legenda sem Gemini: o bloco do item `n`. Nunca erra numero."""
+    return "\n".join(
+        [
             f"{n}. *{nome_curto(item['nome'])}*",
             f"{item['preco']} no {item['loja']}, {item['visto']}",
             *([item["grupo"]] if item.get("grupo") else []),
             item["veredito"],
             item["link"],
-            "",
         ]
-    if parecidos:
-        linhas.append("Parecidos:")
-        for item in parecidos:
-            linhas += [
-                f"- {nome_curto(item['nome'])}: {item['preco']} no {item['loja']}",
-                item["link"],
-            ]
-        linhas.append("")
-    return "\n".join(linhas).strip()
+    )
+
+
+def fechamento(parecidos: list[dict]) -> str:
+    """Os parecidos (se houver) e o aviso de afiliado: o texto depois dos cartoes."""
+    if not parecidos:
+        return DIVULGACAO
+    linhas = ["Parecidos:"]
+    for item in parecidos:
+        linhas += [
+            f"- {nome_curto(item['nome'])}: {item['preco']} no {item['loja']}",
+            item["link"],
+        ]
+    return "\n".join(linhas) + f"\n\n{DIVULGACAO}"
+
+
+def montar_cartoes(
+    abertura: str, legendas: list[str], imagens: list[str | None]
+) -> tuple[Cartao, ...]:
+    """Um cartao por produto; a abertura vai no comeco da primeira legenda."""
+    textos = list(legendas)
+    # Abertura que empurraria a legenda alem do limite corta o fim, onde esta o
+    # link: nesse caso a abertura cai.
+    if abertura and textos and len(abertura) + 2 + len(textos[0]) <= CAPTION_LIMIT:
+        textos[0] = f"{abertura}\n\n{textos[0]}"
+    return tuple(Cartao(t, i) for t, i in zip(textos, imagens, strict=True))
+
+
+def escrita_aprovada(escrita: Escrita, achados: list[dict]) -> bool:
+    """So passa a escrita que cita os nossos precos e o link de cada produto."""
+    if len(escrita.legendas) != len(achados):
+        return False
+    if _precos(escrita.abertura) or LINK.search(escrita.abertura):
+        return False
+    for legenda, achado in zip(escrita.legendas, achados):
+        if len(legenda) > CAPTION_LIMIT or not fiel(legenda, [achado]):
+            return False
+    primeira = escrita.legendas[0] if escrita.legendas else ""
+    if escrita.abertura:
+        primeira = f"{escrita.abertura}\n\n{primeira}"
+    return len(primeira) <= CAPTION_LIMIT
 
 
 def boas_vindas() -> str:
@@ -362,8 +415,13 @@ class Assistente:
             )
             parsed = getattr(resposta, "parsed", None)
             if isinstance(parsed, Pedido):
-                return parsed
-            return Pedido.model_validate(json.loads(resposta.text))
+                pedido = parsed
+            else:
+                pedido = Pedido.model_validate(json.loads(resposta.text))
+            # O Gemini as vezes devolve entidades HTML; a busca quer texto puro.
+            return pedido.model_copy(
+                update={"consulta": html.unescape(pedido.consulta)}
+            )
         except Exception as exc:  # noqa: BLE001 - sem Gemini, a leitura simples cobre
             log.warning("Gemini nao leu o pedido; vai a leitura simples: %s", exc)
             return pedido_simples(texto)
@@ -382,24 +440,36 @@ class Assistente:
             item["grupo"] = grupo
         return item
 
-    def _escrever(
-        self, pergunta: str, achados: list[dict], parecidos: list[dict]
-    ) -> str | None:
+    def _escrever(self, pergunta: str, achados: list[dict]) -> Escrita | None:
         dados = json.dumps(
-            {"pergunta": pergunta, "achados": achados, "parecidos": parecidos},
-            ensure_ascii=False,
+            {"pergunta": pergunta, "achados": achados}, ensure_ascii=False
         )
         try:
-            texto = (self._gerar(dados, ESCREVER, temperature=0.4).text or "").strip()
-        except Exception as exc:  # noqa: BLE001 - sem Gemini, vai o modelo fixo
-            log.warning("Gemini nao escreveu a resposta; vai o modelo fixo: %s", exc)
-            return None
-        if not fiel(texto, achados + parecidos):
-            log.info(
-                "Resposta do Gemini citou preco ou link fora dos dados; modelo fixo."
+            resposta = self._gerar(
+                dados,
+                ESCREVER,
+                response_mime_type="application/json",
+                response_schema=Escrita,
+                temperature=0.4,
             )
+            parsed = getattr(resposta, "parsed", None)
+            if isinstance(parsed, Escrita):
+                escrita = parsed
+            else:
+                escrita = Escrita.model_validate_json(resposta.text)
+        except Exception as exc:  # noqa: BLE001 - sem Gemini, vao as legendas fixas
+            log.warning("Gemini nao escreveu as legendas; vao as fixas: %s", exc)
             return None
-        return texto
+        # Entidades HTML ("op&ccedil;&otilde;es", "&amp;" no link) passariam na
+        # conferencia e sairiam como lixo: confere o texto que de fato vai.
+        escrita = Escrita(
+            abertura=html.unescape(escrita.abertura).strip(),
+            legendas=[html.unescape(t).strip() for t in escrita.legendas],
+        )
+        if not escrita_aprovada(escrita, achados):
+            log.info("Legendas do Gemini reprovaram na conferencia; vao as fixas.")
+            return None
+        return escrita
 
     def responder(self, texto: str, agora: datetime | None = None) -> Resposta:
         pedido = self.entender(texto)
@@ -417,7 +487,13 @@ class Assistente:
         )
         achados = [self._item(r, agora) for r in resultados]
         extras = [self._item(r, agora) for r in parecidos]
-        corpo = self._escrever(texto, achados, extras) or modelo_fixo(
-            pedido.consulta, achados, extras
+        escrita = self._escrever(texto, achados)
+        if escrita is None:
+            escrita = Escrita(
+                abertura=abertura_fixa(pedido.consulta),
+                legendas=[legenda_fixa(n, a) for n, a in enumerate(achados, 1)],
+            )
+        cartoes = montar_cartoes(
+            escrita.abertura, escrita.legendas, [r.imagem for r in resultados]
         )
-        return Resposta(f"{corpo}\n\n{DIVULGACAO}", pedido.consulta, len(resultados))
+        return Resposta(fechamento(extras), pedido.consulta, len(resultados), cartoes)

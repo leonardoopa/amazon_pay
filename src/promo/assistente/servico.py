@@ -184,7 +184,13 @@ class Atendente:
             if novo and fixa is None:
                 texto = f"{texto}\n\n{AVISO_PRIMEIRA_VEZ}"
             self._esperar()
+            cartoes = resposta.cartoes
+            # Um cartao por produto (foto e legenda), depois o fechamento. O
+            # aviso de privacidade vai no fechamento, nunca numa legenda.
+            for cartao in cartoes:
+                self._entrega.send_card(cartao.legenda, cartao.imagem, to=msg["jid"])
             self._entrega.send_text(texto, to=msg["jid"])
+            gravado = "\n\n".join([c.legenda for c in cartoes] + [texto])
         except Exception as exc:  # noqa: BLE001 - uma mensagem ruim nao para a fila
             log.warning("Assistente nao respondeu %s: %s", msg["id"], exc)
             with conectar(self._caminho) as conn:
@@ -198,14 +204,17 @@ class Atendente:
                 "respondida",
                 consulta=resposta.consulta,
                 resultados=resposta.resultados,
-                resposta=texto,
+                resposta=gravado,
             )
         log.info(
-            "Assistente respondeu %s para %s: consulta=%r, %d resultado(s)",
+            "Assistente respondeu %s para %s: consulta=%r, %d resultado(s), "
+            "%d cartao(oes), %d com foto",
             msg["id"],
             final_do_telefone(telefone),
             resposta.consulta,
             resposta.resultados,
+            len(cartoes),
+            sum(1 for c in cartoes if c.imagem),
         )
         return True
 
