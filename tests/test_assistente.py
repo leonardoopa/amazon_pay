@@ -21,7 +21,9 @@ from promo.assistente.busca import Busca, rrf, termos  # noqa: E402
 from promo.assistente.conversa import (  # noqa: E402
     DIVULGACAO,
     Assistente,
+    Escrita,
     Pedido,
+    escrita_aprovada,
     fiel,
     pedido_simples,
     quando,
@@ -378,10 +380,18 @@ class GeminiFalso:
     def generate_content(self, model, contents, config):
         if self._falhar:
             raise RuntimeError("429 RESOURCE_EXHAUSTED")
-        if config.response_mime_type == "application/json":
+        if config.response_schema is Pedido:
             return Resp(text=self._pedido.model_dump_json(), parsed=self._pedido)
         self.textos_pedidos += 1
-        return Resp(text=self._texto(json.loads(contents)) if self._texto else "")
+        if not self._texto:
+            return Resp(text="")
+        escrita = self._texto(json.loads(contents))
+        return Resp(text=escrita.model_dump_json(), parsed=escrita)
+
+
+def tudo(resposta) -> str:
+    """Todo o texto que a pessoa recebe: as legendas dos cartoes e o fechamento."""
+    return "\n\n".join([c.legenda for c in resposta.cartoes] + [resposta.texto])
 
 
 def test_o_texto_do_gemini_sai_quando_e_fiel(bancos):
@@ -389,27 +399,34 @@ def test_o_texto_do_gemini_sai_quando_e_fiel(bancos):
 
     def escreve(dados):
         item = dados["achados"][0]
-        return f"Achei!\n*PS5 Slim* por {item['preco']} no ML\n{item['link']}"
+        return Escrita(
+            abertura="Achei!",
+            legendas=[f"*PS5 Slim* por {item['preco']} no ML\n{item['link']}"],
+        )
 
     gemini = GeminiFalso(Pedido(consulta="playstation 5"), escreve)
     resposta = Assistente(indexado(), client=gemini).responder("tem ps5?", AGORA)
 
-    assert resposta.texto.startswith("Achei!\n*PS5 Slim* por R$ 3.816,00")
-    assert resposta.texto.endswith(DIVULGACAO)
+    assert resposta.cartoes[0].legenda.startswith(
+        "Achei!\n\n*PS5 Slim* por R$ 3.816,00"
+    )
+    assert resposta.texto == DIVULGACAO
     assert (resposta.consulta, resposta.resultados) == ("playstation 5", 1)
 
 
-def test_preco_inventado_derruba_o_texto_e_sai_o_modelo_fixo(bancos):
+def test_preco_inventado_derruba_o_texto_e_saem_as_legendas_fixas(bancos):
     produto("Console PlayStation 5 Slim", 3816.0, "MLB1")
 
     def inventa(dados):
-        return f"So hoje por R$ 2.999,00!\n{dados['achados'][0]['link']}"
+        return Escrita(
+            legendas=[f"So hoje por R$ 2.999,00!\n{dados['achados'][0]['link']}"]
+        )
 
     gemini = GeminiFalso(Pedido(consulta="playstation 5"), inventa)
     resposta = Assistente(indexado(), client=gemini).responder("tem ps5?", AGORA)
 
-    assert "2.999,00" not in resposta.texto
-    assert "R$ 3.816,00 no Mercado Livre" in resposta.texto
+    assert "2.999,00" not in tudo(resposta)
+    assert "R$ 3.816,00 no Mercado Livre" in resposta.cartoes[0].legenda
 
 
 def test_sem_gemini_a_leitura_simples_e_o_modelo_fixo_respondem(bancos):
@@ -420,8 +437,8 @@ def test_sem_gemini_a_leitura_simples_e_o_modelo_fixo_respondem(bancos):
         "air fryer ate 400", AGORA
     )
 
-    assert "Air Fryer Mondial 4L" in resposta.texto
-    assert "Philips" not in resposta.texto
+    assert "Air Fryer Mondial 4L" in tudo(resposta)
+    assert "Philips" not in tudo(resposta)
 
 
 def test_o_link_da_amazon_sai_com_a_nossa_tag(bancos):
@@ -430,8 +447,8 @@ def test_o_link_da_amazon_sai_com_a_nossa_tag(bancos):
 
     resposta = Assistente(indexado(), client=gemini).responder("kindle", AGORA)
 
-    assert (
-        "https://www.amazon.com.br/dp/B0CFPJYX7P?tag=comunidaded00-20" in resposta.texto
+    assert "https://www.amazon.com.br/dp/B0CFPJYX7P?tag=comunidaded00-20" in tudo(
+        resposta
     )
 
 
@@ -468,6 +485,127 @@ def test_fiel_exige_todos_os_links_e_so_os_nossos():
     assert fiel("R$ 10,00 https://a", itens)
     assert not fiel("R$ 10,00", itens)  # sumiu com o link
     assert not fiel("R$ 10,00 https://a https://golpe", itens)
+
+
+def itens_de_teste():
+    return [
+        {"preco": "R$ 10,00", "veredito": "", "link": "https://a"},
+        {"preco": "R$ 20,00", "veredito": "", "link": "https://b"},
+    ]
+
+
+def test_cada_produto_vira_um_cartao_com_a_foto_dele(bancos):
+    produto("Air Fryer Mondial 4L", 299.0, "MLB1", imagem="https://f/1.jpg")
+    produto("Air Fryer Philips Walita 6L", 699.0, "MLB2", imagem="https://f/2.jpg")
+    busca = indexado()
+    resultados = busca.buscar("air fryer")
+
+    resposta = Assistente(busca, client=GeminiFalso(falhar=True)).responder(
+        "air fryer", AGORA
+    )
+
+    assert len(resposta.cartoes) == 2
+    assert [c.imagem for c in resposta.cartoes] == [r.imagem for r in resultados]
+    assert {c.imagem for c in resposta.cartoes} == {
+        "https://f/1.jpg",
+        "https://f/2.jpg",
+    }
+    assert resposta.cartoes[0].legenda.startswith("Achei estas opções para *")
+    assert "1. *" in resposta.cartoes[0].legenda
+    assert resposta.cartoes[1].legenda.startswith("2. *")
+    assert resposta.texto.endswith(DIVULGACAO)
+
+
+def test_a_escrita_aprovada_aceita_legendas_fieis():
+    escrita = Escrita(
+        abertura="Achei!",
+        legendas=["*A* R$ 10,00\nhttps://a", "*B* R$ 20,00\nhttps://b"],
+    )
+
+    assert escrita_aprovada(escrita, itens_de_teste())
+
+
+def test_escrita_com_legenda_a_menos_e_recusada():
+    escrita = Escrita(abertura="Achei!", legendas=["*A* R$ 10,00\nhttps://a"])
+
+    assert not escrita_aprovada(escrita, itens_de_teste())
+
+
+def test_legenda_com_o_link_de_outro_produto_e_recusada():
+    escrita = Escrita(legendas=["*A* R$ 10,00\nhttps://b", "*B* R$ 20,00\nhttps://b"])
+
+    assert not escrita_aprovada(escrita, itens_de_teste())
+
+
+@pytest.mark.parametrize("abertura", ["Só R$ 10,00!", "Veja https://golpe.com"])
+def test_abertura_com_preco_ou_link_e_recusada(abertura):
+    escrita = Escrita(
+        abertura=abertura,
+        legendas=["*A* R$ 10,00\nhttps://a", "*B* R$ 20,00\nhttps://b"],
+    )
+
+    assert not escrita_aprovada(escrita, itens_de_teste())
+
+
+def test_abertura_mais_primeira_legenda_acima_de_1024_e_recusada():
+    escrita = Escrita(
+        abertura="a" * 1010,
+        legendas=["*A* R$ 10,00\nhttps://a", "*B* R$ 20,00\nhttps://b"],
+    )
+
+    assert not escrita_aprovada(escrita, itens_de_teste())
+
+
+def test_escrita_recusada_vira_legendas_fixas(bancos):
+    produto("Console PlayStation 5 Slim", 3816.0, "MLB1")
+
+    def inventa(dados):
+        return Escrita(legendas=["So por R$ 2.999,00\n" + dados["achados"][0]["link"]])
+
+    gemini = GeminiFalso(Pedido(consulta="playstation 5"), inventa)
+    resposta = Assistente(indexado(), client=gemini).responder("tem ps5?", AGORA)
+
+    assert all("2.999,00" not in c.legenda for c in resposta.cartoes)
+    assert "R$ 3.816,00 no Mercado Livre" in resposta.cartoes[0].legenda
+
+
+def test_gemini_escreve_uma_vez_por_pergunta(bancos):
+    produto("Air Fryer Mondial 4L", 299.0, "MLB1")
+    produto("Air Fryer Philips Walita 6L", 699.0, "MLB2")
+    gemini = GeminiFalso(Pedido(consulta="air fryer"), lambda dados: Escrita())
+
+    Assistente(indexado(), client=gemini).responder("air fryer", AGORA)
+
+    assert gemini.textos_pedidos == 1
+
+
+def test_resposta_sem_produto_nao_tem_cartao(bancos):
+    ola = Assistente(indexado(), client=GeminiFalso(Pedido(tipo="conversa")))
+    nada = Assistente(indexado(), client=GeminiFalso(Pedido(consulta="geladeira")))
+
+    assert ola.responder("oi", AGORA).cartoes == ()
+    assert nada.responder("geladeira", AGORA).cartoes == ()
+
+
+def test_o_mesmo_modelo_em_dois_anuncios_traz_a_foto_do_escolhido(bancos):
+    produto(
+        "Relógio Garmin Forerunner 55 GPS Preto",
+        1179.90,
+        "MLB1",
+        imagem="https://f/caro.jpg",
+    )
+    produto(
+        "Relógio Garmin Forerunner 55 Monitor Cardíaco Gps 42mm Preto",
+        1099.45,
+        "MLB2",
+        imagem="https://f/barato.jpg",
+    )
+
+    resposta = Assistente(indexado(), client=GeminiFalso(falhar=True)).responder(
+        "relogio garmin", AGORA
+    )
+
+    assert [c.imagem for c in resposta.cartoes] == ["https://f/barato.jpg"]
 
 
 # ---------- o atendimento ----------
@@ -762,8 +900,8 @@ def test_a_resposta_conta_que_a_oferta_saiu_no_grupo(bancos):
         "me mande promoções de PS5"
     )
 
-    assert "*Console PlayStation 5 Slim Digital*" in resposta.texto  # sem o preco
-    assert "Saiu no grupo hoje às" in resposta.texto
+    assert "*Console PlayStation 5 Slim Digital*" in tudo(resposta)  # sem o preco
+    assert "Saiu no grupo hoje às" in tudo(resposta)
 
 
 def test_preco_parado_nao_e_o_menor_dos_ultimos_60_dias(bancos):
@@ -1006,15 +1144,15 @@ def test_o_nome_cortado_nao_termina_em_preposicao():
     )
 
 
-def test_o_modelo_fixo_nao_imprime_o_titulo_de_seo_inteiro(bancos):
+def test_a_legenda_fixa_nao_imprime_o_titulo_de_seo_inteiro(bancos):
     produto(TITULO_DE_SEO, 1099.45, "MLB1")
 
     resposta = Assistente(indexado(), client=GeminiFalso(falhar=True)).responder(
         "relogio garmin", AGORA
     )
 
-    assert "*Relógio Garmin Forerunner 55" in resposta.texto
-    assert "Cronômetro" not in resposta.texto
+    assert "*Relógio Garmin Forerunner 55" in tudo(resposta)
+    assert "Cronômetro" not in tudo(resposta)
 
 
 def test_o_mesmo_modelo_com_titulos_diferentes_vira_um_so(bancos):
