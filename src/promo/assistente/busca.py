@@ -131,6 +131,7 @@ class Resultado:
     dias: int  # quantos dias de historico sustentam a mediana
     menor: float | None  # menor preco diario da janela
     no_grupo: str | None = None  # ISO do envio ao grupo, se o preco ainda vale
+    imagem: str | None = None  # URL http(s) ou caminho local da foto guardada
 
 
 def termos(consulta: str) -> list[str]:
@@ -341,7 +342,7 @@ def detalhes(product_ids: list[str]) -> dict[str, Resultado]:
         produtos = {
             p["id"]: p
             for p in bot.execute(
-                f"SELECT id, source, external_id, title, url, last_seen_at "
+                f"SELECT id, source, external_id, title, url, image_url, last_seen_at "
                 f"FROM products WHERE id IN ({marcas})",
                 product_ids,
             )
@@ -379,6 +380,7 @@ def detalhes(product_ids: list[str]) -> dict[str, Resultado]:
                 dias=len(historico),
                 menor=min(historico) if historico else None,
                 no_grupo=enviado[0] if vale else None,
+                imagem=produto["image_url"] or None,
             )
     return saida
 

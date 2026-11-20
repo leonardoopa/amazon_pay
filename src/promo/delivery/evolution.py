@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import time
 
 import httpx
@@ -51,6 +52,19 @@ MEDIA_USER_AGENT = (
     "promo-bot/1.0 (leitor de ofertas; contato via comunidadedodesconto.com.br)"
 )
 
+# Foto do cartao do assistente: uma tentativa so, com prazo curto. Quem espera
+# e uma pessoa que acabou de perguntar algo no WhatsApp.
+TIMEOUT_DA_FOTO_DO_CARTAO = 10.0
+
+# Abaixo disso nao e foto de produto (o pixel da Amazon tem dezenas de bytes).
+FOTO_MINIMA_BYTES = 1024
+
+# Teto da foto do cartao: o container tem pouca memoria e foto de produto nao
+# passa de poucos MB. O prazo total vale para o download inteiro, nao so para
+# cada leitura (o timeout do httpx e por operacao, uma CDN lenta o burlaria).
+FOTO_MAXIMA_BYTES = 5 * 1024 * 1024
+PRAZO_TOTAL_DA_FOTO = 10.0
+
 # Listar grupos e a chamada mais lenta da API: ela espera a sincronizacao do
 # Baileys com o celular. Numa conta com ~170 grupos passa de 30s.
 GROUPS_TIMEOUT = 120.0
@@ -58,6 +72,56 @@ GROUPS_TIMEOUT = 120.0
 
 class NotConnected(RuntimeError):
     """A instancia existe mas nao esta pareada com nenhum numero."""
+
+
+def baixar_foto_do_cartao(imagem: str) -> bytes:
+    """Bytes da foto de um cartao, de URL ou de arquivo local.
+
+    Levanta ValueError quando o que veio nao e foto de produto: status
+    diferente de 200, content-type que nao e image/*, gif (o pixel da Amazon)
+    ou menos de FOTO_MINIMA_BYTES, mais de FOTO_MAXIMA_BYTES ou download que
+    passa de PRAZO_TOTAL_DA_FOTO.
+    """
+    if imagem.startswith(("http://", "https://")):
+        with httpx.Client(
+            timeout=TIMEOUT_DA_FOTO_DO_CARTAO,
+            follow_redirects=True,
+            headers={"User-Agent": MEDIA_USER_AGENT},
+        ) as c:
+            with c.stream("GET", imagem) as resposta:
+                tipo = resposta.headers.get("content-type", "").lower()
+                if resposta.status_code != 200:
+                    raise ValueError(f"Foto devolveu {resposta.status_code}: {imagem}")
+                if not tipo.startswith("image/") or "gif" in tipo:
+                    raise ValueError(
+                        f"Nao e foto de produto ({tipo or 'sem tipo'}): {imagem}"
+                    )
+                declarado = resposta.headers.get("content-length", "")
+                if declarado.isdigit() and int(declarado) > FOTO_MAXIMA_BYTES:
+                    raise ValueError(
+                        f"Foto grande demais ({declarado} bytes): {imagem}"
+                    )
+                inicio = time.monotonic()
+                pedacos: list[bytes] = []
+                total = 0
+                for pedaco in resposta.iter_bytes():
+                    total += len(pedaco)
+                    if total > FOTO_MAXIMA_BYTES:
+                        raise ValueError(
+                            f"Foto grande demais (>{total} bytes): {imagem}"
+                        )
+                    if time.monotonic() - inicio > PRAZO_TOTAL_DA_FOTO:
+                        raise ValueError(f"Foto demorou demais para baixar: {imagem}")
+                    pedacos.append(pedaco)
+                bruto = b"".join(pedacos)
+    else:
+        if os.path.getsize(imagem) > FOTO_MAXIMA_BYTES:
+            raise ValueError(f"Foto grande demais: {imagem}")
+        with open(imagem, "rb") as arquivo:
+            bruto = arquivo.read()
+    if len(bruto) < FOTO_MINIMA_BYTES:
+        raise ValueError(f"Foto pequena demais ({len(bruto)} bytes): {imagem}")
+    return bruto
 
 
 class Evolution:
@@ -255,7 +319,9 @@ class Evolution:
 
         # O pixel transparente que a Amazon devolve no lugar da foto ausente.
         # Mandado como imagem, sai um post "sem foto" com status de sucesso.
-        if len(bruto) < 1024 or "gif" in resposta.headers.get("content-type", ""):
+        if len(bruto) < FOTO_MINIMA_BYTES or "gif" in resposta.headers.get(
+            "content-type", ""
+        ):
             raise ValueError(f"Nao e foto de produto ({len(bruto)} bytes): {image_url}")
 
         return self._enviar_bytes(bruto, caption, to)
@@ -270,6 +336,26 @@ class Evolution:
                 "caption": caption[:CAPTION_LIMIT],
             },
         )
+
+    def send_card(self, caption: str, image: str | None, to: str | None = None) -> dict:
+        """Um produto do assistente: foto + legenda, ou so a legenda.
+
+        Nao usa `send_post` de proposito: a CDN do Pelando recusa a Evolution
+        (so o nosso User-Agent passa), o pixel 1x1 da Amazon passaria como
+        sucesso, e as esperas de 2 s + 6 s do `send_post` servem ao grupo, nao a
+        quem esta esperando a resposta. Aqui baixamos a foto, uma tentativa so.
+        """
+        if not image:
+            return self.send_text(caption, to)
+        try:
+            bruto = baixar_foto_do_cartao(image)
+        except Exception as exc:  # noqa: BLE001 - sem a foto, sai texto
+            log.warning("Cartao sem foto (%s): %s", image, exc)
+            return self.send_text(caption, to)
+        # Fora do try: se a Evolution recusar, o erro sobe (vira `erro` na fila).
+        # Mandar a mesma legenda como texto depois de a foto ter sido aceita
+        # duplicaria o cartao.
+        return self._enviar_bytes(bruto, caption, to)
 
     def send_post(
         self, text: str, image_url: str | None = None, to: str | None = None
