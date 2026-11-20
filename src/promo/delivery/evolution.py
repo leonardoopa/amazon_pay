@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import time
 
 import httpx
@@ -58,6 +59,12 @@ TIMEOUT_DA_FOTO_DO_CARTAO = 10.0
 # Abaixo disso nao e foto de produto (o pixel da Amazon tem dezenas de bytes).
 FOTO_MINIMA_BYTES = 1024
 
+# Teto da foto do cartao: o container tem pouca memoria e foto de produto nao
+# passa de poucos MB. O prazo total vale para o download inteiro, nao so para
+# cada leitura (o timeout do httpx e por operacao, uma CDN lenta o burlaria).
+FOTO_MAXIMA_BYTES = 5 * 1024 * 1024
+PRAZO_TOTAL_DA_FOTO = 10.0
+
 # Listar grupos e a chamada mais lenta da API: ela espera a sincronizacao do
 # Baileys com o celular. Numa conta com ~170 grupos passa de 30s.
 GROUPS_TIMEOUT = 120.0
@@ -72,7 +79,8 @@ def baixar_foto_do_cartao(imagem: str) -> bytes:
 
     Levanta ValueError quando o que veio nao e foto de produto: status
     diferente de 200, content-type que nao e image/*, gif (o pixel da Amazon)
-    ou menos de FOTO_MINIMA_BYTES.
+    ou menos de FOTO_MINIMA_BYTES, mais de FOTO_MAXIMA_BYTES ou download que
+    passa de PRAZO_TOTAL_DA_FOTO.
     """
     if imagem.startswith(("http://", "https://")):
         with httpx.Client(
@@ -80,14 +88,35 @@ def baixar_foto_do_cartao(imagem: str) -> bytes:
             follow_redirects=True,
             headers={"User-Agent": MEDIA_USER_AGENT},
         ) as c:
-            resposta = c.get(imagem)
-        tipo = resposta.headers.get("content-type", "").lower()
-        if resposta.status_code != 200:
-            raise ValueError(f"Foto devolveu {resposta.status_code}: {imagem}")
-        if not tipo.startswith("image/") or "gif" in tipo:
-            raise ValueError(f"Nao e foto de produto ({tipo or 'sem tipo'}): {imagem}")
-        bruto = resposta.content
+            with c.stream("GET", imagem) as resposta:
+                tipo = resposta.headers.get("content-type", "").lower()
+                if resposta.status_code != 200:
+                    raise ValueError(f"Foto devolveu {resposta.status_code}: {imagem}")
+                if not tipo.startswith("image/") or "gif" in tipo:
+                    raise ValueError(
+                        f"Nao e foto de produto ({tipo or 'sem tipo'}): {imagem}"
+                    )
+                declarado = resposta.headers.get("content-length", "")
+                if declarado.isdigit() and int(declarado) > FOTO_MAXIMA_BYTES:
+                    raise ValueError(
+                        f"Foto grande demais ({declarado} bytes): {imagem}"
+                    )
+                inicio = time.monotonic()
+                pedacos: list[bytes] = []
+                total = 0
+                for pedaco in resposta.iter_bytes():
+                    total += len(pedaco)
+                    if total > FOTO_MAXIMA_BYTES:
+                        raise ValueError(
+                            f"Foto grande demais (>{total} bytes): {imagem}"
+                        )
+                    if time.monotonic() - inicio > PRAZO_TOTAL_DA_FOTO:
+                        raise ValueError(f"Foto demorou demais para baixar: {imagem}")
+                    pedacos.append(pedaco)
+                bruto = b"".join(pedacos)
     else:
+        if os.path.getsize(imagem) > FOTO_MAXIMA_BYTES:
+            raise ValueError(f"Foto grande demais: {imagem}")
         with open(imagem, "rb") as arquivo:
             bruto = arquivo.read()
     if len(bruto) < FOTO_MINIMA_BYTES:
@@ -319,12 +348,14 @@ class Evolution:
         if not image:
             return self.send_text(caption, to)
         try:
-            return self._enviar_bytes(baixar_foto_do_cartao(image), caption, to)
-        except NotConnected:
-            raise
+            bruto = baixar_foto_do_cartao(image)
         except Exception as exc:  # noqa: BLE001 - sem a foto, sai texto
             log.warning("Cartao sem foto (%s): %s", image, exc)
             return self.send_text(caption, to)
+        # Fora do try: se a Evolution recusar, o erro sobe (vira `erro` na fila).
+        # Mandar a mesma legenda como texto depois de a foto ter sido aceita
+        # duplicaria o cartao.
+        return self._enviar_bytes(bruto, caption, to)
 
     def send_post(
         self, text: str, image_url: str | None = None, to: str | None = None

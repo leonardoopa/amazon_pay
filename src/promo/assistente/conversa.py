@@ -464,7 +464,7 @@ class Assistente:
         # conferencia e sairiam como lixo: confere o texto que de fato vai.
         escrita = Escrita(
             abertura=html.unescape(escrita.abertura).strip(),
-            legendas=[html.unescape(l).strip() for l in escrita.legendas],
+            legendas=[html.unescape(t).strip() for t in escrita.legendas],
         )
         if not escrita_aprovada(escrita, achados):
             log.info("Legendas do Gemini reprovaram na conferencia; vao as fixas.")

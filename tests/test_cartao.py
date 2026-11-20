@@ -55,10 +55,31 @@ class ClienteFalso:
     def __exit__(self, *args):
         return False
 
-    def get(self, url):
+    def stream(self, metodo, url):
         if self.erro:
             raise self.erro
-        return self.resposta
+        return RespostaEmFluxo(self.resposta)
+
+
+class RespostaEmFluxo:
+    """Faz de uma httpx.Response um context manager com iter_bytes em pedacos."""
+
+    def __init__(self, resposta, pedaco=64 * 1024) -> None:
+        self._r = resposta
+        self._pedaco = pedaco
+        self.status_code = resposta.status_code
+        self.headers = resposta.headers
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def iter_bytes(self):
+        corpo = self._r.content
+        for i in range(0, len(corpo), self._pedaco):
+            yield corpo[i : i + self._pedaco]
 
 
 def troca_cliente(monkeypatch, resposta=None, erro=None):
@@ -70,11 +91,11 @@ def troca_cliente(monkeypatch, resposta=None, erro=None):
     )
 
 
-def resposta(status=200, tipo="image/jpeg", tamanho=20000):
+def resposta(status=200, tipo="image/jpeg", tamanho=20000, extra=None):
     return httpx.Response(
         status,
         content=b"x" * tamanho,
-        headers={"content-type": tipo},
+        headers={"content-type": tipo, **(extra or {})},
         request=httpx.Request("GET", URL),
     )
 
@@ -170,3 +191,61 @@ def test_nao_espera_entre_tentativas(monkeypatch):
     falso = Falso()
     Evolution.send_card(falso, LEGENDA, URL, DESTINO)
     assert falso.textos == [(LEGENDA, DESTINO)]
+
+
+def test_content_length_acima_do_teto_vira_texto_sem_ler_o_corpo(monkeypatch):
+    grande = resposta(tamanho=20000)
+    grande.headers["content-length"] = str(modulo.FOTO_MAXIMA_BYTES + 1)
+    lidos = []
+    original = RespostaEmFluxo.iter_bytes
+
+    def espiao(self):
+        lidos.append(1)
+        yield from original(self)
+
+    monkeypatch.setattr(RespostaEmFluxo, "iter_bytes", espiao)
+    troca_cliente(monkeypatch, grande)
+    falso = Falso()
+    Evolution.send_card(falso, LEGENDA, URL, DESTINO)
+    assert falso.textos == [(LEGENDA, DESTINO)]
+    assert falso.bytes_enviados == []
+    assert lidos == []
+
+
+def test_corpo_acima_do_teto_sem_content_length_vira_texto(monkeypatch):
+    troca_cliente(monkeypatch, resposta(tamanho=modulo.FOTO_MAXIMA_BYTES + 1))
+    falso = Falso()
+    Evolution.send_card(falso, LEGENDA, URL, DESTINO)
+    assert falso.textos == [(LEGENDA, DESTINO)]
+    assert falso.bytes_enviados == []
+
+
+def test_download_lento_demais_vira_texto(monkeypatch):
+    relogio = iter([0.0, 1.0, 20.0, 40.0, 60.0])
+    monkeypatch.setattr(modulo.time, "monotonic", lambda: next(relogio))
+    troca_cliente(monkeypatch, resposta(tamanho=300 * 1024))
+    falso = Falso()
+    Evolution.send_card(falso, LEGENDA, URL, DESTINO)
+    assert falso.textos == [(LEGENDA, DESTINO)]
+    assert falso.bytes_enviados == []
+
+
+def test_arquivo_local_acima_do_teto_vira_texto(monkeypatch, tmp_path):
+    arquivo = tmp_path / "grande.jpg"
+    arquivo.write_bytes(b"y" * 20000)
+    monkeypatch.setattr(
+        modulo.os.path, "getsize", lambda _: modulo.FOTO_MAXIMA_BYTES + 1
+    )
+    falso = Falso()
+    Evolution.send_card(falso, LEGENDA, str(arquivo), DESTINO)
+    assert falso.textos == [(LEGENDA, DESTINO)]
+    assert falso.bytes_enviados == []
+
+
+def test_erro_do_envio_da_foto_propaga_sem_repetir_como_texto(monkeypatch):
+    troca_cliente(monkeypatch, resposta())
+    falso = Falso(erro_no_envio=RuntimeError("Evolution 500"))
+    with pytest.raises(RuntimeError):
+        Evolution.send_card(falso, LEGENDA, URL, DESTINO)
+    assert falso.textos == []
+    assert falso.bytes_enviados == []
