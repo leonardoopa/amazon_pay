@@ -167,3 +167,27 @@ def test_tipo_pedido_vem_antes_do_acessorio(bancos):  # noqa: F811
     achados = indexado().buscar(pedido_simples("e o console do play 5").consulta)
 
     assert achados[0].external_id == "MLB3"
+
+
+def test_pergunta_de_um_termo_so_nao_leva_avanco_de_tipo(bancos):  # noqa: F811
+    """Revisao de 26/11: "PS5" e um termo so, entao nao diz o tipo do produto.
+    Com o avanco, o console caia para o fim e os acessorios "PS5 ..." e
+    "PlayStation Portal" passavam na frente."""
+    produto("Console PlayStation 5 Slim Edição Digital 825 GB", 3989.0, "MLB1",
+            historico=[4300.0] * 10)  # fmt: skip
+    produto("PS5 Controle Sem Fio DualSense Midnight Black", 399.0, "MLB2",
+            historico=[420.0] * 10)  # fmt: skip
+    produto("PlayStation Portal Reprodutor Remoto para PS5", 1893.0, "MLB3",
+            historico=[1900.0] * 10)  # fmt: skip
+
+    achados = indexado().buscar(pedido_simples("me mande promoções de PS5").consulta)
+
+    assert achados[0].external_id == "MLB1"
+
+
+def test_tipo_pedido_so_com_dois_conceitos():
+    from promo.assistente.busca import tipo_pedido
+
+    assert tipo_pedido("ps5") == set()
+    assert tipo_pedido("iphone") == set()
+    assert tipo_pedido("console ps5") == {"console"}

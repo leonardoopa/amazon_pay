@@ -169,15 +169,22 @@ class Contexto:
 def ultimo_contexto(
     conn: sqlite3.Connection, telefone: str, agora: datetime | None = None
 ) -> Contexto | None:
-    """A ultima resposta com produtos deste telefone, se for de ate 30 minutos."""
+    """O assunto da ultima busca deste telefone, se for de ate 30 minutos.
+
+    Vale a ultima resposta que tem consulta: a busca nova que nao achou nada
+    encerra o contexto antigo (a pessoa ja mudou de assunto), enquanto
+    cumprimento e agradecimento nao gravam consulta e deixam o contexto de pe.
+    """
     desde = _iso((agora or now()) - timedelta(minutes=MINUTOS_DE_CONTEXTO))
     linha = conn.execute(
         "SELECT consulta, produtos FROM mensagens WHERE telefone = ? "
         "AND status = 'respondida' AND respondida_em >= ? "
-        "AND produtos IS NOT NULL ORDER BY respondida_em DESC, rowid DESC LIMIT 1",
+        "AND consulta IS NOT NULL ORDER BY respondida_em DESC, rowid DESC LIMIT 1",
         (telefone, desde),
     ).fetchone()
     if linha is None:
+        return None
+    if not linha["produtos"]:
         return None
     try:
         produtos = tuple(str(p) for p in json.loads(linha["produtos"]))

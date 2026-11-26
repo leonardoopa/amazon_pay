@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -133,10 +134,6 @@ def test_sem_gemini_pergunta_de_preco_com_contexto_vira_historico():
 def test_o_segundo_escolhe_o_item_2():
     pedido = pedido_simples("o segundo já esteve mais barato?", tem_contexto=True)
     assert (pedido.tipo, pedido.item) == ("historico", 2)
-
-
-def test_sem_contexto_nao_e_historico():
-    assert pedido_simples(FRASE).tipo != "historico"
 
 
 # ---------- o historico no banco ----------
@@ -316,3 +313,156 @@ def test_preco_citado_de_outro_produto_nao_vira_comparacao():
     assert "O preço que você citou (R$ 4.000,00) não parece ser deste produto." in texto
     assert "Sim: medimos" not in texto
     assert "Não medimos" not in texto
+
+
+# ---------- revisao final ----------
+
+
+def test_menor_preco_ignora_leitura_isolada_errada(bancos):
+    """Uma geladeira de R$ 2.258,86 leu R$ 200 num dia so: nao e o menor preco."""
+    hist = [2258.86] * 12
+    hist[4] = 200.0
+    g = produto("Geladeira Brastemp Frost Free 375L", 2258.86, "MLB1", historico=hist)
+
+    h = historico(g.product_id)
+
+    assert h is not None and h.menor_preco == 2258.86
+
+
+def _curto(dias=3):
+    r = _h().resultado
+    return _h(resultado=Resultado(**{**r.__dict__, "dias": dias, "mediana": 4300.0}),
+              dias=dias + 1)  # fmt: skip
+
+
+def test_pouco_historico_com_preco_citado_nao_diz_60_dias():
+    sim = texto_do_historico(_curto(), "https://l/1", 4500.0, None)
+    nao = texto_do_historico(_curto(), "https://l/1", 3500.0, None)
+
+    assert "Ainda sem histórico suficiente" in sim
+    assert "Nos 4 dias que medimos, o menor preço foi R$ 3.999,00" in sim
+    assert "Nos 4 dias que medimos" in nao and "não chegou a R$ 3.500,00" in nao
+    for texto in (sim, nao):
+        assert "últimos 60 dias" not in texto
+
+
+def test_sem_nenhum_dia_nao_compara_o_preco_citado():
+    h = replace(_curto(0), dias=0, menor_preco=None, menor_em=None)
+    texto = texto_do_historico(h, "l", 4500.0, None)
+    assert "que você viu" not in texto and "Não medimos" not in texto
+    assert "Nos 0 dias" not in texto
+
+
+@pytest.mark.parametrize(
+    "texto, item",
+    [
+        ("a segunda já esteve mais barata?", 2),
+        ("a terceira baixou?", 3),
+        ("o primeiro foi o melhor preço?", 1),
+        ("o 2 já teve preço melhor?", 2),
+        ("item 3 já esteve mais barato?", 3),
+        ("número 2 baixou?", 2),
+    ],
+)
+def test_sem_gemini_item_citado(texto, item):
+    pedido = pedido_simples(texto, tem_contexto=True)
+    assert (pedido.tipo, pedido.item) == ("historico", item)
+
+
+def test_sem_gemini_digito_solto_nao_e_posicao():
+    pedido = pedido_simples("faz 3 dias que vi por 3999, esse foi o melhor preço?",
+                            tem_contexto=True)  # fmt: skip
+    assert (pedido.tipo, pedido.item, pedido.preco_citado) == ("historico", 1, 3999.0)
+
+
+@pytest.mark.parametrize(
+    "texto, valor",
+    [
+        ("tv 4k", None),
+        ("essa tv 4k já esteve mais barata", None),
+        ("vi por 4k", 4000.0),
+        ("tava 4 mil", 4000.0),
+        ("paguei 3999", 3999.0),
+        ("o 2 já teve preço melhor", None),
+        ("faz 3 dias", None),
+    ],
+)
+def test_preco_citado_so_depois_de_palavra_de_preco(texto, valor):
+    assert preco_citado(texto) == valor
+
+
+@pytest.mark.parametrize(
+    "texto", ["tem controle de ps5 mais barato?", "qual o menor preço de geladeira?",
+              "essa tv 4k já esteve mais barata?"]  # fmt: skip
+)
+def test_com_produto_na_frase_e_busca_nova(texto):
+    pedido = pedido_simples(texto, tem_contexto=True)
+    assert pedido.tipo == "produto"
+    assert "menor" not in pedido.consulta and "esteve" not in pedido.consulta
+
+
+def test_busca_nova_mantem_so_o_produto():
+    assert pedido_simples("tem controle de ps5 mais barato?", True).consulta == (
+        "controle ps5"
+    )
+    assert pedido_simples("qual o menor preço de geladeira?", True).consulta == (
+        "geladeira"
+    )
+
+
+def test_pergunta_de_historico_sem_contexto_pede_o_produto(bancos):
+    pedido = pedido_simples(FRASE)
+    assert pedido.tipo == "historico"
+    resposta = Assistente(indexado(), client=GeminiFalso(falhar=True)).responder(FRASE)
+    assert resposta.texto == "Me diga de qual produto você quer saber o preço."
+    assert resposta.cartoes == ()
+
+
+def test_resumo_numera_pela_posicao_original_e_mostra_preco(bancos):
+    b = produto("Console PlayStation 5 Pro", 6500.0, "MLB2")
+    a = produto("Console PlayStation 5 Slim Digital", 3989.0, "MLB1")
+    assistente = Assistente(indexado(), client=GeminiFalso(falhar=True))
+
+    resumo = assistente._resumo_da_conversa(
+        Contexto("ps5", ("sumiu", a.product_id, b.product_id))
+    )
+
+    linhas = resumo.splitlines()
+    assert linhas[0] == "Busca anterior: ps5"
+    assert "não está mais disponível" in linhas[1] and linhas[1].startswith("1.")
+    assert linhas[2].startswith("2. Console PlayStation 5 Slim Digital")
+    assert "R$ 3.989,00" in linhas[2]
+    assert (
+        linhas[3].startswith("3. Console PlayStation 5 Pro") and "6.500,00" in linhas[3]
+    )
+
+
+def test_busca_que_falhou_encerra_o_contexto_antigo(bancos):
+    with banco.conectar() as conn:
+        responde(conn, "M1", "5581988887777", ["p1"])
+        responde(conn, "M2", "5581988887777", [], consulta="geladeira x")
+        assert banco.ultimo_contexto(conn, "5581988887777") is None
+
+
+def test_cumprimento_nao_encerra_o_contexto(bancos):
+    with banco.conectar() as conn:
+        responde(conn, "M1", "5581988887777", ["p1"])
+        banco.registrar_mensagem(conn, "M2", "j", "5581988887777", "obrigado")
+        banco.finalizar(conn, "M2", "respondida", resultados=0, resposta="de nada")
+        assert banco.ultimo_contexto(conn, "5581988887777") == Contexto("ps5", ("p1",))
+
+
+def test_hoje_so_quando_visto_hoje_senao_ultimo_preco():
+    r = _h().resultado
+    antigo = _h(resultado=Resultado(
+        **{**r.__dict__, "visto_em": (datetime.now(UTC) - timedelta(days=3)).isoformat()}
+    ))  # fmt: skip
+    assert "Hoje: R$ 4.259,00" in texto_do_historico(_h(), "l", None, None)
+    texto = texto_do_historico(antigo, "l", None, None)
+    assert "Último preço: R$ 4.259,00" in texto and "Hoje:" not in texto
+
+
+def test_preco_citado_igual_ao_menor_diz_igual_ou_abaixo():
+    texto = texto_do_historico(_h(), "l", 3999.0, None)
+    assert "igual ou abaixo dos R$ 3.999,00 que você viu" in texto
+    assert "igual ou abaixo" not in texto_do_historico(_h(), "l", 4500.0, None)

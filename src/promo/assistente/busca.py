@@ -79,7 +79,7 @@ PALAVRAS_VAZIAS = {
     "barato", "barata", "baratos", "baratas", "preco", "precos", "promocao",
     "promocoes", "promo", "promos", "oferta", "ofertas", "desconto",
     "descontos", "achado", "achados", "link", "links", "ate", "r", "reais",
-    "mais", "menos", "bom", "boa", "melhor", "melhores", "voce", "voces", "vc",
+    "mais", "menos", "menor", "bom", "boa", "melhor", "melhores", "voce", "voces", "vc",
     "vcs", "me", "mim", "manda", "mande", "mandar", "envia", "envie", "enviar",
     "mostra", "mostre", "mostrar", "passa", "passe", "indica", "indique",
     "recomenda", "recomende", "acha", "favor", "pf", "pfv", "hoje", "agora",
@@ -222,10 +222,15 @@ def codigos_de_modelo(titulo: str) -> set[str]:
 def tipo_pedido(consulta: str) -> set[str]:
     """A primeira palavra de cada forma do primeiro termo: o tipo de produto.
 
-    "console ps5" -> {"console"}; "airfryer" -> {"airfryer", "air"}.
+    "console ps5" -> {"console"}; "relogio garmin" -> {"relogio"}. Pergunta de um
+    termo so ("ps5", "iphone") nao diz o tipo -- o termo e o proprio produto --,
+    e o avanco do tipo mandava o console para o fim, atras dos acessorios "PS5
+    ..." (revisao de 26/11/2026). Fica vazio.
     """
     grupos = conceitos(consulta)
-    return {forma.split()[0] for forma in grupos[0]} if grupos else set()
+    if len(grupos) < 2:
+        return set()
+    return {forma.split()[0] for forma in grupos[0]}
 
 
 def abre_com_o_tipo(titulo: str, tipo: set[str]) -> bool:
@@ -434,11 +439,11 @@ def historico(product_id: str) -> Historico | None:
         return None
     hoje = now().date().isoformat()
     with connect() as bot:
-        menor = bot.execute(
+        leituras = bot.execute(
             "SELECT price, observed_on FROM price_history WHERE product_id = ? "
-            "AND observed_on >= date(?, ?) ORDER BY price, observed_on DESC LIMIT 1",
+            "AND observed_on >= date(?, ?)",
             (product_id, hoje, f"-{JANELA_DA_MEDIANA} days"),
-        ).fetchone()
+        ).fetchall()
         dias = bot.execute(
             "SELECT COUNT(*) FROM price_history WHERE product_id = ? "
             "AND observed_on >= date(?, ?)",
@@ -449,6 +454,16 @@ def historico(product_id: str) -> Historico | None:
             "AND status = 'sent' AND sent_at >= ? ORDER BY sent_at DESC LIMIT 1",
             (product_id, _iso(now() - timedelta(days=JANELA_DA_MEDIANA))),
         ).fetchone()
+    # Leitura abaixo de 30% da mediana e erro (uma geladeira de R$ 2.258 leu
+    # R$ 200 num dia so): nao pode virar o "menor preco" da resposta.
+    if leituras:
+        piso = median(float(x["price"]) for x in leituras) * PISO_DO_PRECO
+        leituras = [x for x in leituras if x["price"] >= piso] or leituras
+    menor = min(
+        leituras,
+        key=lambda x: (x["price"], -int(x["observed_on"].replace("-", ""))),
+        default=None,
+    )
     return Historico(
         resultado=resultado,
         menor_preco=float(menor["price"]) if menor else None,
