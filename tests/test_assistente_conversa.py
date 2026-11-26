@@ -1,4 +1,5 @@
 """A memoria da ultima resposta e a pergunta de historico de preco."""
+
 # flake8: noqa: F811
 
 from __future__ import annotations
