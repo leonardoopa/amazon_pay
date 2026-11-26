@@ -633,14 +633,14 @@ class EntregaFalsa:
 
 
 class AssistenteFalso:
-    def responder(self, texto, agora=None):
+    def responder(self, texto, agora=None, contexto=None):
         from promo.assistente.conversa import Resposta
 
         return Resposta(f"resposta para {texto}", texto, 1)
 
 
 class AssistenteComCartoes:
-    def responder(self, texto, agora=None):
+    def responder(self, texto, agora=None, contexto=None):
         from promo.assistente.conversa import Resposta
 
         return Resposta(

@@ -40,8 +40,10 @@ from .banco import (
     registrar_contato,
     registrar_mensagem,
     respondidas_na_ultima_hora,
+    ultimo_contexto,
 )
 from .busca import Busca
+from . import indice
 from .conversa import Assistente, Resposta
 from .indice import (
     COBERTURA_MINIMA,
@@ -148,6 +150,7 @@ class Atendente:
             motivo: str | None = None
             novo = False
             fixa: str | None = None
+            contexto = None
             if not liberado(telefone, self._liberados):
                 motivo = "fora da lista liberada"
             else:
@@ -163,6 +166,8 @@ class Atendente:
                         motivo = "pediu para parar"
                 elif respondidas_na_ultima_hora(conn, telefone) >= self._max_por_hora:
                     motivo = "limite por hora"
+                else:
+                    contexto = ultimo_contexto(conn, telefone)
             if motivo is not None:
                 finalizar(conn, msg["id"], "ignorada", motivo)
                 log.info(
@@ -179,7 +184,7 @@ class Atendente:
             if fixa is not None:
                 resposta = Resposta(fixa, None, 0)
             else:
-                resposta = self._assistente.responder(msg["texto"])
+                resposta = self._assistente.responder(msg["texto"], contexto=contexto)
             texto = resposta.texto
             if novo and fixa is None:
                 texto = f"{texto}\n\n{AVISO_PRIMEIRA_VEZ}"
@@ -205,6 +210,7 @@ class Atendente:
                 consulta=resposta.consulta,
                 resultados=resposta.resultados,
                 resposta=gravado,
+                produtos=list(resposta.produtos),
             )
         log.info(
             "Assistente respondeu %s para %s: consulta=%r, %d resultado(s), "
@@ -242,8 +248,12 @@ def indexar(
         if vetores is not None and ativos:
             cobertura = len(vetores) / ativos
         # Vetor de parte do catalogo traz vizinho aleatorio: fica so o texto ate
-        # a carga chegar perto do fim (ver `indice.COBERTURA_MINIMA`).
-        busca.atualizar_vetores(vetores if cobertura >= COBERTURA_MINIMA else None)
+        # a carga chegar perto do fim ou a 2 mil vetores (ver
+        # `indice.COBERTURA_MINIMA` e `indice.MINIMO_DE_VETORES`).
+        suficiente = vetores is not None and (
+            len(vetores) >= indice.MINIMO_DE_VETORES or cobertura >= COBERTURA_MINIMA
+        )
+        busca.atualizar_vetores(vetores if suficiente else None)
     resumo = {
         "ativos": ativos,
         "removidos": removidos,
