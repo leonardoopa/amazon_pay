@@ -29,7 +29,7 @@ from pydantic import BaseModel
 
 from ..config import (
     amazon_partner_tag,
-    copy_model,
+    assistente_gemini_modelo,
     gemini_api_key,
     group_invite_url,
     ml_affiliate,
@@ -384,7 +384,7 @@ class Assistente:
     ) -> None:
         self._busca = busca
         self._client = client
-        self._modelo = modelo or copy_model()
+        self._modelo = modelo or assistente_gemini_modelo()
         self._links = links or Links()
 
     def _cliente(self):
