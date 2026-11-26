@@ -70,9 +70,10 @@ com dado de produção.
 ## Design
 
 ### Busca e índice
-- `indice.COBERTURA_MINIMA` sai; entra `MINIMO_DE_VETORES = 2000`: a busca por vetor
-  vale quando há pelo menos 2.000 vetores carregados (o piso de mediana + 0,06
-  continua). O resumo do índice segue registrando a cobertura.
+- Entra `MINIMO_DE_VETORES = 2000`: a busca por vetor vale com pelo menos 2.000
+  vetores carregados **ou** com `COBERTURA_MINIMA` (90%) do catálogo — o segundo
+  caso mantém catálogo pequeno (testes, instalação nova) funcionando. O piso de
+  mediana + 0,06 continua. O resumo do índice segue registrando a cobertura.
 - `itens` ganha `prioridade INTEGER NOT NULL DEFAULT 0` (migração com `ALTER TABLE`
   quando a coluna não existe). `sincronizar` grava 1 para produto com post enviado
   ao grupo nos últimos 30 dias. `vetorizar_pendentes` ordena por
