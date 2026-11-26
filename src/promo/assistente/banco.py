@@ -49,7 +49,9 @@ CREATE TABLE IF NOT EXISTS itens (
     titulo     TEXT NOT NULL,
     busca      TEXT NOT NULL,        -- titulo sem acento e minusculo
     fonte      TEXT NOT NULL,
-    visto_em   TEXT NOT NULL
+    visto_em   TEXT NOT NULL,
+    -- 1 = saiu no grupo nos ultimos 30 dias: vetoriza antes do resto
+    prioridade INTEGER NOT NULL DEFAULT 0
 );
 -- Conteudo externo: o FTS guarda so o indice, o texto mora em `itens`.
 CREATE VIRTUAL TABLE IF NOT EXISTS itens_fts
@@ -66,6 +68,18 @@ CREATE TABLE IF NOT EXISTS vetores (
 _INICIADOS: set[Path] = set()
 
 
+def _migrar(conn: sqlite3.Connection) -> None:
+    """Acrescenta ao banco antigo o que o SCHEMA novo ja traz.
+
+    `CREATE TABLE IF NOT EXISTS` nao mexe em tabela que ja existe.
+    """
+    colunas = {linha["name"] for linha in conn.execute("PRAGMA table_info(itens)")}
+    if "prioridade" not in colunas:
+        conn.execute(
+            "ALTER TABLE itens ADD COLUMN prioridade INTEGER NOT NULL DEFAULT 0"
+        )
+
+
 @contextmanager
 def conectar(caminho: Path | None = None) -> Iterator[sqlite3.Connection]:
     caminho = caminho or assistente_db_path()
@@ -77,6 +91,7 @@ def conectar(caminho: Path | None = None) -> Iterator[sqlite3.Connection]:
     conn.execute(f"PRAGMA busy_timeout = {int(BUSY_TIMEOUT_SECONDS * 1000)}")
     if caminho not in _INICIADOS:
         conn.executescript(SCHEMA)
+        _migrar(conn)
         _INICIADOS.add(caminho)
     try:
         yield conn

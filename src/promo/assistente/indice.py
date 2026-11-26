@@ -44,6 +44,13 @@ LOTE_DE_EMBEDDING = 40
 # o 429 parou a carga em 250 de 12 mil, e a busca usou esses 250: o vizinho "mais
 # parecido" de "promocoes de PS5" foi uma figura de Papai Noel.
 COBERTURA_MINIMA = 0.9
+# Ou, em numero absoluto: com 2 mil vetores ja ha vizinho de verdade para quase
+# toda pergunta, e esperar 90% de 12 mil prendia a busca so no texto por horas
+# (em 26/11/2026 eram 62% e o vetor seguia desligado). A margem sobre a mediana
+# continua tirando o vizinho sem relacao.
+MINIMO_DE_VETORES = 2000
+# Post enviado ao grupo nesta janela faz o produto vetorizar primeiro.
+DIAS_DE_PRIORIDADE = 30
 
 # A similaridade de cosseno destes vetores tem um piso alto: medido em
 # 18/11/2026 com o `gemini-embedding-001` em 256 dimensoes, titulos sem relacao
@@ -83,16 +90,25 @@ def sincronizar(
             "WHERE last_seen_at >= ?",
             (limite,),
         ).fetchall()
+        no_grupo = {
+            linha["product_id"]
+            for linha in bot.execute(
+                "SELECT DISTINCT product_id FROM posts "
+                "WHERE status = 'sent' AND sent_at >= ?",
+                (_iso(now() - timedelta(days=DIAS_DE_PRIORIDADE)),),
+            )
+        }
 
     conn.executemany(
         """
-        INSERT INTO itens (product_id, titulo, busca, fonte, visto_em)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO itens (product_id, titulo, busca, fonte, visto_em, prioridade)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(product_id) DO UPDATE SET
             titulo = excluded.titulo,
             busca = excluded.busca,
             fonte = excluded.fonte,
-            visto_em = excluded.visto_em
+            visto_em = excluded.visto_em,
+            prioridade = excluded.prioridade
         """,
         [
             (
@@ -101,6 +117,7 @@ def sincronizar(
                 texto_de_busca(p["title"]),
                 p["source"],
                 p["last_seen_at"],
+                1 if p["id"] in no_grupo else 0,
             )
             for p in produtos
         ],
@@ -191,7 +208,7 @@ def vetorizar_pendentes(
     sql = (
         "SELECT i.id, i.titulo FROM itens i LEFT JOIN vetores v ON v.id = i.id "
         "WHERE v.id IS NULL OR v.titulo != i.titulo OR v.modelo != ? "
-        "ORDER BY i.visto_em DESC"
+        "ORDER BY i.prioridade DESC, i.visto_em DESC"
     )
     parametros: tuple = (embeddings.assinatura,)
     if limite:

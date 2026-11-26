@@ -42,6 +42,7 @@ from .banco import (
     respondidas_na_ultima_hora,
 )
 from .busca import Busca
+from . import indice
 from .conversa import Assistente, Resposta
 from .indice import (
     COBERTURA_MINIMA,
@@ -242,8 +243,12 @@ def indexar(
         if vetores is not None and ativos:
             cobertura = len(vetores) / ativos
         # Vetor de parte do catalogo traz vizinho aleatorio: fica so o texto ate
-        # a carga chegar perto do fim (ver `indice.COBERTURA_MINIMA`).
-        busca.atualizar_vetores(vetores if cobertura >= COBERTURA_MINIMA else None)
+        # a carga chegar perto do fim ou a 2 mil vetores (ver
+        # `indice.COBERTURA_MINIMA` e `indice.MINIMO_DE_VETORES`).
+        suficiente = vetores is not None and (
+            len(vetores) >= indice.MINIMO_DE_VETORES or cobertura >= COBERTURA_MINIMA
+        )
+        busca.atualizar_vetores(vetores if suficiente else None)
     resumo = {
         "ativos": ativos,
         "removidos": removidos,
