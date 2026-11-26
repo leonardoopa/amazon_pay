@@ -16,7 +16,8 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Callable, Iterable
 
 import numpy as np
@@ -49,6 +50,12 @@ COBERTURA_MINIMA = 0.9
 # (em 26/11/2026 eram 62% e o vetor seguia desligado). A margem sobre a mediana
 # continua tirando o vizinho sem relacao.
 MINIMO_DE_VETORES = 2000
+# O plano gratuito do Gemini da ~1000 embeddings por dia, e a pergunta do usuario
+# gasta da mesma cota. Medido em 26/11/2026: o indexador usava a cota inteira e
+# as perguntas falhavam o resto do dia. O indice fica com 800; os ~200 restantes
+# sao das perguntas. O dia da cota vira no fuso do Pacifico.
+ORCAMENTO_DO_INDICE = 800
+FUSO_DA_COTA = ZoneInfo("America/Los_Angeles")
 # Post enviado ao grupo nesta janela faz o produto vetorizar primeiro.
 DIAS_DE_PRIORIDADE = 30
 
@@ -189,6 +196,23 @@ class Embeddings:
         return self._embed([texto], "RETRIEVAL_QUERY")[0]
 
 
+def dia_da_cota(agora: datetime | None = None) -> str:
+    """O dia (YYYY-MM-DD) da cota do Gemini, que renova a meia-noite do Pacifico."""
+    agora = agora or datetime.now(timezone.utc)
+    return agora.astimezone(FUSO_DA_COTA).strftime("%Y-%m-%d")
+
+
+def _gasto_do_dia(conn: sqlite3.Connection, dia: str) -> int:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS uso_de_embedding ("
+        "dia TEXT PRIMARY KEY, documentos INTEGER NOT NULL)"
+    )
+    linha = conn.execute(
+        "SELECT documentos FROM uso_de_embedding WHERE dia = ?", (dia,)
+    ).fetchone()
+    return int(linha[0]) if linha else 0
+
+
 def vetorizar_pendentes(
     conn: sqlite3.Connection,
     embeddings: Embeddings,
@@ -221,6 +245,16 @@ def vetorizar_pendentes(
         if inicio and esperar is not None and esperar():
             break
         lote = pendentes[inicio : inicio + LOTE_DE_EMBEDDING]
+        dia = dia_da_cota()
+        gasto = _gasto_do_dia(conn, dia)
+        if gasto + len(lote) > ORCAMENTO_DO_INDICE:
+            log.warning(
+                "Orcamento de embedding do dia (%d) esgotado com %d gastos; "
+                "o resto fica para o proximo dia da cota",
+                ORCAMENTO_DO_INDICE,
+                gasto,
+            )
+            break
         try:
             vetores = embeddings.documentos([linha["titulo"] for linha in lote])
         except Exception as exc:  # noqa: BLE001 - 429 e rede: continua na proxima
@@ -238,6 +272,11 @@ def vetorizar_pendentes(
                 (linha["id"], linha["titulo"], embeddings.assinatura, v.tobytes())
                 for linha, v in zip(lote, vetores)
             ],
+        )
+        conn.execute(
+            "INSERT INTO uso_de_embedding (dia, documentos) VALUES (?, ?) "
+            "ON CONFLICT(dia) DO UPDATE SET documentos = documentos + excluded.documentos",
+            (dia, len(lote)),
         )
         conn.commit()
         feitos += len(lote)
