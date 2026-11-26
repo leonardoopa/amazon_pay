@@ -40,6 +40,7 @@ from .banco import (
     registrar_contato,
     registrar_mensagem,
     respondidas_na_ultima_hora,
+    ultimo_contexto,
 )
 from .busca import Busca
 from . import indice
@@ -149,6 +150,7 @@ class Atendente:
             motivo: str | None = None
             novo = False
             fixa: str | None = None
+            contexto = None
             if not liberado(telefone, self._liberados):
                 motivo = "fora da lista liberada"
             else:
@@ -164,6 +166,8 @@ class Atendente:
                         motivo = "pediu para parar"
                 elif respondidas_na_ultima_hora(conn, telefone) >= self._max_por_hora:
                     motivo = "limite por hora"
+                else:
+                    contexto = ultimo_contexto(conn, telefone)
             if motivo is not None:
                 finalizar(conn, msg["id"], "ignorada", motivo)
                 log.info(
@@ -180,7 +184,7 @@ class Atendente:
             if fixa is not None:
                 resposta = Resposta(fixa, None, 0)
             else:
-                resposta = self._assistente.responder(msg["texto"])
+                resposta = self._assistente.responder(msg["texto"], contexto=contexto)
             texto = resposta.texto
             if novo and fixa is None:
                 texto = f"{texto}\n\n{AVISO_PRIMEIRA_VEZ}"
@@ -206,6 +210,7 @@ class Atendente:
                 consulta=resposta.consulta,
                 resultados=resposta.resultados,
                 resposta=gravado,
+                produtos=list(resposta.produtos),
             )
         log.info(
             "Assistente respondeu %s para %s: consulta=%r, %d resultado(s), "

@@ -141,6 +141,18 @@ class Resultado:
     imagem: str | None = None  # URL http(s) ou caminho local da foto guardada
 
 
+@dataclass(frozen=True)
+class Historico:
+    """O que o bot mediu de um produto nos ultimos 60 dias."""
+
+    resultado: Resultado
+    menor_preco: float | None  # menor preco diario da janela, hoje incluido
+    menor_em: str | None  # AAAA-MM-DD do menor preco
+    dias: int  # dias com medicao na janela, hoje incluido
+    grupo_em: str | None  # ISO do ultimo envio ao grupo na janela
+    grupo_preco: float | None
+
+
 def termos(consulta: str) -> list[str]:
     """As palavras da pergunta que valem buscar no titulo."""
     return [
@@ -390,6 +402,41 @@ def detalhes(product_ids: list[str]) -> dict[str, Resultado]:
                 imagem=produto["image_url"] or None,
             )
     return saida
+
+
+def historico(product_id: str) -> Historico | None:
+    """Menor preco medido e ultimo envio ao grupo, ambos na janela de 60 dias.
+
+    None quando o produto nao esta mais disponivel (ver `detalhes`).
+    """
+    resultado = detalhes([product_id]).get(product_id)
+    if resultado is None:
+        return None
+    hoje = now().date().isoformat()
+    with connect() as bot:
+        menor = bot.execute(
+            "SELECT price, observed_on FROM price_history WHERE product_id = ? "
+            "AND observed_on >= date(?, ?) ORDER BY price, observed_on DESC LIMIT 1",
+            (product_id, hoje, f"-{JANELA_DA_MEDIANA} days"),
+        ).fetchone()
+        dias = bot.execute(
+            "SELECT COUNT(*) FROM price_history WHERE product_id = ? "
+            "AND observed_on >= date(?, ?)",
+            (product_id, hoje, f"-{JANELA_DA_MEDIANA} days"),
+        ).fetchone()[0]
+        grupo = bot.execute(
+            "SELECT sent_at, price FROM posts WHERE product_id = ? "
+            "AND status = 'sent' AND sent_at >= ? ORDER BY sent_at DESC LIMIT 1",
+            (product_id, _iso(now() - timedelta(days=JANELA_DA_MEDIANA))),
+        ).fetchone()
+    return Historico(
+        resultado=resultado,
+        menor_preco=float(menor["price"]) if menor else None,
+        menor_em=menor["observed_on"] if menor else None,
+        dias=dias,
+        grupo_em=grupo["sent_at"] if grupo else None,
+        grupo_preco=float(grupo["price"]) if grupo else None,
+    )
 
 
 class Busca:

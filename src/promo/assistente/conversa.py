@@ -35,10 +35,20 @@ from ..config import (
     ml_affiliate,
 )
 from ..copywriter import brl
-from ..db import now
+from ..db import now, sem_acento
 from ..delivery.evolution import CAPTION_LIMIT
 from ..models import Offer
-from .busca import DIAS_MINIMOS, Busca, Resultado, termos
+from .banco import Contexto
+from .busca import (
+    DIAS_MINIMOS,
+    JANELA_DA_MEDIANA,
+    Busca,
+    Historico,
+    Resultado,
+    detalhes,
+    historico,
+    termos,
+)
 
 log = logging.getLogger("promo")
 
@@ -60,15 +70,25 @@ MAX_CARACTERES = 1500
 TAMANHO_DO_NOME = 70
 PONTAS_SOLTAS = {"com", "de", "da", "do", "das", "dos", "e", "para", "em", ""}
 
+SEM_HISTORICO = "Ainda sem histórico suficiente para comparar o preço."
+JANELA_DO_HISTORICO = JANELA_DA_MEDIANA
+
+PEDE_O_PRODUTO = "Me diga de qual produto você quer saber o preço."
+PRODUTO_SUMIU = "Esse produto não aparece mais disponível nas lojas que acompanhamos."
+
 PRECO = re.compile(r"R\$\s?\d{1,3}(?:\.\d{3})*,\d{2}")
 LINK = re.compile(r"https?://\S+")
 
 
 class Pedido(BaseModel):
-    tipo: Literal["produto", "conversa"] = "produto"
+    tipo: Literal["produto", "historico", "conversa"] = "produto"
     consulta: str = ""
     preco_min: float | None = None
     preco_max: float | None = None
+    # So no tipo "historico": qual produto da ultima resposta (1 a 3) e o preco
+    # que a pessoa diz ter visto.
+    item: int | None = None
+    preco_citado: float | None = None
 
 
 class Escrita(BaseModel):
@@ -90,19 +110,29 @@ class Resposta:
     consulta: str | None
     resultados: int
     cartoes: tuple[Cartao, ...] = ()
+    produtos: tuple[str, ...] = ()  # os product_id mostrados: a memoria da conversa
 
 
 ENTENDER = """Voce le mensagens de WhatsApp enviadas ao assistente de um grupo de \
 ofertas brasileiro e diz o que a pessoa procura.
 
 Responda SO o JSON pedido:
-- tipo: "produto" quando a pessoa procura um produto ou um preco; "conversa" \
-para cumprimento, agradecimento ou qualquer outra coisa.
+- tipo: "produto" quando a pessoa procura um produto ou um preco; "historico" \
+quando, com uma conversa anterior, ela pergunta sobre o preco ou o historico de \
+preco de um produto que JA foi mostrado ("esse foi o melhor preco?", "ja \
+esteve mais barato?"); "conversa" para cumprimento, agradecimento ou qualquer \
+outra coisa.
+- item: so no "historico", qual produto da conversa anterior (1, 2 ou 3). \
+Sem indicacao, 1.
+- preco_citado: so no "historico", o valor em reais que a pessoa diz ter visto \
+("4k" e 4000, "4 mil" e 4000). Sem valor, null.
 - consulta: o produto, com as palavras que estariam no titulo do anuncio \
 (marca, modelo, tipo). Sem "barato", "promocao", "tem", "quero", "mande". \
 Corrija erro de digitacao, mas mantenha siglas como a pessoa escreveu ("ps5", \
 "gta 6"): a busca ja conhece os sinonimos. Nao acrescente palavra que a pessoa \
-nao disse ("ps5" nao vira "console ps5").
+nao disse ("ps5" nao vira "console ps5"). Com conversa anterior, uma busca nova \
+que completa a anterior sai com a consulta inteira ("e o console?" depois de \
+"ps5" vira "console ps5").
 - preco_min e preco_max: so se a pessoa disser um valor ("ate 400", "menos de \
 mil", "entre 100 e 200"). Em reais, numero puro. Sem valor, null."""
 
@@ -131,8 +161,58 @@ CUMPRIMENTOS = {
 }  # fmt: skip
 
 
-def pedido_simples(texto: str) -> Pedido:
-    """A leitura sem Gemini: as palavras do texto e um "ate N" se houver."""
+SINAL_DE_HISTORICO = re.compile(
+    r"melhor preco|menor preco|mais barato|ja esteve|ja teve|baixou|esse foi|historico"
+)
+ORDINAIS = {"primeiro": 1, "segundo": 2, "terceiro": 3}
+# Numero seguido de k, mil ou reais e preco, nao a posicao do item.
+POSICAO = re.compile(r"(?<![\d.,$])\b([1-3])\b(?!\s*(?:k\b|mil\b|reais|[.,]\d))")
+VALOR_COM_K = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:k|mil)\b")
+VALOR_COM_RS = re.compile(r"r\$\s*(\d[\d.]*(?:,\d+)?)")
+VALOR_EM_REAIS = re.compile(r"(\d[\d.]*(?:,\d+)?)\s*reais")
+
+
+def _numero(texto: str) -> float | None:
+    try:
+        return float(texto.replace(".", "").replace(",", "."))
+    except ValueError:
+        return None
+
+
+def preco_citado(texto: str) -> float | None:
+    """O valor que a pessoa diz ter visto: "4k", "4 mil", "R$ 3.799", "3799 reais"."""
+    limpo = sem_acento(texto).lower()
+    com_k = VALOR_COM_K.search(limpo)
+    if com_k:
+        # "4,5k" e "4.5k" sao quatro e meio; so o ponto de milhar e que sai.
+        base = _numero(com_k.group(1).replace(".", ","))
+        return base * 1000 if base is not None else None
+    for padrao in (VALOR_COM_RS, VALOR_EM_REAIS):
+        achado = padrao.search(limpo)
+        if achado:
+            return _numero(achado.group(1))
+    return None
+
+
+def _item_citado(limpo: str) -> int:
+    for palavra, n in ORDINAIS.items():
+        if palavra in limpo:
+            return n
+    posicao = POSICAO.search(limpo)
+    return int(posicao.group(1)) if posicao else 1
+
+
+def pedido_simples(texto: str, tem_contexto: bool = False) -> Pedido:
+    """A leitura sem Gemini: as palavras do texto e um "ate N" se houver.
+
+    Com conversa anterior, pergunta de preco sobre o que ja foi mostrado vira
+    pedido de historico.
+    """
+    sem = sem_acento(texto).lower()
+    if tem_contexto and SINAL_DE_HISTORICO.search(sem):
+        return Pedido(
+            tipo="historico", item=_item_citado(sem), preco_citado=preco_citado(texto)
+        )
     limpo = texto.lower()
     teto = re.search(
         r"(?:ate|até|menos de|abaixo de)\s*(?:r\$\s*)?(\d[\d.]*(?:,\d+)?)", limpo
@@ -156,19 +236,23 @@ def pedido_simples(texto: str) -> Pedido:
     )
 
 
-def _dia_e_hora(iso: str, agora: datetime | None = None) -> str:
-    """'hoje às 14:20', 'ontem às 09:05' ou 'em 12/11'.
-
-    Hora de Brasilia de proposito, e nao a do servidor: e a que a pessoa le.
-    """
+def _em_brasilia(iso: str) -> datetime:
     try:
         from zoneinfo import ZoneInfo
 
         fuso = ZoneInfo("America/Sao_Paulo")
     except Exception:  # noqa: BLE001 - sem tzdata, fica a hora local da maquina
         fuso = None
-    momento = datetime.fromisoformat(iso).astimezone(fuso)
-    hoje = (agora or now()).astimezone(fuso).date()
+    return datetime.fromisoformat(iso).astimezone(fuso)
+
+
+def _dia_e_hora(iso: str, agora: datetime | None = None) -> str:
+    """'hoje às 14:20', 'ontem às 09:05' ou 'em 12/11'.
+
+    Hora de Brasilia de proposito, e nao a do servidor: e a que a pessoa le.
+    """
+    momento = _em_brasilia(iso)
+    hoje = (agora or now()).astimezone(momento.tzinfo).date()
     if momento.date() == hoje:
         return f"hoje às {momento:%H:%M}"
     if momento.date() == hoje - timedelta(days=1):
@@ -194,7 +278,7 @@ def veredito(r: Resultado) -> str:
     mediana e o de hoje eram o mesmo numero.
     """
     if r.mediana is None or r.dias < DIAS_MINIMOS:
-        return "Ainda sem histórico suficiente para comparar o preço."
+        return SEM_HISTORICO
     mediana = f"R$ {brl(r.mediana)}"
     variacao = (r.preco - r.mediana) / r.mediana
     parado = r.menor is not None and r.menor >= r.mediana * 0.99
@@ -209,6 +293,56 @@ def veredito(r: Resultado) -> str:
     if variacao >= 0.03:
         return f"Acima da mediana de 60 dias ({mediana}): vale esperar."
     return f"Na média dos últimos 60 dias ({mediana})."
+
+
+def _dd_mm(iso: str) -> str:
+    """'DD/MM' de uma data ISO (so o dia, ou o instante em hora de Brasilia)."""
+    if len(iso) == 10:
+        return f"{iso[8:10]}/{iso[5:7]}"
+    return f"{_em_brasilia(iso):%d/%m}"
+
+
+def texto_do_historico(
+    h: Historico,
+    link: str,
+    preco_citado: float | None,
+    agora: datetime | None = None,
+) -> str:
+    """O historico de um produto so com o que o bot mediu, sem Gemini no meio."""
+    r = h.resultado
+    linhas = [
+        f"*{nome_curto(nome_de_vitrine(r.titulo))}*",
+        f"Hoje: R$ {brl(r.preco)} no {LOJAS.get(r.fonte, r.fonte)}, "
+        f"{quando(r.visto_em, agora)}.",
+    ]
+    suficiente = r.dias >= DIAS_MINIMOS and h.menor_preco is not None
+    if suficiente:
+        linhas.append(
+            f"Menor preço que medimos em {JANELA_DO_HISTORICO} dias: "
+            f"R$ {brl(h.menor_preco)}, em {_dd_mm(h.menor_em)}."
+        )
+    else:
+        linhas.append(SEM_HISTORICO)
+    if h.grupo_em and h.grupo_preco is not None:
+        linhas.append(
+            f"Saiu no grupo em {_dd_mm(h.grupo_em)} por R$ {brl(h.grupo_preco)}."
+        )
+    if preco_citado is not None:
+        if h.menor_preco is not None and h.menor_preco <= preco_citado:
+            linhas.append(
+                f"Sim: medimos R$ {brl(h.menor_preco)} em {_dd_mm(h.menor_em)}, "
+                f"abaixo dos R$ {brl(preco_citado)} que você viu."
+            )
+        else:
+            linhas.append(
+                f"Não medimos esse produto a R$ {brl(preco_citado)} ou menos "
+                f"nos últimos {JANELA_DO_HISTORICO} dias."
+            )
+    parecer = veredito(r)
+    if parecer != SEM_HISTORICO or suficiente:
+        linhas.append(parecer)
+    linhas += [link, "", DIVULGACAO]
+    return "\n".join(linhas)
 
 
 def nome_curto(nome: str, limite: int = TAMANHO_DO_NOME) -> str:
@@ -404,10 +538,13 @@ class Assistente:
             model=self._modelo, contents=conteudo, config=config
         )
 
-    def entender(self, texto: str) -> Pedido:
+    def entender(self, texto: str, contexto_texto: str | None = None) -> Pedido:
+        conteudo = texto
+        if contexto_texto:
+            conteudo = f"Conversa anterior:\n{contexto_texto}\n\nMensagem: {texto}"
         try:
             resposta = self._gerar(
-                texto,
+                conteudo,
                 ENTENDER,
                 response_mime_type="application/json",
                 response_schema=Pedido,
@@ -424,7 +561,37 @@ class Assistente:
             )
         except Exception as exc:  # noqa: BLE001 - sem Gemini, a leitura simples cobre
             log.warning("Gemini nao leu o pedido; vai a leitura simples: %s", exc)
-            return pedido_simples(texto)
+            return pedido_simples(texto, tem_contexto=bool(contexto_texto))
+
+    def _resumo_da_conversa(self, contexto: Contexto) -> str:
+        """A busca anterior e os produtos mostrados, para o Gemini entender 'o 2'."""
+        achados = self._busca_detalhes(list(contexto.produtos))
+        linhas = [f"Busca anterior: {contexto.consulta or '(sem busca)'}"]
+        linhas += [
+            f"{n}. {nome_curto(nome_de_vitrine(r.titulo))}"
+            for n, r in enumerate(achados, 1)
+        ]
+        return "\n".join(linhas)
+
+    def _busca_detalhes(self, ids: list[str]) -> list[Resultado]:
+        achados = detalhes(ids)
+        return [achados[i] for i in ids if i in achados]
+
+    def _historico(
+        self, pedido: Pedido, contexto: Contexto | None, agora: datetime | None
+    ) -> Resposta:
+        produtos = contexto.produtos if contexto else ()
+        consulta = contexto.consulta if contexto else None
+        item = pedido.item or 1
+        if not 1 <= item <= len(produtos):
+            return Resposta(PEDE_O_PRODUTO, consulta, 0, produtos=produtos)
+        h = historico(produtos[item - 1])
+        if h is None:
+            return Resposta(PRODUTO_SUMIU, consulta, 0, produtos=produtos)
+        texto = texto_do_historico(
+            h, self._links.de(h.resultado), pedido.preco_citado, agora
+        )
+        return Resposta(texto, consulta, 1, produtos=produtos)
 
     def _item(self, r: Resultado, agora: datetime | None) -> dict:
         item = {
@@ -471,8 +638,16 @@ class Assistente:
             return None
         return escrita
 
-    def responder(self, texto: str, agora: datetime | None = None) -> Resposta:
-        pedido = self.entender(texto)
+    def responder(
+        self,
+        texto: str,
+        agora: datetime | None = None,
+        contexto: Contexto | None = None,
+    ) -> Resposta:
+        resumo = self._resumo_da_conversa(contexto) if contexto else None
+        pedido = self.entender(texto, resumo)
+        if pedido.tipo == "historico":
+            return self._historico(pedido, contexto, agora)
         if pedido.tipo != "produto" or not termos(pedido.consulta):
             return Resposta(boas_vindas(), None, 0)
 
@@ -496,4 +671,10 @@ class Assistente:
         cartoes = montar_cartoes(
             escrita.abertura, escrita.legendas, [r.imagem for r in resultados]
         )
-        return Resposta(fechamento(extras), pedido.consulta, len(resultados), cartoes)
+        return Resposta(
+            fechamento(extras),
+            pedido.consulta,
+            len(resultados),
+            cartoes,
+            tuple(r.product_id for r in resultados),
+        )
