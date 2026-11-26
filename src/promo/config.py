@@ -327,6 +327,11 @@ def fonte_rapida_intervalo_segundos() -> float:
     return float(_optional("FONTE_RAPIDA_INTERVALO_SEGUNDOS", "180"))
 
 
+def espelho_intervalo_segundos() -> float:
+    """Segundos entre duas leituras dos grupos espelhados. Padrao: 1 minuto."""
+    return float(_optional("ESPELHO_INTERVALO_SEGUNDOS", "60"))
+
+
 def tematico_gap_seconds() -> float:
     """Intervalo minimo entre dois posts do MESMO grupo tematico.
 

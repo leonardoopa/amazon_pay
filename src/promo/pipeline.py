@@ -55,6 +55,7 @@ from .config import (
 )
 from .copywriter import Copywriter, com_convite, fallback_copy
 from .db import (
+    PRIORIDADE_ESPELHO,
     CATEGORIA,
     categories_in_cooldown,
     connect,
@@ -3236,9 +3237,9 @@ def _gap_minimo_do_grupo(grupo_jid: str) -> float:
 def drip_once(delivery=None) -> str:
     """Envia no maximo UM post, se o ritmo deixar. Devolve o que aconteceu.
 
-    A vez e de quem esta ha mais tempo sem sair, entre os grupos que podem
-    receber agora. Dentro de cada grupo vale a ordem da fila: prioridade e
-    depois chegada, entao o repasse de outro grupo sai na frente, e a comida e
+    A vez e do espelho, e depois de quem esta ha mais tempo sem sair, entre os
+    grupos que podem receber agora. Dentro de cada grupo vale a ordem da fila:
+    prioridade e depois chegada, entao o repasse de outro grupo sai na frente, e a comida e
     a fonte prioritaria por ultimo (ver `_prioridade_do_post`).
 
     Estado so no banco -- ultimo envio de cada grupo e a contagem da janela --,
@@ -3281,12 +3282,14 @@ def drip_once(delivery=None) -> str:
                     if vagas is not None and vagas <= 0:
                         continue
                 espera = float("inf") if do_grupo is None else do_grupo
-                elegiveis.append((espera, linha))
+                espelhada = linha["prioridade"] >= PRIORIDADE_ESPELHO
+                elegiveis.append(((espelhada, espera), linha))
 
         if not elegiveis:
             return NADA
 
-        # Quem esta ha mais tempo sem sair. Empate (varios nunca enviaram) fica
+        # O espelho passa na frente dos outros grupos tambem. Fora ele, sai
+        # quem esta ha mais tempo sem sair. Empate (varios nunca enviaram) fica
         # com a ordem de insercao: a do `pending_posts`, prioridade primeiro.
         elegiveis.sort(key=lambda par: par[0], reverse=True)
         linha = elegiveis[0][1]

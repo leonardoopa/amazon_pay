@@ -468,3 +468,27 @@ def test_sessao_volta_a_valer_depois_de_sucesso():
     estado["logado"] = True
     builder._sessao_morta = None  # o processo reinicia com cookie novo
     assert builder.create([PRODUTO]).links == {PRODUTO: CURTO}
+
+
+def test_painel_que_reescreve_a_url_ainda_devolve_o_link_do_pedido():
+    """O painel encurta `/nome-do-produto/p/MLB1` para `/p/MLB1` no
+    `origin_url`. Medido em 26/11/2026: sem casar pelo pedido, o link gerado se
+    perdia e o produto ficava sem afiliado."""
+    pedido = "https://www.mercadolivre.com.br/nome-do-produto/p/MLB19592785"
+
+    def handler(req):
+        if req.method == "GET":
+            return httpx.Response(200, text=PAGINA)
+        return httpx.Response(200, json=resposta_createLink(PRODUTO))
+
+    assert build(handler).create([pedido]).links == {pedido: CURTO}
+
+
+def test_lote_nao_adivinha_de_quem_e_o_link_reescrito():
+    def handler(req):
+        if req.method == "GET":
+            return httpx.Response(200, text=PAGINA)
+        return httpx.Response(200, json=resposta_createLink(PRODUTO))
+
+    pedidos = ["https://x/a/p/MLB1", "https://x/b/p/MLB2"]
+    assert set(build(handler).create(pedidos).links) == {PRODUTO}

@@ -146,8 +146,14 @@ class LinkBuilder:
 
         gerados: dict[str, str] = {}
         recusados: dict[str, str] = {}
-        for item in response.json().get("urls", []):
+        itens = response.json().get("urls", [])
+        for item in itens:
             origem = item.get("origin_url")
+            # O painel reescreve a URL no `origin_url` (tira o nome do produto,
+            # poe filtro). Quem chama procura pela que pediu: com um pedido so,
+            # a resposta so pode ser dele. Em lote nao ha como saber.
+            if origem and len(urls) == 1 and len(itens) == 1:
+                origem = urls[0]
             if not origem:
                 continue
             curto = item.get("short_url")

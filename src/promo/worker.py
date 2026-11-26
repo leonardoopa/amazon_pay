@@ -114,6 +114,30 @@ def start_fonte_rapida(stop: threading.Event) -> threading.Thread | None:
     return thread
 
 
+def start_espelho(stop: threading.Event) -> threading.Thread | None:
+    """Sobe a leitura dos grupos espelhados, ou None.
+
+    So no backend 'evolution' e quando o watchlist tem `grupos_espelho`.
+    """
+    from .config import delivery_backend, espelho_intervalo_segundos
+    from .espelho import espelhar, load_espelhos
+
+    if delivery_backend() != "evolution" or not load_espelhos():
+        return None
+
+    intervalo = espelho_intervalo_segundos()
+    log.info("Espelho ligado: leitura a cada %.0fs.", intervalo)
+    thread = threading.Thread(
+        target=loop,
+        args=(stop, intervalo, espelhar),
+        kwargs={"registrar_fim": False},
+        name="promo-espelho",
+        daemon=True,
+    )
+    thread.start()
+    return thread
+
+
 def loop(
     stop: threading.Event,
     interval: float,

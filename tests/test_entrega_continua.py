@@ -23,7 +23,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from promo import pipeline  # noqa: E402
-from promo.db import SCHEMA, create_post, record_offer  # noqa: E402
+from promo.db import PRIORIDADE_ESPELHO, SCHEMA, create_post, record_offer  # noqa: E402
 from promo.delivery import NotConnected  # noqa: E402
 from promo.models import Offer  # noqa: E402
 
@@ -520,3 +520,18 @@ def test_com_evolution_a_thread_sobe_e_para_com_o_evento(monkeypatch):
     thread.join(timeout=2)
 
     assert not thread.is_alive()
+
+
+def test_o_espelho_passa_na_frente_dos_outros_grupos(banco):
+    """O Geral nunca enviou, entao venceria o revezamento por tempo de espera.
+    O espelho sai antes mesmo assim -- respeitado o intervalo do grupo dele."""
+    ja_enviado(banco, "ANTES", MULHERES, ha_segundos=1000)
+    geral = enfileirar(banco, "GERAL", idade_min=5.0)
+    espelhada = enfileirar(
+        banco, "ESPELHO", grupo=MULHERES, prioridade=PRIORIDADE_ESPELHO
+    )
+
+    pipeline.drip_once(EntregaFalsa())
+
+    assert status(banco, espelhada) == "sent"
+    assert status(banco, geral) == "pending"
