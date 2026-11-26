@@ -303,3 +303,16 @@ def test_atendente_passa_o_contexto_da_resposta_anterior(bancos):
     with banco.conectar() as conn:
         linha = conn.execute("SELECT produtos FROM mensagens WHERE id='M2'").fetchone()
     assert json.loads(linha["produtos"]) == ["p1", "p2"]
+
+
+def test_preco_citado_de_outro_produto_nao_vira_comparacao():
+    """Ensaio de 26/11: o "4k" do console foi comparado com um acessorio de
+    R$ 1.534,99, e a resposta disse "Sim: medimos ... abaixo dos R$ 4.000,00"."""
+    r = _h().resultado
+    acessorio = _h(resultado=Resultado(**{**r.__dict__, "preco": 1534.99}))
+
+    texto = texto_do_historico(acessorio, "https://l/1", 4000.0, None)
+
+    assert "O preço que você citou (R$ 4.000,00) não parece ser deste produto." in texto
+    assert "Sim: medimos" not in texto
+    assert "Não medimos" not in texto

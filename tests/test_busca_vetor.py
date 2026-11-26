@@ -149,3 +149,21 @@ def test_com_vetor_ligado_a_palavra_continua_na_frente(bancos):  # noqa: F811
 
     assert achados[0].external_id == "MLBFONE"
     assert "MLBGEL" not in [r.external_id for r in achados]
+
+
+def test_tipo_pedido_vem_antes_do_acessorio(bancos):  # noqa: F811
+    """Ensaio de 26/11: "console do play 5" trouxe portal e conversor (que citam
+    "console" e sairam no grupo) e nenhum console."""
+    portal = produto(
+        "Portal Ps5 Jogue com seu console Ps5 de qualquer lugar", 1893.0, "MLB1"
+    )
+    saiu_no_grupo(portal, 1893.0)
+    conversor = produto(
+        "Conversor Pxn N5 Para Console Ps5 Jogos De Corrida", 399.99, "MLB2"
+    )
+    saiu_no_grupo(conversor, 399.99)
+    produto("Console PlayStation 5 Slim Edição Digital 825 GB", 3989.0, "MLB3")
+
+    achados = indexado().buscar(pedido_simples("e o console do play 5").consulta)
+
+    assert achados[0].external_id == "MLB3"

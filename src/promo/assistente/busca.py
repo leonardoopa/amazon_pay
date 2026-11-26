@@ -60,6 +60,11 @@ CANDIDATOS_COM_PARTE_DOS_TERMOS = 5
 # Quantas posicoes de relevancia cada faixa adianta (`faixa_da_oferta`): a que
 # saiu no grupo passa na frente de quem esta ate 6 posicoes acima dela.
 AVANCO_DA_FAIXA = {0: 6, 1: 3, 2: 0}
+# Titulo que abre com o tipo pedido ("Console PlayStation 5...") e o produto; o
+# que so cita o tipo no meio ("Portal Ps5 ... seu console Ps5") e acessorio.
+# Em 26/11/2026, "console do play 5" trazia portal e conversor e nenhum console,
+# porque os acessorios tinham saido no grupo e ganhavam o avanco da faixa.
+AVANCO_DO_TIPO = 12
 
 # Palavras que a pergunta tem e o titulo do produto nao. Sem tirar, "tem ps5
 # barato?" procuraria "barato" no catalogo e o AND do FTS nao acharia nada. O
@@ -212,6 +217,21 @@ def codigos_de_modelo(titulo: str) -> set[str]:
             continue
         codigos.add(token)
     return codigos
+
+
+def tipo_pedido(consulta: str) -> set[str]:
+    """A primeira palavra de cada forma do primeiro termo: o tipo de produto.
+
+    "console ps5" -> {"console"}; "airfryer" -> {"airfryer", "air"}.
+    """
+    grupos = conceitos(consulta)
+    return {forma.split()[0] for forma in grupos[0]} if grupos else set()
+
+
+def abre_com_o_tipo(titulo: str, tipo: set[str]) -> bool:
+    """O titulo comeca pelo tipo pedido (plural e sufixo contam: "relogios")."""
+    palavras = _palavras(titulo)
+    return bool(palavras) and any(palavras[0].startswith(t) for t in tipo)
 
 
 def _palavras(titulo: str) -> list[str]:
@@ -542,9 +562,12 @@ class Busca:
         # 19/11/2026, com a faixa decidindo sozinha, uma camera de seguranca que
         # saiu no grupo e cita "iPhone" no fim do titulo passou na frente do
         # proprio iPhone 15. `sorted` e estavel: empate fica com a relevancia.
+        tipo = tipo_pedido(consulta)
         ordem = sorted(
             enumerate(escolhidos),
-            key=lambda par: par[0] - AVANCO_DA_FAIXA[faixa_da_oferta(par[1])],
+            key=lambda par: par[0]
+            - AVANCO_DA_FAIXA[faixa_da_oferta(par[1])]
+            - (AVANCO_DO_TIPO if abre_com_o_tipo(par[1].titulo, tipo) else 0),
         )
         return [r for _, r in ordem][:limite]
 

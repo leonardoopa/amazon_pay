@@ -327,7 +327,17 @@ def texto_do_historico(
         linhas.append(
             f"Saiu no grupo em {_dd_mm(h.grupo_em)} por R$ {brl(h.grupo_preco)}."
         )
-    if preco_citado is not None:
+    if preco_citado is not None and not (
+        r.preco > 0 and 0.5 <= preco_citado / r.preco <= 2
+    ):
+        # Preco citado longe do preco deste produto e de outro produto: em
+        # 26/11/2026 o "4k" de um console foi comparado com um acessorio de
+        # R$ 1.534,99, e a resposta afirmou que medimos "abaixo dos R$ 4.000".
+        linhas.append(
+            f"O preço que você citou (R$ {brl(preco_citado)}) não parece ser "
+            "deste produto."
+        )
+    elif preco_citado is not None:
         if h.menor_preco is not None and h.menor_preco <= preco_citado:
             linhas.append(
                 f"Sim: medimos R$ {brl(h.menor_preco)} em {_dd_mm(h.menor_em)}, "
