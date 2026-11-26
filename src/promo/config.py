@@ -220,6 +220,11 @@ def copy_model() -> str:
     return _optional("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 
+def assistente_gemini_modelo() -> str:
+    """Modelo do assistente de busca; a cota e por modelo, entao nao disputa a do grupo."""
+    return _optional("ASSISTENTE_GEMINI_MODEL", "gemini-3.1-flash-lite")
+
+
 def gemini_api_key() -> str:
     return _get("GEMINI_API_KEY")
 
@@ -320,6 +325,11 @@ def fonte_rapida_intervalo_segundos() -> float:
     por link NOVO -- os ja resolvidos ficam em cache.
     """
     return float(_optional("FONTE_RAPIDA_INTERVALO_SEGUNDOS", "180"))
+
+
+def espelho_intervalo_segundos() -> float:
+    """Segundos entre duas leituras dos grupos espelhados. Padrao: 1 minuto."""
+    return float(_optional("ESPELHO_INTERVALO_SEGUNDOS", "60"))
 
 
 def tematico_gap_seconds() -> float:

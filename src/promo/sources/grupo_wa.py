@@ -224,7 +224,9 @@ def baixar_foto(
         return ""
 
     if len(dados) < FOTO_MINIMA_BYTES:
-        log.warning("Foto da mensagem %s pequena demais (%d bytes).", id_msg, len(dados))
+        log.warning(
+            "Foto da mensagem %s pequena demais (%d bytes).", id_msg, len(dados)
+        )
         return ""
     parcial = destino.with_suffix(".tmp")
     parcial.write_bytes(dados)
@@ -318,8 +320,22 @@ def ler_mensagens(
         corpo = resposta.json()
 
     if isinstance(corpo, dict):
-        return (corpo.get("messages") or {}).get("records") or []
-    return corpo if isinstance(corpo, list) else []
+        registros = (corpo.get("messages") or {}).get("records") or []
+    else:
+        registros = corpo if isinstance(corpo, list) else []
+    return [_desembrulhar(r) for r in registros]
+
+
+def _desembrulhar(registro: dict) -> dict:
+    """Mensagem de grupo com mensagens temporarias vem um nivel abaixo.
+
+    O "Radar do Bagg" e assim: sem isto o post dele chega sem texto e sem foto
+    (medido em 26/11/2026, 47 de 50 mensagens).
+    """
+    dentro = ((registro.get("message") or {}).get("ephemeralMessage") or {}).get(
+        "message"
+    )
+    return {**registro, "message": dentro} if dentro else registro
 
 
 def _cartao_em_destaque(html: str, titulo: str) -> str:
@@ -407,6 +423,15 @@ def produto_do_link(url: str, timeout: float = 25.0) -> Pista | None:
     cartao = _cartao_em_destaque(html, titulo)
     preco, antes = _precos_do_cartao(cartao)
     canonico = CANONICO.search(cartao) if cartao else None
+    if canonico is None:
+        # Sem cartao (o `og:title` vem com o preco no fim e nao casa com o
+        # titulo da pagina), serve o href que carrega o ID do proprio anuncio.
+        canonico = re.search(
+            r'href="(https://produto\.mercadolivre\.com\.br/MLB-?'
+            + item[3:]
+            + r'(?!\d)[^"?#]*)',
+            html,
+        )
 
     return Pista(
         external_id=item,

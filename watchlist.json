@@ -1663,6 +1663,14 @@
       "limite": 15
     }
   ],
+  "_comment_grupos_espelho": "Cada publicacao de `jid` sai igual (mesma foto, mesmo texto) no grupo `destino`, com os links trocados pelos nossos e a frente da fila. Sem Gemini. Mensagem com link que nao vira link nosso, ou sem link, nao sai. Ver `promo/espelho.py`.",
+  "grupos_espelho": [
+    {
+      "nome": "Radar do Bagg | Curadoria de Ofertas #2",
+      "jid": "120363416567666242@g.us",
+      "destino": "120363411852739657@g.us"
+    }
+  ],
   "_comment_comida_e_bebida": "Comida e bebida que os grupos-fonte postam: pedido do dono em 02/10/2026, depois de uma vodka do xet nao chegar ao grupo. Desde 18/11/2026, por decisao do dono, o repasse que casa aqui vai para o FIM da fila (faixa -1; ate entao era a faixa 2, a primeira): sai com a vaga que sobrar depois do resto do repasse e da nossa medicao. O freio por rodada continua sendo MAX_COMIDA_E_BEBIDA_POR_RODADA. Sao PALAVRAS INTEIRAS do titulo, sem acento e em minusculo, com plural: 'gin' nao pega 'ginastica' e 'mel' nao pega 'melhor'. Termo que cita a bebida sem ser ela (maquina de cafe, taca de vinho, perfume Vodka) fica em nao_e_comida, que vence.",
   "comida_e_bebida": [
     "vodka", "vodca", "whisky", "whiskey", "uisque", "gin",

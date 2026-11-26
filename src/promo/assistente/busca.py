@@ -60,6 +60,11 @@ CANDIDATOS_COM_PARTE_DOS_TERMOS = 5
 # Quantas posicoes de relevancia cada faixa adianta (`faixa_da_oferta`): a que
 # saiu no grupo passa na frente de quem esta ate 6 posicoes acima dela.
 AVANCO_DA_FAIXA = {0: 6, 1: 3, 2: 0}
+# Titulo que abre com o tipo pedido ("Console PlayStation 5...") e o produto; o
+# que so cita o tipo no meio ("Portal Ps5 ... seu console Ps5") e acessorio.
+# Em 26/11/2026, "console do play 5" trazia portal e conversor e nenhum console,
+# porque os acessorios tinham saido no grupo e ganhavam o avanco da faixa.
+AVANCO_DO_TIPO = 12
 
 # Palavras que a pergunta tem e o titulo do produto nao. Sem tirar, "tem ps5
 # barato?" procuraria "barato" no catalogo e o AND do FTS nao acharia nada. O
@@ -74,7 +79,7 @@ PALAVRAS_VAZIAS = {
     "barato", "barata", "baratos", "baratas", "preco", "precos", "promocao",
     "promocoes", "promo", "promos", "oferta", "ofertas", "desconto",
     "descontos", "achado", "achados", "link", "links", "ate", "r", "reais",
-    "mais", "menos", "bom", "boa", "melhor", "melhores", "voce", "voces", "vc",
+    "mais", "menos", "menor", "bom", "boa", "melhor", "melhores", "voce", "voces", "vc",
     "vcs", "me", "mim", "manda", "mande", "mandar", "envia", "envie", "enviar",
     "mostra", "mostre", "mostrar", "passa", "passe", "indica", "indique",
     "recomenda", "recomende", "acha", "favor", "pf", "pfv", "hoje", "agora",
@@ -99,12 +104,19 @@ PALAVRAS_VAZIAS = {
 # titulo do console quase nunca traz "PS5", e as fritadeiras vem ora como "Air
 # Fryer", ora como "Airfryer". Cada lado vira um OR dentro do mesmo termo.
 SINONIMOS: dict[str, tuple[str, ...]] = {
-    "ps5": ("playstation 5",),
-    "ps 5": ("ps5", "playstation 5"),
-    "playstation 5": ("ps5",),
-    "ps4": ("playstation 4",),
-    "ps 4": ("ps4", "playstation 4"),
-    "playstation 4": ("ps4",),
+    "ps5": ("playstation 5", "playstation5"),
+    "ps 5": ("ps5", "playstation 5", "playstation5"),
+    "playstation 5": ("ps5", "playstation5"),
+    "play5": ("ps5", "playstation 5", "playstation5"),
+    "play 5": ("ps5", "playstation 5", "playstation5"),
+    "playstation5": ("ps5", "playstation 5", "playstation5"),
+    "ps4": ("playstation 4", "playstation4"),
+    "ps 4": ("ps4", "playstation 4", "playstation4"),
+    "playstation 4": ("ps4", "playstation4"),
+    "play4": ("ps4", "playstation 4", "playstation4"),
+    "play 4": ("ps4", "playstation 4", "playstation4"),
+    "playstation4": ("ps4", "playstation 4", "playstation4"),
+    "play station": ("playstation",),
     "gta 6": ("gta vi", "grand theft auto vi"),
     "gta vi": ("gta 6", "grand theft auto vi"),
     "airfryer": ("air fryer",),
@@ -132,6 +144,18 @@ class Resultado:
     menor: float | None  # menor preco diario da janela
     no_grupo: str | None = None  # ISO do envio ao grupo, se o preco ainda vale
     imagem: str | None = None  # URL http(s) ou caminho local da foto guardada
+
+
+@dataclass(frozen=True)
+class Historico:
+    """O que o bot mediu de um produto nos ultimos 60 dias."""
+
+    resultado: Resultado
+    menor_preco: float | None  # menor preco diario da janela, hoje incluido
+    menor_em: str | None  # AAAA-MM-DD do menor preco
+    dias: int  # dias com medicao na janela, hoje incluido
+    grupo_em: str | None  # ISO do ultimo envio ao grupo na janela
+    grupo_preco: float | None
 
 
 def termos(consulta: str) -> list[str]:
@@ -193,6 +217,26 @@ def codigos_de_modelo(titulo: str) -> set[str]:
             continue
         codigos.add(token)
     return codigos
+
+
+def tipo_pedido(consulta: str) -> set[str]:
+    """A primeira palavra de cada forma do primeiro termo: o tipo de produto.
+
+    "console ps5" -> {"console"}; "relogio garmin" -> {"relogio"}. Pergunta de um
+    termo so ("ps5", "iphone") nao diz o tipo -- o termo e o proprio produto --,
+    e o avanco do tipo mandava o console para o fim, atras dos acessorios "PS5
+    ..." (revisao de 26/11/2026). Fica vazio.
+    """
+    grupos = conceitos(consulta)
+    if len(grupos) < 2:
+        return set()
+    return {forma.split()[0] for forma in grupos[0]}
+
+
+def abre_com_o_tipo(titulo: str, tipo: set[str]) -> bool:
+    """O titulo comeca pelo tipo pedido (plural e sufixo contam: "relogios")."""
+    palavras = _palavras(titulo)
+    return bool(palavras) and any(palavras[0].startswith(t) for t in tipo)
 
 
 def _palavras(titulo: str) -> list[str]:
@@ -385,6 +429,51 @@ def detalhes(product_ids: list[str]) -> dict[str, Resultado]:
     return saida
 
 
+def historico(product_id: str) -> Historico | None:
+    """Menor preco medido e ultimo envio ao grupo, ambos na janela de 60 dias.
+
+    None quando o produto nao esta mais disponivel (ver `detalhes`).
+    """
+    resultado = detalhes([product_id]).get(product_id)
+    if resultado is None:
+        return None
+    hoje = now().date().isoformat()
+    with connect() as bot:
+        leituras = bot.execute(
+            "SELECT price, observed_on FROM price_history WHERE product_id = ? "
+            "AND observed_on >= date(?, ?)",
+            (product_id, hoje, f"-{JANELA_DA_MEDIANA} days"),
+        ).fetchall()
+        dias = bot.execute(
+            "SELECT COUNT(*) FROM price_history WHERE product_id = ? "
+            "AND observed_on >= date(?, ?)",
+            (product_id, hoje, f"-{JANELA_DA_MEDIANA} days"),
+        ).fetchone()[0]
+        grupo = bot.execute(
+            "SELECT sent_at, price FROM posts WHERE product_id = ? "
+            "AND status = 'sent' AND sent_at >= ? ORDER BY sent_at DESC LIMIT 1",
+            (product_id, _iso(now() - timedelta(days=JANELA_DA_MEDIANA))),
+        ).fetchone()
+    # Leitura abaixo de 30% da mediana e erro (uma geladeira de R$ 2.258 leu
+    # R$ 200 num dia so): nao pode virar o "menor preco" da resposta.
+    if leituras:
+        piso = median(float(x["price"]) for x in leituras) * PISO_DO_PRECO
+        leituras = [x for x in leituras if x["price"] >= piso] or leituras
+    menor = min(
+        leituras,
+        key=lambda x: (x["price"], -int(x["observed_on"].replace("-", ""))),
+        default=None,
+    )
+    return Historico(
+        resultado=resultado,
+        menor_preco=float(menor["price"]) if menor else None,
+        menor_em=menor["observed_on"] if menor else None,
+        dias=dias,
+        grupo_em=grupo["sent_at"] if grupo else None,
+        grupo_preco=float(grupo["price"]) if grupo else None,
+    )
+
+
 class Busca:
     def __init__(
         self,
@@ -488,9 +577,12 @@ class Busca:
         # 19/11/2026, com a faixa decidindo sozinha, uma camera de seguranca que
         # saiu no grupo e cita "iPhone" no fim do titulo passou na frente do
         # proprio iPhone 15. `sorted` e estavel: empate fica com a relevancia.
+        tipo = tipo_pedido(consulta)
         ordem = sorted(
             enumerate(escolhidos),
-            key=lambda par: par[0] - AVANCO_DA_FAIXA[faixa_da_oferta(par[1])],
+            key=lambda par: par[0]
+            - AVANCO_DA_FAIXA[faixa_da_oferta(par[1])]
+            - (AVANCO_DO_TIPO if abre_com_o_tipo(par[1].titulo, tipo) else 0),
         )
         return [r for _, r in ordem][:limite]
 

@@ -30,6 +30,7 @@ from .worker import (
     LAST_RUN_KEY,
     loop,
     start_drenagem,
+    start_espelho,
     start_fonte_rapida,
 )
 
@@ -79,6 +80,7 @@ async def lifespan(app: FastAPI):
         start_drenagem(_stop)
         # E o ciclo curto dos grupos prioritarios, que depende dela.
         start_fonte_rapida(_stop)
+        start_espelho(_stop)
     else:
         log.info("Worker desligado (API_WORKER=false). So a API responde.")
 

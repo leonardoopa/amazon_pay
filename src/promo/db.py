@@ -53,8 +53,8 @@ CREATE TABLE IF NOT EXISTS posts (
     -- unico ate 09/09/2026.
     grupo_jid    TEXT NOT NULL DEFAULT '',
     -- Quem passa na frente na fila de entrega; maior sai antes. O repasse de
-    -- outro grupo fica em 1, a comida e a fonte prioritaria em -1, e todo o
-    -- resto em 0 -- entre si, ordenados por `created_at`, como sempre foram.
+    -- outro grupo fica em 1, a comida e a fonte prioritaria em -1, o espelho
+    -- em 2, e todo o resto em 0 -- entre si, ordenados por `created_at`.
     prioridade   INTEGER NOT NULL DEFAULT 0,
     attempts     INTEGER NOT NULL DEFAULT 0,
     -- 1 = desconto medido contra a nossa mediana. 0 = repasse da vitrine do
@@ -168,6 +168,10 @@ MIGRATIONS = [
 
 # Segundos que uma conexao espera por um lock antes de desistir.
 BUSY_TIMEOUT_SECONDS = 5.0
+
+
+# A faixa da publicacao espelhada (ver `espelho`): acima de todas as outras.
+PRIORIDADE_ESPELHO = 2
 
 
 def now() -> datetime:
@@ -1008,9 +1012,10 @@ def pending_posts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     prioridade 1 e passa na frente do que ja estava esperando, a comida e a
     fonte prioritaria entram com -1 e saem por ultimo. Todo o resto tem
     prioridade 0, e dentro de cada faixa a ordem continua sendo a de chegada.
+    Acima de todas fica o espelho (`PRIORIDADE_ESPELHO`).
     """
     return conn.execute(
-        "SELECT id, copy, image_url, grupo_jid FROM posts "
+        "SELECT id, copy, image_url, grupo_jid, prioridade FROM posts "
         "WHERE status = 'pending' ORDER BY prioridade DESC, created_at"
     ).fetchall()
 
