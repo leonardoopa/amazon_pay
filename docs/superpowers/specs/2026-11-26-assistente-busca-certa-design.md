@@ -78,6 +78,11 @@ com dado de produção.
   quando a coluna não existe). `sincronizar` grava 1 para produto com post enviado
   ao grupo nos últimos 30 dias. `vetorizar_pendentes` ordena por
   `prioridade DESC, visto_em DESC`.
+- Orçamento diário de embedding: o indexador para quando o dia (fuso do Pacífico, que é
+  quando a cota do Gemini renova) chega a `ORCAMENTO_DO_INDICE = 800` textos, deixando
+  cerca de 200 da cota diária (~1.000, medida) para o vetor das perguntas. Medido em
+  26/11: a cota estava esgotada às 14h e só voltava às 05h — com o vetor ligado, a
+  pergunta ficaria sem vetor quase o dia todo.
 - Sinônimos: "play5", "play 5", "play station 5", "playstation5" e os mesmos para 4
   entram no grupo do ps5/ps4.
 

@@ -86,9 +86,21 @@
 - [ ] **Step 4:** `rodar_testes.sh` (suíte toda) — PASS.
 - [ ] **Step 5:** commit `feat: assistente lembra a ultima resposta e responde historico de preco`.
 
+### Task 4: orçamento diário de embedding (achado na validação)
+
+**Files:** Modify `src/promo/assistente/indice.py`. Create `tests/test_orcamento_embedding.py`.
+
+**Interfaces — Produces:** `indice.ORCAMENTO_DO_INDICE = 800`; tabela `uso_de_embedding (dia TEXT PRIMARY KEY, documentos INTEGER NOT NULL)` criada pelo próprio `indice` (`CREATE TABLE IF NOT EXISTS`, sem mexer em `banco.py`); `dia_da_cota(agora: datetime | None = None) -> str` = data em `America/Los_Angeles` (`YYYY-MM-DD`); `vetorizar_pendentes` soma `len(lote)` ao dia depois de cada lote gravado e não começa um lote que passaria de `ORCAMENTO_DO_INDICE` (registra um aviso e devolve o feito).
+
+- [ ] **Step 1: testes que falham:** `test_indice_para_no_orcamento_do_dia` (monkeypatch `ORCAMENTO_DO_INDICE=50`, `LOTE_DE_EMBEDDING` 40, 100 produtos → 40 vetorizados, 2ª chamada no mesmo dia → 0); `test_orcamento_renova_no_dia_seguinte_do_pacifico` (dia diferente → volta a vetorizar); `test_dia_da_cota_usa_o_fuso_do_pacifico` (06:00 UTC de 27/11 → `"2026-11-26"`).
+- [ ] **Step 2:** `rodar_testes.sh tests/test_orcamento_embedding.py` — FAIL.
+- [ ] **Step 3:** implementar.
+- [ ] **Step 4:** `rodar_testes.sh tests/test_orcamento_embedding.py tests/test_busca_vetor.py tests/test_assistente.py` — PASS.
+- [ ] **Step 5:** commit `feat: indexador guarda cota de embedding para as perguntas`.
+
 ## Ordem
 
-Tasks 1 e 2 são independentes (arquivos diferentes) e podem correr em paralelo; a 3 vem depois das duas (usa `_migrar` e mexe em `conversa.py`).
+Tasks 1 e 2 são independentes (arquivos diferentes) e podem correr em paralelo; a 3 vem depois das duas (usa `_migrar` e mexe em `conversa.py`). A 4 só mexe em `indice.py` e roda junto da 3.
 
 ## Validação (controlador)
 
