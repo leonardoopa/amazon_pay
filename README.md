@@ -125,6 +125,20 @@ token válido e app registrado, enquanto `/products/search` responde normal.
 O `ml-probe` bate em cada candidato com o seu token e diz qual está de pé, pra
 a estratégia de coleta sair de medição e não da documentação.
 
+### Enviar uma oferta do ML à mão
+
+Para a promoção que a coleta não enxerga. Em 27/11/2026,
+`/products/{id}/items` respondia 403 por política e as páginas públicas pediam
+verificação de conta ao servidor.
+
+```bash
+docker compose exec -T amazon_pay promo ml-add "URL_DO_PRODUTO" --titulo "Título" --preco 141.96 --de 283 --imagem "URL_DA_FOTO" --dry-run
+```
+
+Sem `--dry-run`, o post entra na frente da fila de todos os grupos que aceitam o
+título. O link de afiliado sai do painel; se o painel falhar, passe `--link`.
+`--grupo Mulheres` limita o destino.
+
 Nos primeiros 7-10 dias, rode só coletando. O filtro precisa de histórico: sem
 pelo menos 7 dias de preço por produto (`MIN_OBSERVATIONS`) ele não tem como
 saber o que é preço normal, e não posta nada.
@@ -285,6 +299,13 @@ observação enquanto aparecesse na busca, e quase nada chegaria aos
 **Custo de API:** `ML_TRACK_LIMIT` (padrão 150) é literalmente quantas
 requisições a reconsulta gasta por rodada, já que não há multiget. Com o daemon
 de 2h isso dá ~1.800 chamadas/dia. A coleta avisa no log quando trunca.
+
+**Quando o Mercado Livre recusa:** depois de `ML_BLOQUEIO_LIMITE` (padrão 20)
+respostas 403 seguidas no preço de catálogo, o bot para de pedir preço e registra
+um único `ERROR`. A cada `ML_BLOQUEIO_PAUSA_MINUTOS` (padrão 60) sai uma sonda, e
+tudo volta quando ela for aceita. A vitrine e as landing pages têm contagem
+própria, disparada pelo redirecionamento para a verificação de conta. Os
+grupos-fonte continuam funcionando.
 
 > O token do OAuth fica na mesma base do histórico (`data/promos.db`). Apagar o
 > banco derruba a autorização — é preciso rodar `ml-auth` de novo.

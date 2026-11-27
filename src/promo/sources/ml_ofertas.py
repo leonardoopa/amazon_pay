@@ -31,6 +31,7 @@ from dataclasses import replace
 import httpx
 
 from ..models import Offer
+from .ml_bloqueio import Disjuntor, MLSuspenso
 
 PROVIDER = "ml_ofertas"
 SITE = "https://www.mercadolivre.com.br"
@@ -49,6 +50,10 @@ SCRIPT_MARCA = '<script id="__NORDIC_RENDERING_CTX__"'
 CDN = "https://http2.mlstatic.com/D_NQ_NP_2X_{picture_id}-F.jpg"
 
 log = logging.getLogger("promo")
+
+# Vitrine e landings juntas: quem e mandado verificar a conta e o servidor, nao
+# uma pagina.
+PAGINAS = Disjuntor("pagina publica redirecionou para account-verification")
 
 
 class ParseFailed(RuntimeError):
@@ -218,8 +223,7 @@ class MLOfertas:
 
     def _pagina(self, params: dict | None, categoria: str | None) -> list[Offer]:
         """Uma requisicao da vitrine, ja parseada."""
-        response = self._client.get(OFERTAS_URL, params=params)
-        response.raise_for_status()
+        response = self._baixar(OFERTAS_URL, params)
 
         items = (
             _payload(response.text)
@@ -250,6 +254,26 @@ class MLOfertas:
         )
         return achadas
 
+    def _baixar(self, url: str, params: dict | None = None) -> httpx.Response:
+        """GET de pagina publica, a nao ser que o ML esteja nos barrando.
+
+        Levanta `ParseFailed` na recusa avulsa e `MLSuspenso` quando as paginas
+        estao suspensas. Ver `ml_bloqueio`.
+        """
+        alvo = str(httpx.URL(url, params=params)) if params else url
+        PAGINAS.pedir(alvo)
+        response = self._client.get(url, params=params)
+        if "account-verification" in str(response.url):
+            if PAGINAS.recusado():
+                raise MLSuspenso(f"{alvo} mandou verificar a conta")
+            raise ParseFailed(
+                f"{alvo} redirecionou para verificacao de conta -- esta pagina "
+                "nao responde a requisicao de servidor."
+            )
+        response.raise_for_status()
+        PAGINAS.aceito()
+        return response
+
     def landing_com_preco(self, caminho: str) -> list[Offer]:
         """Rota A: os cards da landing que ja vem com preco.
 
@@ -257,13 +281,7 @@ class MLOfertas:
         categoria: e a mesma ideia -- saber de onde o produto veio --, e e o que
         deixa a prioridade por origem valer para estas paginas tambem.
         """
-        resposta = self._client.get(f"{SITE}{caminho}")
-        resposta.raise_for_status()
-        if "account-verification" in str(resposta.url):
-            raise ParseFailed(
-                f"{caminho} redirecionou para verificacao de conta -- esta "
-                "pagina nao responde a requisicao de servidor."
-            )
+        resposta = self._baixar(f"{SITE}{caminho}")
 
         achadas = [
             replace(oferta, vitrine_categoria=caminho)
@@ -279,13 +297,7 @@ class MLOfertas:
         Sem preco -- a pagina nao traz. Quem precifica e a API de catalogo, que
         a rodada ja chama para os produtos que acompanha.
         """
-        resposta = self._client.get(f"{SITE}{caminho}")
-        resposta.raise_for_status()
-        if "account-verification" in str(resposta.url):
-            raise ParseFailed(
-                f"{caminho} redirecionou para verificacao de conta -- esta "
-                "pagina nao responde a requisicao de servidor."
-            )
+        resposta = self._baixar(f"{SITE}{caminho}")
 
         vistos: dict[str, str] = {}
         for slug, mlb in CATALOGO.findall(resposta.text):
