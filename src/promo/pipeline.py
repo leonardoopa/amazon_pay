@@ -87,7 +87,8 @@ from .models import Offer, ScoredOffer
 from .scoring import score, score_campaign, score_pista
 from .sources.amazon import Amazon
 from .sources.amazon_grupo import AmazonDoGrupo
-from .sources.mercadolivre import MercadoLivre
+from .sources.mercadolivre import PRECOS, MercadoLivre
+from .sources.ml_bloqueio import MLSuspenso
 from .sources.ml_ofertas import MLOfertas
 
 log = logging.getLogger("promo")
@@ -1266,6 +1267,9 @@ def collect(
         for watch in watchlist if (descobrir and buscar) else []:
             try:
                 found = buscar(watch.term)
+            except MLSuspenso as exc:
+                log.debug("%s: busca por termo pulada: %s", source.name, exc)
+                break
             except (
                 Exception
             ) as exc:  # noqa: BLE001 - uma fonte quebrada nao derruba a rodada
@@ -1304,7 +1308,7 @@ def collect(
     # proxima rodada tenta de novo em vez de esperar o intervalo inteiro.
     if descobrir and descoberta_respondeu:
         _stamp(DISCOVERY_KEY)
-    elif descobrir and descoberta_tentou:
+    elif descobrir and descoberta_tentou and not PRECOS.aberto:
         log.warning(
             "Nenhuma fonte respondeu a descoberta; nao carimbando. "
             "A proxima rodada tenta de novo."
@@ -1342,6 +1346,9 @@ def collect_vitrine(
 
     try:
         found = fetch(ofertas_pages(), categories) if aceita else fetch(ofertas_pages())
+    except MLSuspenso as exc:
+        log.debug("%s: vitrine pulada: %s", source.name, exc)
+        return []
     except Exception as exc:  # noqa: BLE001 - HTML muda; nao derruba a rodada
         log.warning("%s falhou na vitrine: %s", source.name, exc)
         return []
@@ -1387,6 +1394,9 @@ def collect_landings(source, catalogo=None) -> list[Offer]:
                 )
             else:
                 offers.extend(source.landing_com_preco(caminho))
+        except MLSuspenso as exc:
+            # Sem `break`: a proxima pagina ainda pode ser a sonda.
+            log.debug("landing %s pulada: %s", caminho, exc)
         except Exception as exc:  # noqa: BLE001 - HTML muda; nao derruba a rodada
             log.warning("landing %s falhou: %s", caminho, exc)
 
@@ -2168,6 +2178,9 @@ def collect_categories(source, categories: list[Category]) -> tuple[list[Offer],
         rotulo = category.name or category.id
         try:
             found = destaques(category.id)
+        except MLSuspenso as exc:
+            log.debug("%s: categorias puladas: %s", source.name, exc)
+            break
         except Exception as exc:  # noqa: BLE001 - idem: nao derruba a rodada
             log.warning("%s falhou na categoria '%s': %s", source.name, rotulo, exc)
             continue

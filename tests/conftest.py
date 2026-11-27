@@ -69,6 +69,15 @@ def sem_janela_de_silencio(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def ml_sem_bloqueio():
+    """A contagem de recusas do ML e do processo: um teste nao herda a do outro."""
+    from promo.sources import mercadolivre, ml_ofertas
+
+    mercadolivre.PRECOS.zerar()
+    ml_ofertas.PAGINAS.zerar()
+
+
+@pytest.fixture(autouse=True)
 def amazon_sempre_tem_foto(monkeypatch):
     """A suite nao consulta a Amazon pela rede para saber se a foto existe.
 

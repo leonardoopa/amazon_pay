@@ -38,6 +38,7 @@ from ..db import (
     tem_tema,
 )
 from ..models import Offer
+from .ml_bloqueio import Disjuntor, MLSuspenso
 
 AUTH_HOST = "https://auth.mercadolivre.com.br"
 API_HOST = "https://api.mercadolibre.com"
@@ -69,6 +70,9 @@ PRODUCTS_PER_CATEGORY = 10
 # tempo; sem este lock as duas pediriam o refresh e a segunda levaria
 # `invalid_grant`, derrubando a autorizacao inteira.
 _TOKEN_LOCK = threading.Lock()
+
+# Do modulo e nao da instancia: ver `ml_bloqueio`.
+PRECOS = Disjuntor("/products/{id}/items respondeu 403")
 
 
 def _url_do_produto(product_id: str) -> str:
@@ -231,7 +235,13 @@ class MercadoLivre:
 
         Uma chamada ja traz nome e fotos de cada produto; o preco vem depois,
         um GET por produto em /products/{id}/items.
+
+        Levanta `MLSuspenso` quando o preco esta bloqueado e nada saiu: a busca
+        sem preco so gastaria chamada, e lista vazia passaria por descoberta
+        feita.
         """
+        if PRECOS.suspenso():
+            raise MLSuspenso("preco de catalogo suspenso")
         limit = limit or products_per_keyword()
         response = self._client.get(
             f"{API_HOST}/products/search",
@@ -247,13 +257,20 @@ class MercadoLivre:
 
         offers = []
         for product in response.json().get("results", [])[:limit]:
-            offer = self._offer_for(
-                product["id"],
-                title=product.get("name") or "",
-                image_url=_best_image(product),
-            )
+            if PRECOS.suspenso():
+                break
+            try:
+                offer = self._offer_for(
+                    product["id"],
+                    title=product.get("name") or "",
+                    image_url=_best_image(product),
+                )
+            except MLSuspenso:
+                continue
             if offer is not None:
                 offers.append(offer)
+        if not offers and PRECOS.aberto:
+            raise MLSuspenso("preco de catalogo suspenso")
         return offers
 
     def highlights(self, category_id: str, limit: int | None = None) -> list[Offer]:
@@ -265,7 +282,11 @@ class MercadoLivre:
 
         Cuidado com o custo: a lista traz so IDs, entao cada produto vira duas
         chamadas -- uma pro nome e foto, outra pro preco.
+
+        Levanta `MLSuspenso` nas mesmas condicoes de `search`.
         """
+        if PRECOS.suspenso():
+            raise MLSuspenso("preco de catalogo suspenso")
         limit = limit or products_per_category()
         response = self._client.get(
             f"{API_HOST}/highlights/{self.config.site_id}/category/{category_id}",
@@ -287,13 +308,20 @@ class MercadoLivre:
 
         offers = []
         for product_id in ids:
+            if PRECOS.suspenso():
+                break
             meta = self._product_meta(product_id)
             if meta is None:
                 continue
             title, image_url = meta
-            offer = self._offer_for(product_id, title=title, image_url=image_url)
+            try:
+                offer = self._offer_for(product_id, title=title, image_url=image_url)
+            except MLSuspenso:
+                continue
             if offer is not None:
                 offers.append(offer)
+        if not offers and PRECOS.aberto:
+            raise MLSuspenso("preco de catalogo suspenso")
         return offers
 
     def _product_meta(self, product_id: str) -> tuple[str, str | None] | None:
@@ -351,8 +379,12 @@ class MercadoLivre:
         offers = []
         falhas = 0
         for external_id, title, image_url in tracked:
+            if PRECOS.suspenso():
+                break
             try:
                 offer = self._offer_for(external_id, title=title, image_url=image_url)
+            except MLSuspenso:
+                continue  # o proximo ainda pode ser a sonda
             except httpx.HTTPStatusError as exc:
                 falhas += 1
                 log.debug(
@@ -382,13 +414,15 @@ class MercadoLivre:
         pro grupo e o menor preco disponivel, entao a baseline e o historico
         do minimo -- nao de um anuncio especifico, que pode sumir amanha.
         """
-        response = self._client.get(
-            f"{API_HOST}/products/{product_id}/items",
-            headers={"Authorization": f"Bearer {self.access_token()}"},
-        )
+        PRECOS.pedir(product_id)
+        response = self._pedir_anuncios(product_id)
+        if response.status_code == 403 and PRECOS.recusado(self._preco_responde):
+            raise MLSuspenso(f"preco de {product_id} recusado")
         if response.status_code == 404:
+            PRECOS.aceito()
             return None  # produto saiu do catalogo
         response.raise_for_status()
+        PRECOS.aceito(product_id)
 
         # `condition` importa alem da qualidade: anuncio usado fica fora das
         # regras do programa de afiliados.
@@ -428,6 +462,25 @@ class MercadoLivre:
             free_shipping=bool(shipping.get("free_shipping")),
             official_store=bool(melhor.get("official_store_id")),
         )
+
+    def _pedir_anuncios(self, product_id: str) -> httpx.Response:
+        return self._client.get(
+            f"{API_HOST}/products/{product_id}/items",
+            headers={"Authorization": f"Bearer {self.access_token()}"},
+        )
+
+    def _preco_responde(self, product_id: str) -> bool:
+        """O preco de um produto que ja respondeu continua saindo?
+
+        Anuncio de vendedor responde 403 com a API saudavel, e eles se juntam na
+        fila: `hot_products` poe na frente quem nunca atualiza. Uma sequencia
+        deles so vira bloqueio se um produto bom tambem for recusado.
+        """
+        try:
+            status = self._pedir_anuncios(product_id).status_code
+        except httpx.HTTPError:
+            return False
+        return status in (200, 404)
 
     def _melhor_anuncio(self, candidatos: list[dict], title: str) -> dict:
         """Qual dos anuncios do produto vira a oferta.
