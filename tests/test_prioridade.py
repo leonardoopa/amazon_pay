@@ -708,6 +708,7 @@ def test_a_vitrine_carimba_a_pagina_de_origem(monkeypatch):
 
     class Resposta:
         text = ""
+        url = ml_ofertas.OFERTAS_URL
 
         def raise_for_status(self):
             pass

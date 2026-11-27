@@ -892,6 +892,23 @@ def discovery_priority_share() -> float:
     return float(_optional("DISCOVERY_PRIORITY_SHARE", "0.5"))
 
 
+def ml_bloqueio_limite() -> int:
+    """Recusas seguidas do ML que suspendem as chamadas. 0 desliga.
+
+    Vale para o preco de catalogo (403) e, em contagem separada, para as
+    paginas publicas (redirecionamento para a verificacao de conta). Nao
+    baixe demais: anuncio de vendedor responde 403 no preco mesmo com a API
+    saudavel. No preco, antes de suspender, o ultimo produto que respondeu e
+    pedido de novo; logo depois de reiniciar ainda nao ha qual pedir.
+    """
+    return _int("ML_BLOQUEIO_LIMITE", 20)
+
+
+def ml_bloqueio_pausa_minutos() -> float:
+    """Minutos de suspensao antes de cada sonda. Ver `sources/ml_bloqueio`."""
+    return float(_optional("ML_BLOQUEIO_PAUSA_MINUTOS", "60"))
+
+
 def track_limit() -> int:
     """Teto de produtos reconsultados por rodada, por fonte.
 

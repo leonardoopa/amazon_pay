@@ -300,6 +300,13 @@ observação enquanto aparecesse na busca, e quase nada chegaria aos
 requisições a reconsulta gasta por rodada, já que não há multiget. Com o daemon
 de 2h isso dá ~1.800 chamadas/dia. A coleta avisa no log quando trunca.
 
+**Quando o Mercado Livre recusa:** depois de `ML_BLOQUEIO_LIMITE` (padrão 20)
+respostas 403 seguidas no preço de catálogo, o bot para de pedir preço e registra
+um único `ERROR`. A cada `ML_BLOQUEIO_PAUSA_MINUTOS` (padrão 60) sai uma sonda, e
+tudo volta quando ela for aceita. A vitrine e as landing pages têm contagem
+própria, disparada pelo redirecionamento para a verificação de conta. Os
+grupos-fonte continuam funcionando.
+
 > O token do OAuth fica na mesma base do histórico (`data/promos.db`). Apagar o
 > banco derruba a autorização — é preciso rodar `ml-auth` de novo.
 
