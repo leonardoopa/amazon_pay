@@ -662,6 +662,78 @@ def cmd_amazon_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ml_add(args: argparse.Namespace) -> int:
+    """Enfileira uma oferta do Mercado Livre escolhida a mao.
+
+    Para a promocao que a coleta nao enxerga: o preco do catalogo responde 403 e
+    as paginas publicas pedem verificacao de conta ao servidor (27/11/2026).
+    Quem le o preco e uma pessoa; link, texto e fila sao os de sempre.
+    """
+    from .manual import (
+        OfertaInvalida,
+        enfileirar_ml,
+        escrever_texto,
+        preparar_oferta_ml,
+    )
+    from .pipeline import load_grupos
+
+    try:
+        scored = preparar_oferta_ml(
+            url=args.url,
+            titulo=args.titulo,
+            preco=args.preco,
+            de=args.de,
+            imagem=args.imagem,
+        )
+        grupos = [g for g in load_grupos() if g.aceita(scored.offer)]
+        if args.grupo:
+            pedidos = [nome.lower() for nome in args.grupo]
+            grupos = [g for g in grupos if any(n in g.nome.lower() for n in pedidos)]
+        if not grupos:
+            raise OfertaInvalida("Nenhum grupo aceita este titulo.")
+
+        link = args.link
+        if not link and not args.dry_run:
+            link = _link_do_painel(scored.offer)
+            if not link:
+                raise OfertaInvalida(
+                    "O painel de afiliados nao devolveu link. Gere o link pelo "
+                    "app do Mercado Livre e passe em --link."
+                )
+
+        if not scored.offer.image_url:
+            print("Aviso: sem --imagem o post sai so com texto.", file=sys.stderr)
+        texto = escrever_texto(scored, usar_ia=not args.sem_ia, link=link)
+
+        if args.dry_run:
+            print(texto)
+            print()
+            nomes = ", ".join(g.nome for g in grupos)
+            print(f"(dry-run: nada foi enfileirado. Grupos: {nomes})")
+            return 0
+
+        ids = enfileirar_ml(scored, texto, link, grupos)
+    except OfertaInvalida as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    print(f"{len(ids)} post(s) na fila: {', '.join(g.nome for g in grupos)}")
+    print(f"Link: {link}")
+    print("Sai no proximo gotejamento.")
+    return 0
+
+
+def _link_do_painel(offer) -> str | None:
+    """Grava o produto e pede o link ao painel de afiliados."""
+    from .db import record_offer
+    from .sources.mercadolivre import MercadoLivre
+
+    init_db()
+    with connect() as conn:
+        record_offer(conn, offer)
+    return MercadoLivre(MercadoLivreConfig.load()).affiliate_url(offer)
+
+
 def cmd_link_all(args: argparse.Namespace) -> int:
     """Gera de uma vez os links que faltam, pelo painel de afiliados.
 
@@ -772,6 +844,10 @@ COMMANDS = {
         cmd_amazon_add,
         "Enfileira uma oferta da Amazon escolhida a mao (sem a API)",
     ),
+    "ml-add": (
+        cmd_ml_add,
+        "Enfileira uma oferta do Mercado Livre escolhida a mao",
+    ),
     "link-all": (cmd_link_all, "Gera pelo painel os links que faltam, em lote"),
     "pending-links": (cmd_pending_links, "Lista produtos sem link de afiliado"),
     "wa-connect": (cmd_wa_connect, "Pareia o chip secundario na Evolution (QR)"),
@@ -848,6 +924,39 @@ def main(argv: list[str] | None = None) -> int:
                 type=int,
                 metavar="N",
                 help="Mostra em quais dos N produtos mais recentes o cupom cairia",
+            )
+        if name == "ml-add":
+            sub.add_argument("url", help="Endereco da pagina do produto (com MLB)")
+            sub.add_argument("--titulo", required=True, help="Titulo do produto")
+            sub.add_argument(
+                "--preco", type=float, required=True, help="Preco de agora, em reais"
+            )
+            sub.add_argument(
+                "--de",
+                type=float,
+                required=True,
+                help="Preco anunciado antes do desconto, em reais",
+            )
+            sub.add_argument(
+                "--link",
+                default=None,
+                help="Link de afiliado (padrao: gerado pelo painel)",
+            )
+            sub.add_argument("--imagem", default=None, help="URL da imagem")
+            sub.add_argument(
+                "--grupo",
+                action="append",
+                help="Limita a estes grupos (parte do nome; pode repetir)",
+            )
+            sub.add_argument(
+                "--sem-ia",
+                action="store_true",
+                help="Usa o texto padrao em vez de chamar o Gemini",
+            )
+            sub.add_argument(
+                "--dry-run",
+                action="store_true",
+                help="Mostra o texto e os grupos sem enfileirar",
             )
         if name == "amazon-add":
             sub.add_argument(
